@@ -20,6 +20,17 @@ This repository currently contains the product foundation before implementation.
 - [Product Requirements Document](./docs/prd.md)
 - [Information Architecture](./docs/information-architecture.md)
 - [MVP Roadmap](./docs/mvp-roadmap.md)
+- [Design System](./docs/design-system.md)
+- [UI Stitch Prompts](./docs/ui-stitch-prompts.md)
+
+## App scaffold
+
+Skedue now includes a React Native + Expo TypeScript scaffold at the repository root.
+
+Common commands:
+- `npm start`
+- `npm run android`
+- `npm run web`
 
 ## Core concept
 
