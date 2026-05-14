@@ -8,6 +8,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StatusBar as RNStatusBar,
   StyleSheet,
@@ -59,8 +60,16 @@ const DAY_MAP: Record<string, number> = {
 };
 
 const formatMinutesDiff = (minutes: number) => {
-  if (minutes <= 1) return 'In 1 min';
-  return `In ${minutes} mins`;
+  if (minutes <= 0) return 'Just now';
+  if (minutes < 60) return `In ${minutes} min${minutes > 1 ? 's' : ''}`;
+  
+  const hours = Math.floor(minutes / 60);
+  const remainingMins = minutes % 60;
+  
+  if (remainingMins === 0) {
+    return `In ${hours} hour${hours > 1 ? 's' : ''}`;
+  }
+  return `In ${hours} hour${hours > 1 ? 's' : ''} and ${remainingMins} min${remainingMins > 1 ? 's' : ''}`;
 };
 
 export default function MainScreen() {
@@ -80,23 +89,39 @@ export default function MainScreen() {
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
+  // Time state for real-time updates
+  const [now, setNow] = useState(new Date());
+  const [refreshing, setRefreshing] = useState(false);
+
   // Placeholder data for tasks and notes (not in DB yet)
   const pendingTasks: Array<{ id: string; title: string; due: string }> = [];
   const recentNotes: Array<{ id: string; title: string; preview: string }> = [];
 
   useEffect(() => {
-    let isMounted = true;
-    getSubjects()
-      .then((rows) => {
-        if (isMounted) setDbSubjects(rows);
-      })
-      .catch((err) => console.warn('MainScreen: failed to load subjects', err));
-    return () => {
-      isMounted = false;
-    };
+    const timer = setInterval(() => setNow(new Date()), 30000); // Update every 30s
+    return () => clearInterval(timer);
   }, []);
 
-  const dateLabel = new Date()
+  const loadData = async () => {
+    try {
+      const rows = await getSubjects();
+      setDbSubjects(rows);
+    } catch (err) {
+      console.warn('MainScreen: failed to load subjects', err);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const dateLabel = now
     .toLocaleDateString('en-US', {
       weekday: 'long',
       month: 'short',
@@ -105,7 +130,6 @@ export default function MainScreen() {
     .toUpperCase();
 
   const nextClassState = useMemo(() => {
-    const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const todayDay = now.getDay();
 
@@ -164,7 +188,49 @@ export default function MainScreen() {
       headerMeta: null,
       nextHint: null,
     };
-  }, [dbSubjects]);
+  }, [dbSubjects, now]);
+
+  const dynamicGreeting = useMemo(() => {
+    const hour = now.getHours();
+    let timeGreeting = "Good Morning";
+    if (hour >= 12 && hour < 17) timeGreeting = "Good Afternoon";
+    if (hour >= 17 && hour < 22) timeGreeting = "Good Evening";
+    if (hour >= 22 || hour < 5) timeGreeting = "Working Late";
+
+    const todayDay = now.getDay();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    
+    const todaySubjects = dbSubjects.filter(s => (s.days ?? []).some(d => DAY_MAP[d] === todayDay));
+    
+    if (todaySubjects.length === 0) {
+      return `${timeGreeting}! No classes today.`;
+    }
+
+    const remainingSubjects = todaySubjects.filter(s => {
+      const start = parseTimeToMinutes(s.startTime ?? null) ?? 0;
+      return start > nowMinutes;
+    });
+
+    const currentSubjects = todaySubjects.filter(s => {
+      const start = parseTimeToMinutes(s.startTime ?? null) ?? 0;
+      const end = parseTimeToMinutes(s.endTime ?? null) ?? (start + 60);
+      return nowMinutes >= start && nowMinutes < end;
+    });
+
+    if (currentSubjects.length > 0) {
+      return "You're in class right now.";
+    }
+
+    if (remainingSubjects.length === 0) {
+      return "You're all done for today!";
+    }
+
+    if (remainingSubjects.length === 1) {
+      return `${timeGreeting}! Just one more class.`;
+    }
+
+    return `${timeGreeting}! You have ${remainingSubjects.length} classes left.`;
+  }, [now, dbSubjects]);
 
   const handleOpenActions = () => {
     setIsActionSheetOpen(true);
@@ -296,7 +362,7 @@ export default function MainScreen() {
       code: s.code ?? s.title.slice(0, 6).toUpperCase(),
       title: s.title,
       instructor: s.instructor ?? '',
-      days: s.days ? s.days.join(', ') : '',
+      days: s.days ?? [],
       time:
         s.startTime && s.endTime
           ? `${formatTime(s.startTime)} - ${formatTime(s.endTime)}`
@@ -328,7 +394,6 @@ export default function MainScreen() {
           }
         ]}
       >
-        {activeTab !== 'schedule' ? (
         <View style={styles.headerRow}>
           <View style={styles.headerSpacer} />
           <View style={styles.headerIcons}>
@@ -340,12 +405,19 @@ export default function MainScreen() {
             </Pressable>
           </View>
         </View>
-      ) : null}
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         style={styles.scrollView}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={handleRefresh}
+            tintColor="#1c2f2a" // iOS-like spinner color
+            colors={["#1c2f2a"]} // Android spinner color
+          />
+        }
       >
         {activeTab === 'subjects' ? (
           <SubjectsScreen subjects={subjects} />
@@ -355,7 +427,7 @@ export default function MainScreen() {
           <>
             <View style={styles.titleBlock}>
               <Text style={styles.dateText}>{dateLabel}</Text>
-              <Text style={styles.title}>Your Day</Text>
+              <Text style={styles.title}>{dynamicGreeting}</Text>
             </View>
 
             <>
@@ -587,6 +659,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingTop: 8,
+    paddingBottom: 8,
+    backgroundColor: '#f8f7f2',
+    zIndex: 10,
   },
   headerSpacer: {
     width: 28,
@@ -611,7 +686,8 @@ const styles = StyleSheet.create({
     paddingBottom: 140,
   },
   scrollView: {
-    overflow: 'visible',
+    flex: 1,
+    overflow: 'hidden', // Changed from visible to ensure content stays within the scroll area
   },
   dateText: {
     fontFamily: 'Manrope_700Bold',
@@ -627,7 +703,7 @@ const styles = StyleSheet.create({
   title: {
     color: '#1e2b26',
     fontFamily: 'Manrope_700Bold',
-    fontSize: 30,
+    fontSize: 24,
   },
   subtitle: {
     fontFamily: 'Manrope_400Regular',
@@ -868,11 +944,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 24,
     bottom: 20,
+    zIndex: 20,
     ...shadowLgDark,
   },
   actionSheetOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
+    zIndex: 15,
   },
   actionSheetBackdrop: {
     ...StyleSheet.absoluteFillObject,

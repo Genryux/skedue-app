@@ -89,7 +89,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
 
   const handleDayPress = (key: string) => {
     if (key === selectedDayKey) return;
-    
+
     // Immediately set the day and restart the fade-in animation.
     // This prevents the "white screen" bug caused by rapid tapping where opacity gets stuck at 0.
     setSelectedDayKey(key);
@@ -133,9 +133,9 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
       sameMonth
         ? { day: 'numeric' }
         : {
-            month: 'short',
-            day: 'numeric',
-          }
+          month: 'short',
+          day: 'numeric',
+        }
     );
 
     return `${startLabel} - ${endLabel}`;
@@ -214,21 +214,9 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <View style={styles.headerSpacer} />
-        <View style={styles.headerIconsRow}>
-          <Pressable style={styles.headerIconButton}>
-            <Feather name="bell" size={18} color="#1e2b26" />
-          </Pressable>
-          <Pressable style={styles.headerIconButton}>
-            <Feather name="settings" size={18} color="#1e2b26" />
-          </Pressable>
-        </View>
-      </View>
       <View style={styles.titleBlock}>
-        <Text style={styles.headerTitle}>Your Subjects this Week</Text>
+        <Text style={styles.headerTitle}>Your subjects this week</Text>
       </View>
-
       <View style={styles.weekCard}>
         <View style={styles.weekHeader}>
           <Text style={styles.weekRange}>{weekRangeLabel}</Text>
@@ -280,7 +268,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
 
       <Animated.View style={[styles.timeline, { opacity: contentOpacity }]}>
         {selectedEntries.length > 0 && <View style={styles.timeLine} />}
-        
+
         {selectedEntries.length === 0 ? (
           <View style={styles.emptyCard}>
             <View style={styles.emptyIcon}>
@@ -304,19 +292,27 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
                 </View>
                 <View style={[styles.eventCard, isActive && styles.eventCardPrimary]}>
                   <Text style={styles.eventTitle}>{entry.title}</Text>
-                  {entry.location ? (
-                    <>
-                      <View style={styles.metaRow}>
-                        <Feather name="map-pin" size={14} color="#2a332e" />
-                        <Text style={styles.metaText}>{entry.location}</Text>
-                      </View>
-                      {entry.instructor ? <View style={styles.metaDivider} /> : null}
-                    </>
-                  ) : null}
+
                   {entry.instructor ? (
                     <View style={styles.metaRow}>
                       <Feather name="user" size={14} color="#2a332e" />
                       <Text style={styles.metaText}>{entry.instructor}</Text>
+                    </View>
+                  ) : null}
+
+                  <View style={[styles.metaDivider, isActive && styles.metaDividerActive]} />
+
+                  <View style={styles.metaRow}>
+                    <Feather name="clock" size={14} color="#2a332e" />
+                    <Text style={styles.metaText}>
+                      {entry.startTime}{entry.endTime ? ` - ${entry.endTime}` : ''}
+                    </Text>
+                  </View>
+
+                  {entry.location ? (
+                    <View style={styles.metaRow}>
+                      <Feather name="map-pin" size={14} color="#2a332e" />
+                      <Text style={styles.metaText}>{entry.location}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -332,15 +328,6 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
 const styles = StyleSheet.create({
   container: {
     gap: 20,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerSpacer: {
-    width: 28,
-    height: 28,
   },
   titleBlock: {
     gap: 6,
@@ -520,10 +507,19 @@ const styles = StyleSheet.create({
     gap: 6,
     marginBottom: 8,
   },
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
   metaDivider: {
     height: 1,
     backgroundColor: '#e2ded7',
-    marginBottom: 8,
+    marginVertical: 8,
+  },
+  metaDividerActive: {
+    backgroundColor: '#c9ded1',
   },
   metaText: {
     fontFamily: 'Manrope_400Regular',
