@@ -160,6 +160,7 @@ Usage:
 - prefer rounded cards with soft borders
 - use subtle surface stepping instead of dramatic shadows
 - content should be easy to scan in 2 to 4 seconds
+- when shadows are needed, use soft iOS-style shadows with low opacity and a larger blur, plus light Android elevation
 
 ### Navigation
 
