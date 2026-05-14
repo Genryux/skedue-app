@@ -3,9 +3,10 @@ import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View }
 
 type OnboardingScreenProps = {
   onAddSubjectPress: () => void;
+  onSkipPress: () => void;
 };
 
-export default function OnboardingScreen({ onAddSubjectPress }: OnboardingScreenProps) {
+export default function OnboardingScreen({ onAddSubjectPress, onSkipPress }: OnboardingScreenProps) {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
@@ -41,12 +42,17 @@ export default function OnboardingScreen({ onAddSubjectPress }: OnboardingScreen
       </View>
 
       <View style={styles.bottomArea}>
-        <Pressable style={styles.addSubjectButton} onPress={onAddSubjectPress}>
-          <View style={styles.addSubjectIcon}>
-            <Feather name="plus" size={18} color="#ecf2ee" />
-          </View>
-          <Text style={styles.addSubjectText}>Add subject</Text>
-        </Pressable>
+        <View style={styles.buttonRow}>
+          <Pressable style={styles.skipButton} onPress={onSkipPress}>
+            <Text style={styles.skipText}>Skip</Text>
+          </Pressable>
+          <Pressable style={styles.addSubjectButton} onPress={onAddSubjectPress}>
+            <View style={styles.addSubjectIcon}>
+              <Feather name="plus" size={18} color="#ecf2ee" />
+            </View>
+            <Text style={styles.addSubjectText}>Add subject</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -139,7 +145,29 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     alignItems: 'center',
   },
+  buttonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+  },
+  skipButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#d9d6d0',
+    minHeight: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skipText: {
+    color: '#4d5852',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 15,
+  },
   addSubjectButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#16312b',
@@ -147,9 +175,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 16,
     gap: 10,
-    width: '100%',
-    justifyContent: 'center',
     minHeight: 56,
+    justifyContent: 'center',
   },
   addSubjectIcon: {
     width: 28,

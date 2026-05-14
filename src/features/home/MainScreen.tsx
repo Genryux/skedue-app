@@ -1,4 +1,5 @@
 import { Feather } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -15,9 +16,11 @@ import {
 } from 'react-native';
 import { getSubjects, insertSubject, type SubjectRecord } from '../../data/local/db';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
+import { parseTimeToMinutes } from '../../utils/timeUtils';
 import ScheduleScreen from '../schedule/ScheduleScreen';
 import AddSubjectScreen from '../subjects/AddSubjectScreen';
 import SubjectsScreen from '../subjects/SubjectsScreen';
+import DynamicIslandToast from '../../ui/DynamicIslandToast';
 
 const formatTime = (time: string | null | undefined) => {
   if (!time) return '';
@@ -55,24 +58,6 @@ const DAY_MAP: Record<string, number> = {
   Saturday: 6,
 };
 
-const parseTimeToMinutes = (time: string | null | undefined) => {
-  if (!time) return null;
-  const hasAmPm = /am|pm/i.test(time);
-  const clean = time.replace(/am|pm/gi, '').trim();
-  const [hRaw, mRaw] = clean.split(':').map(Number);
-  if (Number.isNaN(hRaw) || Number.isNaN(mRaw)) return null;
-  let hours = hRaw;
-  const minutes = mRaw;
-
-  if (hasAmPm) {
-    const ampm = time.match(/am|pm/i)?.[0]?.toUpperCase();
-    if (ampm === 'PM' && hours !== 12) hours += 12;
-    if (ampm === 'AM' && hours === 12) hours = 0;
-  }
-
-  return hours * 60 + minutes;
-};
-
 const formatMinutesDiff = (minutes: number) => {
   if (minutes <= 1) return 'In 1 min';
   return `In ${minutes} mins`;
@@ -85,6 +70,15 @@ export default function MainScreen() {
   const [isAddSubjectOpen, setIsAddSubjectOpen] = useState(false);
   const sheetOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslate = useRef(new Animated.Value(18)).current;
+  const buttonRotate = useRef(new Animated.Value(0)).current;
+  const buttonScale = useRef(new Animated.Value(0)).current;
+
+  // Add Subject Transition
+  const subjectSlideAnim = useRef(new Animated.Value(0)).current; // 0: hidden, 1: visible
+
+  // Success Toast State
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
   // Placeholder data for tasks and notes (not in DB yet)
   const pendingTasks: Array<{ id: string; title: string; due: string }> = [];
@@ -177,32 +171,65 @@ export default function MainScreen() {
     Animated.parallel([
       Animated.timing(sheetOpacity, {
         toValue: 1,
-        duration: 200,
+        duration: 250,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.timing(sheetTranslate, {
         toValue: 0,
-        duration: 220,
+        duration: 280,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
+      Animated.spring(buttonRotate, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 7,
+        tension: 40,
+      }),
+      Animated.sequence([
+        Animated.timing(buttonScale, {
+          toValue: 1,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(buttonScale, {
+          toValue: 0,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+      ]),
     ]).start();
+  };
+
+  const resetPlusButton = () => {
+    Animated.spring(buttonRotate, {
+      toValue: 0,
+      useNativeDriver: true,
+      friction: 7,
+      tension: 40,
+    }).start();
   };
 
   const handleCloseActions = () => {
     Animated.parallel([
       Animated.timing(sheetOpacity, {
         toValue: 0,
-        duration: 160,
+        duration: 200,
         easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.timing(sheetTranslate, {
         toValue: 18,
-        duration: 160,
+        duration: 200,
         easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
+      }),
+      Animated.spring(buttonRotate, {
+        toValue: 0,
+        useNativeDriver: true,
+        friction: 7,
+        tension: 40,
       }),
     ]).start(({ finished }) => {
       if (finished) {
@@ -212,19 +239,51 @@ export default function MainScreen() {
   };
 
   const handleStartAddSubject = () => {
+    resetPlusButton();
     setIsActionSheetOpen(false);
     setIsAddSubjectOpen(true);
+    
+    Animated.timing(subjectSlideAnim, {
+      toValue: 1,
+      duration: 450,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
   };
 
   const handleCancelAddSubject = () => {
-    setIsAddSubjectOpen(false);
+    Animated.timing(subjectSlideAnim, {
+      toValue: 0,
+      duration: 350,
+      easing: Easing.inOut(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setIsAddSubjectOpen(false);
+      }
+    });
   };
 
   const handleSaveSubject = async (subjectData: Omit<SubjectRecord, 'id' | 'createdAt'>) => {
     try {
       const savedSubject = await insertSubject(subjectData);
       setDbSubjects((prev) => [...prev, savedSubject]);
-      setIsAddSubjectOpen(false);
+      resetPlusButton();
+      
+      Animated.timing(subjectSlideAnim, {
+        toValue: 0,
+        duration: 350,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) {
+          setIsAddSubjectOpen(false);
+        }
+      });
+      
+      // Trigger success toast
+      setToastMessage(`${savedSubject.title} created successfully`);
+      setToastVisible(true);
     } catch (error) {
       console.warn('Failed to save subject', error);
     }
@@ -252,7 +311,24 @@ export default function MainScreen() {
 
   return (
     <View style={styles.container}>
-      {activeTab !== 'schedule' ? (
+      <Animated.View 
+        style={[
+          styles.mainContent,
+          {
+            opacity: subjectSlideAnim.interpolate({
+              inputRange: [0, 0.5],
+              outputRange: [1, 0],
+            }),
+            transform: [{
+              scale: subjectSlideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 0.94],
+              })
+            }]
+          }
+        ]}
+      >
+        {activeTab !== 'schedule' ? (
         <View style={styles.headerRow}>
           <View style={styles.headerSpacer} />
           <View style={styles.headerIcons}>
@@ -408,13 +484,20 @@ export default function MainScreen() {
             </View>
           </Pressable>
         </View>
-        <Pressable style={styles.navAddButton} onPress={handleOpenActions}>
-          <Feather name="plus" size={22} color="#f4f7f4" />
-        </Pressable>
+        <View style={{ width: 64 }} />
       </View>
+
       {isActionSheetOpen ? (
         <View style={styles.actionSheetOverlay}>
-          <Animated.View style={[styles.actionSheetBackdrop, { opacity: sheetOpacity }]} />
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: sheetOpacity }]}>
+            <BlurView 
+              intensity={80} 
+              tint="dark" 
+              style={StyleSheet.absoluteFill}
+              experimentalBlurMethod="none" 
+            />
+            <View style={styles.actionSheetBackdrop} />
+          </Animated.View>
           <Pressable style={styles.actionSheetPressTarget} onPress={handleCloseActions} />
           <Animated.View
             style={[
@@ -434,9 +517,55 @@ export default function MainScreen() {
           </Animated.View>
         </View>
       ) : null}
-      <Modal visible={isAddSubjectOpen} animationType="slide" presentationStyle="fullScreen">
-        <AddSubjectScreen onBack={handleCancelAddSubject} onSave={handleSaveSubject} />
-      </Modal>
+
+      <Animated.View style={[styles.floatingButtonContainer, {
+        transform: [{
+          scale: buttonScale.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, 0.9],
+          })
+        }]
+      }]}>
+        <Pressable style={styles.navAddButton} onPress={isActionSheetOpen ? handleCloseActions : handleOpenActions}>
+          <Animated.View style={{
+            transform: [{
+              rotate: buttonRotate.interpolate({
+                inputRange: [0, 1],
+                outputRange: ['0deg', '45deg'],
+              })
+            }]
+          }}>
+            <Feather name="plus" size={24} color="#f4f7f4" />
+          </Animated.View>
+        </Pressable>
+      </Animated.View>
+
+      </Animated.View>
+
+      {isAddSubjectOpen && (
+        <Animated.View 
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: '#f8f7f2',
+              transform: [{
+                translateY: subjectSlideAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [1000, 0],
+                })
+              }]
+            }
+          ]}
+        >
+          <AddSubjectScreen onBack={handleCancelAddSubject} onSave={handleSaveSubject} />
+        </Animated.View>
+      )}
+
+      <DynamicIslandToast 
+        visible={toastVisible} 
+        message={toastMessage} 
+        onHide={() => setToastVisible(false)} 
+      />
     </View>
   );
 }
@@ -444,9 +573,14 @@ export default function MainScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    overflow: 'visible',
+    backgroundColor: '#000', // To make the scale-down look good
+  },
+  mainContent: {
+    flex: 1,
     paddingHorizontal: 24,
     paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 0 : 0,
-    overflow: 'visible',
+    backgroundColor: '#f8f7f2', // The original app background
   },
   headerRow: {
     flexDirection: 'row',
@@ -729,6 +863,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#2b4a3f',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  floatingButtonContainer: {
+    position: 'absolute',
+    right: 24,
+    bottom: 20,
     ...shadowLgDark,
   },
   actionSheetOverlay: {
@@ -737,7 +876,7 @@ const styles = StyleSheet.create({
   },
   actionSheetBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(10, 14, 13, 0.46)',
+    backgroundColor: 'rgba(5, 8, 7, 0.4)',
   },
   actionSheetPressTarget: {
     ...StyleSheet.absoluteFillObject,
@@ -755,8 +894,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 20,
     backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e4e1db',
     ...shadowLg,
   },
   actionIconCircle: {

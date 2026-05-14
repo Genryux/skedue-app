@@ -1,8 +1,9 @@
 import { Feather } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useRef, useState, useEffect } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { SubjectRecord } from '../../data/local/db';
 import { shadowLg } from '../../ui/tokens/shadows';
+import { parseTimeToMinutes } from '../../utils/timeUtils';
 
 const DAY_MAP: Record<string, number> = {
   Su: 0,
@@ -73,6 +74,32 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
 
   const [weekStartDate, setWeekStartDate] = useState(initialWeekStart);
   const [selectedDayKey, setSelectedDayKey] = useState(todayKey);
+  const [currentMinutes, setCurrentMinutes] = useState(today.getHours() * 60 + today.getMinutes());
+
+  const contentOpacity = useRef(new Animated.Value(1)).current;
+
+  // Update current time periodically for accurate highlighting
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      setCurrentMinutes(now.getHours() * 60 + now.getMinutes());
+    }, 60000); // Update every minute
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleDayPress = (key: string) => {
+    if (key === selectedDayKey) return;
+    
+    // Immediately set the day and restart the fade-in animation.
+    // This prevents the "white screen" bug caused by rapid tapping where opacity gets stuck at 0.
+    setSelectedDayKey(key);
+    contentOpacity.setValue(0);
+    Animated.timing(contentOpacity, {
+      toValue: 1,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+  };
 
   const weekDays = useMemo(() => {
     return Array.from({ length: 7 }).map((_, index) => {
@@ -144,7 +171,11 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
     }
 
     for (const [key, list] of map.entries()) {
-      list.sort((a, b) => a.startTime.localeCompare(b.startTime));
+      list.sort((a, b) => {
+        const timeA = parseTimeToMinutes(a.startTime) ?? 0;
+        const timeB = parseTimeToMinutes(b.startTime) ?? 0;
+        return timeA - timeB;
+      });
       map.set(key, list);
     }
 
@@ -234,7 +265,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
               <Pressable
                 key={day.key}
                 style={chipStyles}
-                onPress={() => setSelectedDayKey(day.key)}
+                onPress={() => handleDayPress(day.key)}
               >
                 <Text style={letterStyles}>
                   {day.short.charAt(0)}
@@ -247,50 +278,53 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
         </View>
       </View>
 
-      <View style={styles.timeline}>
-        <View style={styles.timeColumn}>
-          <View style={styles.timeLine} />
-          {selectedEntries.map((entry) => (
-            <View key={entry.id} style={styles.timeRow}>
-              <Text style={styles.timeText}>{entry.startTime}</Text>
-              <View style={styles.timeDot} />
+      <Animated.View style={[styles.timeline, { opacity: contentOpacity }]}>
+        {selectedEntries.length > 0 && <View style={styles.timeLine} />}
+        
+        {selectedEntries.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIcon}>
+              <Feather name="calendar" size={18} color="#1f2d28" />
             </View>
-          ))}
-        </View>
+            <Text style={styles.emptyTitle}>No classes scheduled</Text>
+            <Text style={styles.emptyBody}>Add a subject to populate your schedule.</Text>
+          </View>
+        ) : (
+          selectedEntries.map((entry) => {
+            const isToday = selectedDayKey === todayKey;
+            const startMins = parseTimeToMinutes(entry.startTime) ?? 0;
+            const endMins = parseTimeToMinutes(entry.endTime) ?? 0;
+            const isActive = isToday && currentMinutes >= startMins && currentMinutes <= endMins;
 
-        <View style={styles.eventsColumn}>
-          {selectedEntries.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <View style={styles.emptyIcon}>
-                <Feather name="calendar" size={18} color="#1f2d28" />
-              </View>
-              <Text style={styles.emptyTitle}>No classes scheduled</Text>
-              <Text style={styles.emptyBody}>Add a subject to populate your schedule.</Text>
-            </View>
-          ) : (
-            selectedEntries.map((entry, index) => (
-              <View key={entry.id} style={[styles.eventCard, index === 0 && styles.eventCardPrimary]}>
-                <Text style={styles.eventTitle}>{entry.title}</Text>
-                {entry.location ? (
-                  <>
+            return (
+              <View key={entry.id} style={styles.timelineRow}>
+                <View style={styles.timeWrapper}>
+                  <Text style={styles.timeText}>{entry.startTime}</Text>
+                  <View style={[styles.timeDot, isActive && styles.timeDotActive]} />
+                </View>
+                <View style={[styles.eventCard, isActive && styles.eventCardPrimary]}>
+                  <Text style={styles.eventTitle}>{entry.title}</Text>
+                  {entry.location ? (
+                    <>
+                      <View style={styles.metaRow}>
+                        <Feather name="map-pin" size={14} color="#2a332e" />
+                        <Text style={styles.metaText}>{entry.location}</Text>
+                      </View>
+                      {entry.instructor ? <View style={styles.metaDivider} /> : null}
+                    </>
+                  ) : null}
+                  {entry.instructor ? (
                     <View style={styles.metaRow}>
-                      <Feather name="map-pin" size={14} color="#2a332e" />
-                      <Text style={styles.metaText}>{entry.location}</Text>
+                      <Feather name="user" size={14} color="#2a332e" />
+                      <Text style={styles.metaText}>{entry.instructor}</Text>
                     </View>
-                    {entry.instructor ? <View style={styles.metaDivider} /> : null}
-                  </>
-                ) : null}
-                {entry.instructor ? (
-                  <View style={styles.metaRow}>
-                    <Feather name="user" size={14} color="#2a332e" />
-                    <Text style={styles.metaText}>{entry.instructor}</Text>
-                  </View>
-                ) : null}
+                  ) : null}
+                </View>
               </View>
-            ))
-          )}
-        </View>
-      </View>
+            );
+          })
+        )}
+      </Animated.View>
     </View>
   );
 }
@@ -418,54 +452,61 @@ const styles = StyleSheet.create({
     backgroundColor: '#c9cdc9',
   },
   timeline: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  timeColumn: {
-    width: 64,
-    alignItems: 'flex-end',
+    position: 'relative',
+    paddingBottom: 20,
   },
   timeLine: {
     position: 'absolute',
-    right: 8,
-    top: 8,
-    bottom: 8,
+    left: 68,
+    top: 10,
+    bottom: 40,
     width: 2,
     backgroundColor: '#e1ddd6',
+    zIndex: -1,
   },
-  timeRow: {
+  timelineRow: {
+    flexDirection: 'row',
+    marginBottom: 18,
+  },
+  timeWrapper: {
+    width: 80,
+    position: 'relative',
     alignItems: 'flex-end',
-    marginBottom: 28,
+    paddingTop: 0, // Removed top padding to align with the very top of the card
+    paddingRight: 24, // Space for dot and gap
   },
   timeText: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
     color: '#2a332e',
-    marginBottom: 6,
+    marginTop: 2, // Minor tweak for visual centering with the dot
   },
   timeDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#dce7df',
+    backgroundColor: '#e1ddd6', // Neutral inactive color
     borderWidth: 2,
-    borderColor: '#94a09a',
-    marginRight: 2,
+    borderColor: '#c9c4bc', // Muted inactive border
+    position: 'absolute',
+    right: 5,
+    top: 4, // Aligned with the top section of the card
+    zIndex: 1,
   },
-  eventsColumn: {
-    flex: 1,
-    gap: 18,
+  timeDotActive: {
+    backgroundColor: '#2b4a3f', // Primary green when active
+    borderColor: '#d7e4dd', // Light border for pop
   },
   eventCard: {
+    flex: 1,
     backgroundColor: '#ffffff',
     borderRadius: 24,
     padding: 18,
-    borderWidth: 1,
-    borderColor: '#e5e1da',
+    // Removed borders
   },
   eventCardPrimary: {
     backgroundColor: '#e9f3ec',
-    borderColor: '#c9ded1',
+    // Removed borders
   },
   eventTitle: {
     fontFamily: 'Manrope_700Bold',

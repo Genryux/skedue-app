@@ -1,5 +1,6 @@
 import { Feather } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -11,6 +12,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { getSubjects, type SubjectRecord } from '../../data/local/db';
+import { formatTimeDisplay } from '../../utils/timeUtils';
+import { findTimeConflicts } from './conflictUtils';
 
 type AddSubjectScreenProps = {
   onBack: () => void;
@@ -43,11 +47,47 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
   const [instructor, setInstructor] = useState('');
   const [section, setSection] = useState('');
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set(DEFAULT_SELECTED_DAYS));
-  const [startTime, setStartTime] = useState('09:00 AM');
-  const [endTime, setEndTime] = useState('10:30 AM');
+  
+  // For conflict detection
+  const [existingSubjects, setExistingSubjects] = useState<SubjectRecord[]>([]);
+
+  // Internal date objects for the picker
+  const [startDate, setStartDate] = useState(new Date(2026, 0, 1, 9, 0));
+  const [endDate, setEndDate] = useState(new Date(2026, 0, 1, 10, 30));
+  
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
+  
   const [location, setLocation] = useState('');
 
+  const formatTimeDisplay = (date: Date) => {
+    let hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const strMinutes = minutes < 10 ? '0' + minutes : minutes;
+    return `${hours}:${strMinutes} ${ampm}`;
+  };
+
   const isSaveDisabled = useMemo(() => title.trim().length === 0, [title]);
+
+  useEffect(() => {
+    getSubjects().then(setExistingSubjects).catch(console.warn);
+  }, []);
+
+  const conflicts = useMemo(() => {
+    return findTimeConflicts(
+      {
+        days: Array.from(selectedDays),
+        startTime: formatTimeDisplay(startDate),
+        endTime: formatTimeDisplay(endDate),
+      },
+      existingSubjects
+    );
+  }, [selectedDays, startDate, endDate, existingSubjects]);
+
+  const hasConflict = conflicts.length > 0;
 
   const handleToggleDay = (day: string) => {
     setSelectedDays((prev) => {
@@ -61,6 +101,20 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
     });
   };
 
+  const onStartTimeChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    setShowStartPicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setStartDate(selectedDate);
+    }
+  };
+
+  const onEndTimeChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    setShowEndPicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setEndDate(selectedDate);
+    }
+  };
+
   const handleSave = () => {
     onSave({
       title: title.trim(),
@@ -68,8 +122,8 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
       instructor: instructor.trim() || undefined,
       section: section.trim() || undefined,
       days: Array.from(selectedDays),
-      startTime: startTime.trim(),
-      endTime: endTime.trim(),
+      startTime: formatTimeDisplay(startDate),
+      endTime: formatTimeDisplay(endDate),
       location: location.trim() || undefined,
     });
   };
@@ -162,21 +216,41 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
 
           <Text style={styles.sectionLabel}>Time</Text>
           <View style={styles.timeRow}>
-            <View style={styles.timeCard}>
+            <Pressable style={styles.timeCard} onPress={() => setShowStartPicker(true)}>
               <Text style={styles.timeLabel}>START</Text>
               <View style={styles.timeValueRow}>
-                <TextInput value={startTime} onChangeText={setStartTime} style={styles.timeInput} />
+                <Text style={styles.timeDisplay}>{formatTimeDisplay(startDate)}</Text>
                 <Feather name="clock" size={16} color="#1e2b26" />
               </View>
-            </View>
-            <View style={styles.timeCard}>
+            </Pressable>
+            <Pressable style={styles.timeCard} onPress={() => setShowEndPicker(true)}>
               <Text style={styles.timeLabel}>END</Text>
               <View style={styles.timeValueRow}>
-                <TextInput value={endTime} onChangeText={setEndTime} style={styles.timeInput} />
+                <Text style={styles.timeDisplay}>{formatTimeDisplay(endDate)}</Text>
                 <Feather name="clock" size={16} color="#1e2b26" />
               </View>
-            </View>
+            </Pressable>
           </View>
+
+          {showStartPicker && (
+            <DateTimePicker
+              value={startDate}
+              mode="time"
+              is24Hour={false}
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={onStartTimeChange}
+            />
+          )}
+
+          {showEndPicker && (
+            <DateTimePicker
+              value={endDate}
+              mode="time"
+              is24Hour={false}
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={onEndTimeChange}
+            />
+          )}
 
           <View style={styles.locationInputRow}>
             <Feather name="map-pin" size={18} color="#1e2b26" />
@@ -188,6 +262,19 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
               style={styles.locationInput}
             />
           </View>
+
+          {hasConflict && (
+            <View style={styles.conflictWarning}>
+              <View style={styles.conflictWarningHeader}>
+                <Feather name="alert-triangle" size={16} color="#991b1b" />
+                <Text style={styles.conflictWarningTitle}>Time Conflict Detected</Text>
+              </View>
+              <Text style={styles.conflictWarningBody}>
+                This overlaps with <Text style={styles.conflictSubjectName}>{conflicts[0].title}</Text>. 
+                Proceeding would mess up your timetable in the schedule tab.
+              </Text>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -340,13 +427,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  timeInput: {
+  timeDisplay: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
     color: '#1e2b26',
-    paddingVertical: 0,
-    paddingHorizontal: 0,
-    minWidth: 88,
+    paddingVertical: 2,
   },
   locationInputRow: {
     flexDirection: 'row',
@@ -387,5 +472,31 @@ const styles = StyleSheet.create({
     color: '#f2f6f3',
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
+  },
+  conflictWarning: {
+    marginTop: 18,
+    padding: 14,
+    backgroundColor: '#fef2f2',
+    borderRadius: 14,
+  },
+  conflictWarningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  conflictWarningTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+    color: '#991b1b',
+  },
+  conflictWarningBody: {
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 13,
+    color: '#7f1d1d',
+    lineHeight: 18,
+  },
+  conflictSubjectName: {
+    fontFamily: 'Manrope_700Bold',
   },
 });
