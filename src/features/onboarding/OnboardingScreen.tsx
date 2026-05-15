@@ -1,5 +1,7 @@
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
+import { shadowLg } from '../../ui/tokens/shadows';
 
 type OnboardingScreenProps = {
   onAddSubjectPress: () => void;
@@ -10,33 +12,51 @@ export default function OnboardingScreen({ onAddSubjectPress, onSkipPress }: Onb
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>Ready to organize your{`\n`}semester?</Text>
-        <Text style={styles.subtitle}>Let's set up your academic hub for success.</Text>
-
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>Build Your Foundation</Text>
-          <Text style={styles.infoBody}>
-            In Skedue, everything revolves around your Subjects. Start by creating your first class to unlock
-            schedules, tasks, and notes.
-          </Text>
+        <View style={styles.heroSection}>
+          <View style={styles.heroIconWrapper}>
+            <LinearGradient colors={['#3d6657', '#2b4a3f']} style={styles.heroIconCircle}>
+              <Feather name="book-open" size={32} color="#ffffff" />
+            </LinearGradient>
+          </View>
+          <Text style={styles.title}>Ready to organize your{`\n`}semester?</Text>
+          <Text style={styles.subtitle}>Let's set up your academic hub for success.</Text>
         </View>
-        <Text style={styles.sectionKicker}>COMING UP ONCE YOU SET UP</Text>
+
+        <LinearGradient colors={['#16312b', '#1f3a33']} style={styles.infoCard}>
+          <View style={styles.infoCardHeader}>
+            <Feather name="layers" size={20} color="#cfe8d8" />
+            <Text style={styles.infoTitle}>Build Your Foundation</Text>
+          </View>
+          <Text style={styles.infoBody}>
+            In Skedue, everything revolves around your Subjects. Start by creating your first class to unlock schedules, tasks, and notes.
+          </Text>
+        </LinearGradient>
+
+        <Text style={styles.sectionKicker}>CORE FEATURES</Text>
         <View style={styles.infoGrid}>
           <View style={styles.infoTile}>
-            <Feather name="calendar" size={18} color="#7a847f" style={styles.infoTileIcon} />
+            <View style={[styles.tileIconCircle, { backgroundColor: '#eef2f0' }]}>
+              <Feather name="calendar" size={18} color="#2b4a3f" />
+            </View>
             <Text style={styles.infoTileText}>Today's Schedule</Text>
           </View>
           <View style={styles.infoTile}>
-            <Feather name="check-square" size={18} color="#7a847f" style={styles.infoTileIcon} />
-            <Text style={styles.infoTileText}>Task</Text>
+            <View style={[styles.tileIconCircle, { backgroundColor: '#fdf7f0' }]}>
+              <Feather name="check-square" size={18} color="#946a3d" />
+            </View>
+            <Text style={styles.infoTileText}>Tasks & To-do's</Text>
           </View>
           <View style={styles.infoTile}>
-            <Feather name="file-text" size={18} color="#7a847f" style={styles.infoTileIcon} />
-            <Text style={styles.infoTileText}>Notes</Text>
+            <View style={[styles.tileIconCircle, { backgroundColor: '#f0f4ff' }]}>
+              <Feather name="file-text" size={18} color="#3d5a94" />
+            </View>
+            <Text style={styles.infoTileText}>Class Notes</Text>
           </View>
           <View style={styles.infoTile}>
-            <Feather name="grid" size={18} color="#7a847f" style={styles.infoTileIcon} />
-            <Text style={styles.infoTileText}>Explore Timetable</Text>
+            <View style={[styles.tileIconCircle, { backgroundColor: '#fdf0f7' }]}>
+              <Feather name="grid" size={18} color="#943d6e" />
+            </View>
+            <Text style={styles.infoTileText}>Interactive Timetable</Text>
           </View>
         </View>
       </View>
@@ -47,10 +67,10 @@ export default function OnboardingScreen({ onAddSubjectPress, onSkipPress }: Onb
             <Text style={styles.skipText}>Skip</Text>
           </Pressable>
           <Pressable style={styles.addSubjectButton} onPress={onAddSubjectPress}>
+            <Text style={styles.addSubjectText}>Get Started</Text>
             <View style={styles.addSubjectIcon}>
-              <Feather name="plus" size={18} color="#ecf2ee" />
+              <Feather name="arrow-right" size={18} color="#ffffff" />
             </View>
-            <Text style={styles.addSubjectText}>Add subject</Text>
           </Pressable>
         </View>
       </View>
@@ -68,42 +88,58 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 24,
   },
+  heroSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  heroIconWrapper: {
+    marginBottom: 20,
+    ...shadowLg,
+  },
+  heroIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   title: {
     color: '#1e2b26',
     fontFamily: 'Manrope_700Bold',
-    fontSize: 30,
-    lineHeight: 38,
-    marginBottom: 10,
+    fontSize: 28,
+    lineHeight: 36,
+    textAlign: 'center',
+    marginBottom: 8,
   },
   subtitle: {
     color: '#56615a',
     fontFamily: 'Manrope_400Regular',
-    fontSize: 16,
+    fontSize: 15,
     lineHeight: 22,
-    marginBottom: 24,
+    textAlign: 'center',
+    paddingHorizontal: 10,
   },
   infoCard: {
-    backgroundColor: '#16312b',
-    borderRadius: 22,
-    padding: 20,
-    shadowColor: '#0f1a16',
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 4,
+    borderRadius: 24,
+    padding: 22,
+    ...shadowLg,
+  },
+  infoCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
   },
   infoTitle: {
     color: '#e8f0ea',
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
-    lineHeight: 24,
-    marginBottom: 8,
   },
   infoBody: {
     color: '#c9d4cf',
     fontFamily: 'Manrope_400Regular',
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   sectionKicker: {
     color: '#a4afa9',
@@ -117,28 +153,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-    marginBottom: 12,
   },
   infoTile: {
     width: '47%',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: '#d9d6d0',
-    paddingVertical: 18,
-    paddingHorizontal: 14,
+    borderRadius: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f7f5f0',
+    backgroundColor: '#ffffff',
+    ...shadowLg,
   },
-  infoTileIcon: {
-    marginBottom: 8,
+  tileIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
   },
   infoTileText: {
-    color: '#7a847f',
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 13,
-    lineHeight: 18,
+    color: '#2a332e',
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 12,
     textAlign: 'center',
   },
   bottomArea: {
@@ -152,44 +189,45 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   skipButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
+    height: 56,
     borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#d9d6d0',
-    minHeight: 56,
     alignItems: 'center',
     justifyContent: 'center',
   },
   skipText: {
-    color: '#4d5852',
+    color: '#6b746f',
     fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
+    fontSize: 16,
   },
   addSubjectButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#16312b',
-    borderRadius: 18,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    gap: 10,
-    minHeight: 56,
+    backgroundColor: '#3d6657',
+    borderRadius: 20,
+    height: 58,
+    paddingHorizontal: 20,
+    gap: 12,
     justifyContent: 'center',
+    shadowColor: '#3d6657',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
   },
   addSubjectIcon: {
     width: 28,
     height: 28,
-    borderRadius: 14,
-    backgroundColor: '#1f3a33',
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   addSubjectText: {
-    color: '#ecf2ee',
+    color: '#ffffff',
     fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
-    lineHeight: 18,
+    fontSize: 16,
+    letterSpacing: 0.2,
   },
 });

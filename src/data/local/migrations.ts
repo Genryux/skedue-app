@@ -29,4 +29,12 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 2,
+    up: async (db) => {
+      await db.execAsync(`
+        ALTER TABLE subjects ADD COLUMN term TEXT;
+      `);
+    },
+  },
 ];

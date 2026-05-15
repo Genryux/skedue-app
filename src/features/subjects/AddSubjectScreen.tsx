@@ -1,8 +1,10 @@
 import { Feather } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { BlurView } from 'expo-blur';
 import { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -15,6 +17,7 @@ import {
 import { getSubjects, type SubjectRecord } from '../../data/local/db';
 import { formatTimeDisplay } from '../../utils/timeUtils';
 import { findTimeConflicts } from './conflictUtils';
+import { shadowLg } from '../../ui/tokens/shadows';
 
 type AddSubjectScreenProps = {
   onBack: () => void;
@@ -22,7 +25,7 @@ type AddSubjectScreenProps = {
     title: string;
     code?: string;
     instructor?: string;
-    section?: string;
+    term?: string;
     days: string[];
     startTime: string;
     endTime: string;
@@ -45,7 +48,8 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
   const [code, setCode] = useState('');
   const [title, setTitle] = useState('');
   const [instructor, setInstructor] = useState('');
-  const [section, setSection] = useState('');
+  const [term, setTerm] = useState('');
+  const [showTermPicker, setShowTermPicker] = useState(false);
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set(DEFAULT_SELECTED_DAYS));
   
   // For conflict detection
@@ -120,7 +124,7 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
       title: title.trim(),
       code: code.trim() || undefined,
       instructor: instructor.trim() || undefined,
-      section: section.trim() || undefined,
+      term: term || undefined,
       days: Array.from(selectedDays),
       startTime: formatTimeDisplay(startDate),
       endTime: formatTimeDisplay(endDate),
@@ -132,11 +136,11 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <View style={styles.header}>
         <Pressable style={styles.headerIcon} onPress={onBack}>
-          <Feather name="arrow-left" size={22} color="#1e2b26" />
+          <Feather name="chevron-left" size={28} color="#1e2b26" />
         </Pressable>
         <Text style={styles.headerTitle}>New Subject</Text>
         <View style={styles.headerIconSpacer} />
@@ -147,8 +151,9 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.card}>
-          <View style={styles.inputRow}>
+        <Text style={styles.sectionTitle}>BASIC INFORMATION</Text>
+        <View style={styles.group}>
+          <View style={styles.row}>
             <TextInput
               value={code}
               onChangeText={setCode}
@@ -157,16 +162,18 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
               style={styles.input}
             />
           </View>
-          <View style={styles.inputRow}>
+          <View style={styles.separator} />
+          <View style={styles.row}>
             <TextInput
               value={title}
               onChangeText={setTitle}
-              placeholder="Title"
+              placeholder="Subject Title"
               placeholderTextColor="#91948f"
               style={styles.input}
             />
           </View>
-          <View style={styles.inputRow}>
+          <View style={styles.separator} />
+          <View style={styles.row}>
             <TextInput
               value={instructor}
               onChangeText={setInstructor}
@@ -175,59 +182,51 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
               style={styles.input}
             />
           </View>
-          <View style={styles.inputRow}>
-            <TextInput
-              value={section}
-              onChangeText={setSection}
-              placeholder="Section"
-              placeholderTextColor="#91948f"
-              style={styles.input}
-            />
-            <Feather name="info" size={18} color="#9aa09a" />
-          </View>
+          <View style={styles.separator} />
+          <Pressable style={styles.row} onPress={() => setShowTermPicker(true)}>
+            <Text style={[styles.input, !term && { color: '#91948f' }]}>
+              {term || 'Academic Period (Optional)'}
+            </Text>
+            <Feather name="chevron-right" size={20} color="#9aa09a" />
+          </Pressable>
         </View>
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={styles.cardHeaderIcon}>
-              <Feather name="calendar" size={18} color="#1b2f2a" />
+        <Text style={styles.sectionTitle}>SCHEDULE</Text>
+        <View style={styles.group}>
+          <View style={styles.daysContainer}>
+            <Text style={styles.rowLabel}>Days</Text>
+            <View style={styles.daysRow}>
+              {DAYS.map((day) => {
+                const isSelected = selectedDays.has(day.value);
+                return (
+                  <Pressable
+                    key={day.value}
+                    onPress={() => handleToggleDay(day.value)}
+                    style={[styles.dayCircle, isSelected && styles.dayCircleSelected]}
+                  >
+                    <Text style={[styles.dayCircleText, isSelected && styles.dayCircleTextSelected]}>
+                      {day.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
-            <Text style={styles.cardHeaderTitle}>Schedule</Text>
           </View>
-
-          <Text style={styles.sectionLabel}>Days</Text>
-          <View style={styles.daysRow}>
-            {DAYS.map((day) => {
-              const isSelected = selectedDays.has(day.value);
-
-              return (
-                <Pressable
-                  key={day.value}
-                  onPress={() => handleToggleDay(day.value)}
-                  style={[styles.dayChip, isSelected && styles.dayChipSelected]}
-                >
-                  <Text style={[styles.dayChipText, isSelected && styles.dayChipTextSelected]}>{day.label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <View style={styles.divider} />
-
-          <Text style={styles.sectionLabel}>Time</Text>
-          <View style={styles.timeRow}>
-            <Pressable style={styles.timeCard} onPress={() => setShowStartPicker(true)}>
-              <Text style={styles.timeLabel}>START</Text>
-              <View style={styles.timeValueRow}>
-                <Text style={styles.timeDisplay}>{formatTimeDisplay(startDate)}</Text>
-                <Feather name="clock" size={16} color="#1e2b26" />
+          
+          <View style={styles.separator} />
+          
+          <View style={styles.timeGroupRow}>
+            <Pressable style={styles.timeAction} onPress={() => setShowStartPicker(true)}>
+              <Text style={styles.timeActionLabel}>Start Time</Text>
+              <View style={styles.timeBadge}>
+                <Text style={styles.timeBadgeText}>{formatTimeDisplay(startDate)}</Text>
               </View>
             </Pressable>
-            <Pressable style={styles.timeCard} onPress={() => setShowEndPicker(true)}>
-              <Text style={styles.timeLabel}>END</Text>
-              <View style={styles.timeValueRow}>
-                <Text style={styles.timeDisplay}>{formatTimeDisplay(endDate)}</Text>
-                <Feather name="clock" size={16} color="#1e2b26" />
+            <View style={styles.verticalSeparator} />
+            <Pressable style={styles.timeAction} onPress={() => setShowEndPicker(true)}>
+              <Text style={styles.timeActionLabel}>End Time</Text>
+              <View style={styles.timeBadge}>
+                <Text style={styles.timeBadgeText}>{formatTimeDisplay(endDate)}</Text>
               </View>
             </Pressable>
           </View>
@@ -251,31 +250,31 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
               onChange={onEndTimeChange}
             />
           )}
+        </View>
 
-          <View style={styles.locationInputRow}>
-            <Feather name="map-pin" size={18} color="#1e2b26" />
+        <Text style={styles.sectionTitle}>LOCATION</Text>
+        <View style={styles.group}>
+          <View style={styles.row}>
+            <Feather name="map-pin" size={16} color="#1e2b26" style={{ marginRight: 10 }} />
             <TextInput
               value={location}
               onChangeText={setLocation}
-              placeholder="Location (Optional)"
+              placeholder="Room, Building, or Online"
               placeholderTextColor="#91948f"
-              style={styles.locationInput}
+              style={styles.input}
             />
           </View>
-
-          {hasConflict && (
-            <View style={styles.conflictWarning}>
-              <View style={styles.conflictWarningHeader}>
-                <Feather name="alert-triangle" size={16} color="#991b1b" />
-                <Text style={styles.conflictWarningTitle}>Time Conflict Detected</Text>
-              </View>
-              <Text style={styles.conflictWarningBody}>
-                This overlaps with <Text style={styles.conflictSubjectName}>{conflicts[0].title}</Text>. 
-                Proceeding would mess up your timetable in the schedule tab.
-              </Text>
-            </View>
-          )}
         </View>
+
+        {hasConflict && (
+          <View style={styles.conflictWarning}>
+            <Feather name="alert-triangle" size={20} color="#991b1b" />
+            <Text style={styles.conflictWarningBody}>
+              Conflicts with <Text style={styles.conflictSubjectName}>{conflicts[0].title}</Text>
+            </Text>
+          </View>
+        )}
+        <View style={{ height: 120 }} />
       </ScrollView>
 
       <View style={styles.footer}>
@@ -290,6 +289,50 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
           <Text style={styles.saveText}>Save Subject</Text>
         </Pressable>
       </View>
+
+      <Modal
+        visible={showTermPicker}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowTermPicker(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowTermPicker(false)}>
+          <BlurView intensity={20} style={StyleSheet.absoluteFill} tint="dark" />
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Academic Period</Text>
+              <Pressable onPress={() => setShowTermPicker(false)} style={styles.modalCloseButton}>
+                <Text style={styles.modalCloseText}>Done</Text>
+              </Pressable>
+            </View>
+            <ScrollView style={styles.modalOptionsContainer} showsVerticalScrollIndicator={false}>
+              {[
+                '1st Semester',
+                '2nd Semester',
+                'Summer / Midyear',
+                '1st Quarter',
+                '2nd Quarter',
+                '3rd Quarter',
+                '4th Quarter'
+              ].map((option) => (
+                <Pressable
+                  key={option}
+                  style={[styles.modalOption, term === option && styles.modalOptionSelected]}
+                  onPress={() => {
+                    setTerm(option);
+                    setShowTermPicker(false);
+                  }}
+                >
+                  <Text style={[styles.modalOptionText, term === option && styles.modalOptionTextSelected]}>{option}</Text>
+                  {term === option && <Feather name="check" size={20} color="#0f2a24" />}
+                </Pressable>
+              ))}
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -297,193 +340,187 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 24,
+    backgroundColor: '#f9f9f6',
     paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 0 : 0,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 20,
   },
   headerIcon: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
+    ...shadowLg,
   },
   headerIconSpacer: {
-    width: 32,
-    height: 32,
+    width: 44,
   },
   headerTitle: {
     color: '#1e2b26',
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 20,
+    fontFamily: 'Manrope_800ExtraBold',
+    fontSize: 18,
   },
   scrollContent: {
-    paddingBottom: 20,
-    gap: 18,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
   },
-  card: {
+  sectionTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
+    color: '#9aa09a',
+    marginLeft: 16,
+    marginBottom: 8,
+    marginTop: 24,
+    letterSpacing: 0.5,
+  },
+  group: {
     backgroundColor: '#ffffff',
-    borderRadius: 22,
-    padding: 18,
+    borderRadius: 20,
+    overflow: 'hidden',
+    ...shadowLg,
   },
-  inputRow: {
-    backgroundColor: '#f6f4ef',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 14,
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    paddingHorizontal: 16,
+    minHeight: 60,
+  },
+  rowLabel: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 15,
+    color: '#1e2b26',
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#f0f0ed',
+    marginLeft: 16,
   },
   input: {
     flex: 1,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 15,
-    color: '#2a332e',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    gap: 10,
-  },
-  cardHeaderIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: '#eef2ec',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardHeaderTitle: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 18,
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 16,
     color: '#1e2b26',
+    paddingVertical: 14,
   },
-  sectionLabel: {
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 14,
-    color: '#4d5852',
-    marginBottom: 10,
+  daysContainer: {
+    padding: 16,
   },
   daysRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginTop: 12,
   },
-  dayChip: {
-    width: 42,
+  dayCircle: {
+    width: 38,
     height: 38,
     borderRadius: 19,
-    borderWidth: 1,
-    borderColor: '#d9d6d0',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f9f9f6',
   },
-  dayChipSelected: {
-    backgroundColor: '#bfe4c9',
-    borderColor: '#bfe4c9',
+  dayCircleSelected: {
+    backgroundColor: '#0f2a24',
   },
-  dayChipText: {
+  dayCircleText: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 12,
-    color: '#6d756f',
+    fontSize: 13,
+    color: '#9aa09a',
   },
-  dayChipTextSelected: {
-    color: '#1b2f2a',
+  dayCircleTextSelected: {
+    color: '#ffffff',
   },
-  divider: {
-    height: 1,
-    backgroundColor: '#e4e1db',
-    marginBottom: 16,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    gap: 14,
-    marginBottom: 16,
-  },
-  timeCard: {
-    flex: 1,
-    backgroundColor: '#f6f4ef',
-    borderRadius: 16,
-    padding: 14,
-  },
-  timeLabel: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 12,
-    color: '#4d5852',
-    letterSpacing: 1,
-    marginBottom: 6,
-  },
-  timeValueRow: {
+  timeGroupRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
   },
-  timeDisplay: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 16,
+  timeAction: {
+    flex: 1,
+    padding: 16,
+    flexDirection: 'column',
+    gap: 6,
+  },
+  timeActionLabel: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 14,
     color: '#1e2b26',
-    paddingVertical: 2,
   },
-  locationInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f6f4ef',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 10,
+  verticalSeparator: {
+    width: 1,
+    height: 44,
+    backgroundColor: '#f0f0ed',
   },
-  locationInput: {
-    flex: 1,
-    fontFamily: 'Manrope_400Regular',
+  timeBadge: {
+    backgroundColor: '#f9f9f6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  timeBadgeText: {
+    fontFamily: 'Manrope_700Bold',
     fontSize: 15,
-    color: '#2a332e',
+    color: '#0f2a24',
   },
   footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
+    gap: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0ed',
   },
   cancelText: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
-    color: '#1e2b26',
+    fontSize: 16,
+    color: '#9aa09a',
+    paddingHorizontal: 8,
   },
   saveButton: {
+    flex: 1,
     backgroundColor: '#0f2a24',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 24,
+    height: 58,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadowLg,
   },
   saveButtonDisabled: {
-    opacity: 0.6,
+    backgroundColor: '#e4e1db',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   saveText: {
-    color: '#f2f6f3',
+    color: '#ffffff',
     fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
+    fontSize: 16,
   },
   conflictWarning: {
-    marginTop: 18,
-    padding: 14,
-    backgroundColor: '#fef2f2',
-    borderRadius: 14,
-  },
-  conflictWarningHeader: {
+    marginTop: 24,
+    marginHorizontal: 4,
+    padding: 16,
+    backgroundColor: '#fff5f5',
+    borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
+    gap: 12,
+  },
+  conflictWarningHeader: {
+    // Icon container
   },
   conflictWarningTitle: {
     fontFamily: 'Manrope_700Bold',
@@ -491,12 +528,78 @@ const styles = StyleSheet.create({
     color: '#991b1b',
   },
   conflictWarningBody: {
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 13,
-    color: '#7f1d1d',
-    lineHeight: 18,
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 14,
+    color: '#991b1b',
+    flex: 1,
   },
   conflictSubjectName: {
+    fontFamily: 'Manrope_700Bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingTop: 12,
+    maxHeight: '75%',
+    ...shadowLg,
+  },
+  modalHeader: {
+    paddingHorizontal: 24,
+    paddingBottom: 20,
+    alignItems: 'center',
+  },
+  modalHandle: {
+    width: 36,
+    height: 5,
+    backgroundColor: '#e4e1db',
+    borderRadius: 3,
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontFamily: 'Manrope_800ExtraBold',
+    fontSize: 19,
+    color: '#1e2b26',
+  },
+  modalCloseButton: {
+    position: 'absolute',
+    right: 24,
+    top: 14,
+  },
+  modalCloseText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 16,
+    color: '#0f2a24',
+  },
+  modalOptionsContainer: {
+    paddingHorizontal: 20,
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    marginBottom: 10,
+    backgroundColor: '#f9f9f6',
+  },
+  modalOptionSelected: {
+    backgroundColor: '#eef2ec',
+    borderWidth: 1,
+    borderColor: '#0f2a24',
+  },
+  modalOptionText: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 16,
+    color: '#2a332e',
+  },
+  modalOptionTextSelected: {
+    color: '#0f2a24',
     fontFamily: 'Manrope_700Bold',
   },
 });

@@ -22,6 +22,7 @@ import ScheduleScreen from '../schedule/ScheduleScreen';
 import AddSubjectScreen from '../subjects/AddSubjectScreen';
 import SubjectsScreen from '../subjects/SubjectsScreen';
 import DynamicIslandToast from '../../ui/DynamicIslandToast';
+import SubjectDetailScreen from '../subjects/SubjectDetailScreen';
 
 const formatTime = (time: string | null | undefined) => {
   if (!time) return '';
@@ -77,13 +78,17 @@ export default function MainScreen() {
   const [dbSubjects, setDbSubjects] = useState<SubjectRecord[]>([]);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isAddSubjectOpen, setIsAddSubjectOpen] = useState(false);
+  const [isSubjectDetailOpen, setIsSubjectDetailOpen] = useState(false);
+  const [selectedSubjectDetail, setSelectedSubjectDetail] = useState<any>(null);
+
   const sheetOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslate = useRef(new Animated.Value(18)).current;
   const buttonRotate = useRef(new Animated.Value(0)).current;
   const buttonScale = useRef(new Animated.Value(0)).current;
 
-  // Add Subject Transition
+  // Transitions
   const subjectSlideAnim = useRef(new Animated.Value(0)).current; // 0: hidden, 1: visible
+  const subjectDetailSlideAnim = useRef(new Animated.Value(0)).current; // 0: offscreen, 1: onscreen
 
   // Success Toast State
   const [toastVisible, setToastVisible] = useState(false);
@@ -237,14 +242,13 @@ export default function MainScreen() {
     Animated.parallel([
       Animated.timing(sheetOpacity, {
         toValue: 1,
-        duration: 250,
-        easing: Easing.out(Easing.cubic),
+        duration: 200,
         useNativeDriver: true,
       }),
-      Animated.timing(sheetTranslate, {
+      Animated.spring(sheetTranslate, {
         toValue: 0,
-        duration: 280,
-        easing: Easing.out(Easing.cubic),
+        friction: 8,
+        tension: 40,
         useNativeDriver: true,
       }),
       Animated.spring(buttonRotate, {
@@ -282,13 +286,11 @@ export default function MainScreen() {
       Animated.timing(sheetOpacity, {
         toValue: 0,
         duration: 200,
-        easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.timing(sheetTranslate, {
-        toValue: 18,
+        toValue: 20,
         duration: 200,
-        easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.spring(buttonRotate, {
@@ -326,6 +328,31 @@ export default function MainScreen() {
     }).start(({ finished }) => {
       if (finished) {
         setIsAddSubjectOpen(false);
+      }
+    });
+  };
+
+  const handlePressSubject = (subject: any) => {
+    setSelectedSubjectDetail(subject);
+    setIsSubjectDetailOpen(true);
+    Animated.timing(subjectDetailSlideAnim, {
+      toValue: 1,
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handleCloseSubjectDetail = () => {
+    Animated.timing(subjectDetailSlideAnim, {
+      toValue: 0,
+      duration: 350,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setIsSubjectDetailOpen(false);
+        setSelectedSubjectDetail(null);
       }
     });
   };
@@ -420,7 +447,10 @@ export default function MainScreen() {
         }
       >
         {activeTab === 'subjects' ? (
-          <SubjectsScreen subjects={subjects} />
+          <SubjectsScreen 
+            subjects={subjects} 
+            onPressSubject={handlePressSubject}
+          />
         ) : activeTab === 'schedule' ? (
           <ScheduleScreen subjects={dbSubjects} />
         ) : (
@@ -470,8 +500,14 @@ export default function MainScreen() {
                     </>
                   ) : (
                     <View style={styles.nextClassEmpty}>
-                      <Text style={styles.nextClassEmptyTitle}>No upcoming classes</Text>
-                      <Text style={styles.nextClassEmptyBody}>Add your first subject to see today's schedule.</Text>
+                      <Text style={styles.nextClassEmptyTitle}>
+                        {dbSubjects.length > 0 ? 'No more classes today' : 'No upcoming classes'}
+                      </Text>
+                      <Text style={styles.nextClassEmptyBody}>
+                        {dbSubjects.length > 0 
+                          ? 'Check your schedule tab for the rest of the week.' 
+                          : 'Add your first subject to see today\'s schedule.'}
+                      </Text>
                     </View>
                   )}
                 </LinearGradient>
@@ -630,6 +666,28 @@ export default function MainScreen() {
           ]}
         >
           <AddSubjectScreen onBack={handleCancelAddSubject} onSave={handleSaveSubject} />
+        </Animated.View>
+      )}
+
+      {isSubjectDetailOpen && (
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: '#f8f7f2',
+              transform: [{
+                translateX: subjectDetailSlideAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [500, 0],
+                })
+              }]
+            }
+          ]}
+        >
+          <SubjectDetailScreen 
+            subject={selectedSubjectDetail} 
+            onBack={handleCloseSubjectDetail} 
+          />
         </Animated.View>
       )}
 
@@ -936,9 +994,15 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 22,
-    backgroundColor: '#2b4a3f',
+    backgroundColor: '#3d6657', // Balanced vibrant green
     alignItems: 'center',
     justifyContent: 'center',
+    // Enhanced Premium iOS Glow
+    shadowColor: '#3d6657',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 12,
   },
   floatingButtonContainer: {
     position: 'absolute',
@@ -961,12 +1025,14 @@ const styles = StyleSheet.create({
   },
   actionSheetPanel: {
     paddingHorizontal: 24,
-    paddingBottom: 120,
+    paddingBottom: 110, // Just above the FAB
     gap: 12,
+    alignItems: 'flex-end', // Aligns to the right side above FAB
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-end', // Ensures it only takes minimum width
     gap: 12,
     paddingHorizontal: 18,
     paddingVertical: 14,

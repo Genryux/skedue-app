@@ -6,7 +6,7 @@ type SubjectRow = {
   title: string;
   code: string | null;
   instructor: string | null;
-  section: string | null;
+  term: string | null;
   days: string | null;
   startTime: string | null;
   endTime: string | null;
@@ -19,7 +19,7 @@ export type SubjectRecord = {
   title: string;
   code?: string | null;
   instructor?: string | null;
-  section?: string | null;
+  term?: string | null;
   days?: string[];
   startTime?: string | null;
   endTime?: string | null;
@@ -92,7 +92,7 @@ export const getSubjects = async (): Promise<SubjectRecord[]> => {
     title: row.title,
     code: row.code ?? undefined,
     instructor: row.instructor ?? undefined,
-    section: row.section ?? undefined,
+    term: row.term ?? undefined,
     days: parseDays(row.days),
     startTime: row.startTime ?? undefined,
     endTime: row.endTime ?? undefined,
@@ -110,13 +110,13 @@ export const insertSubject = async (
   const days = subject.days ? JSON.stringify(subject.days) : null;
 
   await db.runAsync(
-    'INSERT INTO subjects (id, title, code, instructor, section, days, startTime, endTime, location, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO subjects (id, title, code, instructor, term, days, startTime, endTime, location, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       subject.title,
       subject.code ?? null,
       subject.instructor ?? null,
-      subject.section ?? null,
+      subject.term ?? null,
       days,
       subject.startTime ?? null,
       subject.endTime ?? null,
@@ -130,7 +130,7 @@ export const insertSubject = async (
     title: subject.title,
     code: subject.code ?? undefined,
     instructor: subject.instructor ?? undefined,
-    section: subject.section ?? undefined,
+    term: subject.term ?? undefined,
     days: subject.days,
     startTime: subject.startTime ?? undefined,
     endTime: subject.endTime ?? undefined,

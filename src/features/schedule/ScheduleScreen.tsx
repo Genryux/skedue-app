@@ -447,53 +447,55 @@ const styles = StyleSheet.create({
     left: 68,
     top: 10,
     bottom: 40,
-    width: 2,
-    backgroundColor: '#e1ddd6',
+    width: 1.5,
+    backgroundColor: '#eeeae1',
     zIndex: -1,
   },
   timelineRow: {
     flexDirection: 'row',
-    marginBottom: 18,
+    marginBottom: 20,
   },
   timeWrapper: {
     width: 80,
     position: 'relative',
     alignItems: 'flex-end',
-    paddingTop: 0, // Removed top padding to align with the very top of the card
-    paddingRight: 24, // Space for dot and gap
+    paddingTop: 0,
+    paddingRight: 24,
   },
   timeText: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
-    color: '#2a332e',
-    marginTop: 2, // Minor tweak for visual centering with the dot
+    color: '#6b746f',
+    marginTop: 2,
   },
   timeDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#e1ddd6', // Neutral inactive color
-    borderWidth: 2,
-    borderColor: '#c9c4bc', // Muted inactive border
+    backgroundColor: '#ffffff',
+    borderWidth: 2.5,
+    borderColor: '#eeeae1',
     position: 'absolute',
     right: 5,
-    top: 4, // Aligned with the top section of the card
+    top: 4,
     zIndex: 1,
   },
   timeDotActive: {
-    backgroundColor: '#2b4a3f', // Primary green when active
-    borderColor: '#d7e4dd', // Light border for pop
+    backgroundColor: '#3d6657',
+    borderColor: '#3d6657',
   },
   eventCard: {
     flex: 1,
     backgroundColor: '#ffffff',
-    borderRadius: 24,
+    borderRadius: 22,
     padding: 18,
-    // Removed borders
+    borderWidth: 1,
+    borderColor: '#eeeae1',
+    ...shadowLg,
   },
   eventCardPrimary: {
-    backgroundColor: '#e9f3ec',
-    // Removed borders
+    backgroundColor: '#f1f8f4',
+    borderColor: '#c9ded1',
   },
   eventTitle: {
     fontFamily: 'Manrope_700Bold',
@@ -527,30 +529,37 @@ const styles = StyleSheet.create({
     color: '#4d5852',
   },
   emptyCard: {
-    backgroundColor: '#f7f5f0',
-    borderRadius: 24,
-    padding: 18,
+    backgroundColor: '#ffffff',
+    borderRadius: 26,
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    gap: 12,
     borderWidth: 1,
-    borderColor: '#e4e1db',
-    alignItems: 'flex-start',
-    gap: 10,
+    borderColor: '#eeeae1',
+    ...shadowLg,
   },
   emptyIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#e0ebe4',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#e9f3ec',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#c9ded1',
   },
   emptyTitle: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 16,
+    fontSize: 18,
     color: '#1e2b26',
   },
   emptyBody: {
     fontFamily: 'Manrope_400Regular',
-    fontSize: 13,
+    fontSize: 14,
     color: '#6b746f',
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

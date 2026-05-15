@@ -22,9 +22,10 @@ const DAY_LABELS: Record<string, string> = {
 
 type SubjectsScreenProps = {
   subjects: FormattedSubject[];
+  onPressSubject: (subject: FormattedSubject) => void;
 };
 
-export default function SubjectsScreen({ subjects }: SubjectsScreenProps) {
+export default function SubjectsScreen({ subjects, onPressSubject }: SubjectsScreenProps) {
   return (
     <>
       <View style={styles.titleBlockSubjects}>
@@ -46,12 +47,16 @@ export default function SubjectsScreen({ subjects }: SubjectsScreenProps) {
           </View>
         ) : (
           subjects.map((subject) => (
-            <View key={subject.id} style={styles.subjectCard}>
+            <Pressable 
+              key={subject.id} 
+              style={styles.subjectCard}
+              onPress={() => onPressSubject(subject)}
+            >
               <View style={styles.subjectHeader}>
                 <View style={styles.subjectCodePill}>
                   <Text style={styles.subjectCodeText}>{subject.code}</Text>
                 </View>
-                <Feather name="more-horizontal" size={18} color="#6b746f" />
+                <Feather name="chevron-right" size={18} color="#6b746f" />
               </View>
               <Text style={styles.subjectTitle}>{subject.title}</Text>
               <Text style={styles.subjectInstructor}>
@@ -96,7 +101,7 @@ export default function SubjectsScreen({ subjects }: SubjectsScreenProps) {
                   <Text style={styles.subjectMetaText}>{subject.notesCount} Notes</Text>
                 </View>
               </View>
-            </View>
+            </Pressable>
           ))
         )}
       </View>
