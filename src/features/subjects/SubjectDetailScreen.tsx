@@ -67,6 +67,11 @@ const CardScale = ({
 export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailScreenProps) {
   const insets = useSafeAreaInsets();
 
+  const folders = Array.isArray(subject?.folders) ? subject.folders : [];
+  const looseNotes = Array.isArray(subject?.notes)
+    ? subject.notes.filter((note: any) => !note.folderId)
+    : [];
+
   // Tab State
   const [activeTab, setActiveTab] = useState<'subject' | 'notes' | 'tasks'>('subject');
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
@@ -402,17 +407,45 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
           <>
             {/* Workspace Section */}
             <View style={styles.section}>
-              <Text style={styles.sectionHeaderTitle}>Workspace</Text>
-
-              <View style={styles.emptyStateContainer}>
-                <View style={styles.emptyStateIconWrapper}>
-                  <Feather name="folder-plus" size={32} color="#a7b7af" />
-                </View>
-                <Text style={styles.emptyStateTitle}>Your workspace is empty</Text>
-                <Text style={styles.emptyStateBody}>
-                  Create folders and notes to organize your study materials.
-                </Text>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionHeaderTitle}>Workspace</Text>
               </View>
+
+              {folders.length === 0 ? (
+                <View style={styles.workspaceEmptyState}>
+                  <View style={styles.workspaceEmptyIconWrapper}>
+                    <Feather name="folder" size={22} color="#8f968f" />
+                  </View>
+                  <Text style={styles.workspaceEmptyTitle}>No folders yet</Text>
+                  <Text style={styles.workspaceEmptyBody}>
+                    Folders will appear here once you add them to this subject.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.folderGridRow}>
+                  {folders.slice(0, 2).map((folder: any, index: number) => {
+                    const count = typeof folder.count === 'number' ? folder.count : 0;
+
+                    return (
+                      <View
+                        key={folder.id ?? `${folder.title}-${index}`}
+                        style={styles.folderCard}
+                      >
+                        <View style={styles.folderCardTopRow}>
+                          <Text style={styles.folderCardTitle} numberOfLines={1}>
+                            {folder.title}
+                          </Text>
+                        </View>
+
+                        <View style={styles.folderCardBottomRow}>
+                          <Text style={styles.folderCardCount}>{count}</Text>
+                          <Text style={styles.folderCardCountLabel}>items</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
             </View>
 
             {/* Loose Notes Section */}
@@ -422,28 +455,27 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                 <Text style={styles.sectionHeaderTitle}>Loose Notes</Text>
               </View>
 
-              {/* Grey Container Card */}
-              <View style={styles.notesOuterContainer}>
-                {/* Note 1 */}
-                <CardScale style={styles.noteCard}>
-                  <Text style={styles.noteText} numberOfLines={2}>
-                    Theorem 4.1 proof variations from office hours...
+              {looseNotes.length === 0 ? (
+                <View style={styles.looseNotesEmptyState}>
+                  <View style={styles.looseNotesEmptyIconWrapper}>
+                    <Feather name="file-text" size={22} color="#8f968f" />
+                  </View>
+                  <Text style={styles.looseNotesEmptyTitle}>No loose notes yet</Text>
+                  <Text style={styles.looseNotesEmptyBody}>
+                    Notes saved here stay outside folders for quick capture.
                   </Text>
-                </CardScale>
-
-                {/* Note 2 */}
-                <CardScale style={styles.noteCard}>
-                  <Text style={styles.noteText} numberOfLines={2}>
-                    Study group ideas for midterm prep.
-                  </Text>
-                </CardScale>
-
-                {/* New Note Button */}
-                <Pressable style={styles.newNoteButton} onPress={handleOpenActions}>
-                  <Feather name="plus" size={14} color="#2b4a3f" style={{ marginRight: 6 }} />
-                  <Text style={styles.newNoteButtonText}>NEW NOTE</Text>
-                </Pressable>
-              </View>
+                </View>
+              ) : (
+                <View style={styles.notesOuterContainer}>
+                  {looseNotes.map((note: any) => (
+                    <CardScale key={note.id} style={styles.noteCard}>
+                      <Text style={styles.noteText} numberOfLines={2}>
+                        {note.preview ?? note.title ?? 'Untitled note'}
+                      </Text>
+                    </CardScale>
+                  ))}
+                </View>
+              )}
             </View>
           </>
         )}
@@ -668,6 +700,93 @@ const styles = StyleSheet.create({
     color: '#1e2b26',
     marginBottom: 14,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  workspaceEmptyState: {
+    backgroundColor: '#f3f2ee',
+    borderRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 18,
+    alignItems: 'center',
+  },
+  workspaceEmptyIconWrapper: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#e5e1d8',
+  },
+  workspaceEmptyTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 17,
+    color: '#1e2b26',
+    marginBottom: 8,
+  },
+  workspaceEmptyBody: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#6b746f',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  folderCard: {
+    flex: 1,
+    borderRadius: 28,
+    minHeight: 230,
+    padding: 22,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    backgroundColor: '#f6f4ee',
+    borderWidth: 1,
+    borderColor: '#e4e0d6',
+    shadowColor: '#000000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  folderCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  folderCardTitle: {
+    flex: 1,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 20,
+    lineHeight: 24,
+    color: '#1e2b26',
+  },
+  folderCardBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+  },
+  folderCardCount: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 70,
+    lineHeight: 70,
+    color: '#1e2b26',
+    letterSpacing: -2,
+  },
+  folderCardCountLabel: {
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 28,
+    lineHeight: 34,
+    color: '#6b746f',
+    paddingBottom: 6,
+  },
   taskCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -830,11 +949,38 @@ const styles = StyleSheet.create({
   notesHeaderIcon: {
     marginRight: 10,
   },
-  notesOuterContainer: {
-    backgroundColor: '#eeeae1', // Warm container low gray
+  looseNotesEmptyState: {
+    backgroundColor: '#f3f2ee',
     borderRadius: 24,
-    padding: 16,
-    gap: 10,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 16,
+    alignItems: 'center',
+  },
+  looseNotesEmptyIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e5e1d8',
+  },
+  looseNotesEmptyTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 16,
+    color: '#1e2b26',
+    marginBottom: 6,
+  },
+  looseNotesEmptyBody: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#6b746f',
+    textAlign: 'center',
+    marginBottom: 16,
   },
   noteCard: {
     backgroundColor: '#ffffff',
@@ -847,19 +993,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#2a332e',
     lineHeight: 20,
-  },
-  newNoteButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 12,
-    marginTop: 4,
-  },
-  newNoteButtonText: {
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 13,
-    color: '#2b4a3f',
-    letterSpacing: 1.0,
   },
   navDock: {
     position: 'absolute',
