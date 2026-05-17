@@ -14,6 +14,14 @@ type SubjectRow = {
   createdAt: number;
 };
 
+type FolderRow = {
+  id: string;
+  subjectId: string;
+  title: string;
+  color: string;
+  createdAt: number;
+};
+
 export type SubjectRecord = {
   id: string;
   title: string;
@@ -24,6 +32,14 @@ export type SubjectRecord = {
   startTime?: string | null;
   endTime?: string | null;
   location?: string | null;
+  createdAt: number;
+};
+
+export type FolderRecord = {
+  id: string;
+  subjectId: string;
+  title: string;
+  color: string;
   createdAt: number;
 };
 
@@ -135,6 +151,41 @@ export const insertSubject = async (
     startTime: subject.startTime ?? undefined,
     endTime: subject.endTime ?? undefined,
     location: subject.location ?? undefined,
+    createdAt,
+  };
+};
+
+export const getFoldersBySubjectId = async (subjectId: string): Promise<FolderRecord[]> => {
+  const db = await getDb();
+  const rows = await db.getAllAsync<FolderRow>(
+    'SELECT * FROM folders WHERE subjectId = ? ORDER BY createdAt ASC',
+    [subjectId]
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    subjectId: row.subjectId,
+    title: row.title,
+    color: row.color,
+    createdAt: row.createdAt,
+  }));
+};
+
+export const insertFolder = async (folder: Omit<FolderRecord, 'id' | 'createdAt'>): Promise<FolderRecord> => {
+  const db = await getDb();
+  const id = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+  const createdAt = Date.now();
+
+  await db.runAsync(
+    'INSERT INTO folders (id, subjectId, title, color, createdAt) VALUES (?, ?, ?, ?, ?)',
+    [id, folder.subjectId, folder.title, folder.color, createdAt]
+  );
+
+  return {
+    id,
+    subjectId: folder.subjectId,
+    title: folder.title,
+    color: folder.color,
     createdAt,
   };
 };

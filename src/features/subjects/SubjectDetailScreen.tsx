@@ -8,12 +8,15 @@ import {
   Animated,
   Easing,
   Platform,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
+import { getFoldersBySubjectId, insertFolder } from '../../data/local/db';
 
 type SubjectDetailScreenProps = {
   subject: any;
@@ -64,13 +67,71 @@ const CardScale = ({
   );
 };
 
+const FOLDER_COLORS = [
+  '#0B3B39',
+  '#1B4332',
+  '#14532D',
+  '#264653',
+  '#2A4F4B',
+  '#0F766E',
+  '#4D7C0F',
+  '#155E75',
+  '#166534',
+  '#1E3A5F',
+  '#312E81',
+  '#4C1D95',
+  '#581C87',
+  '#7F1D1D',
+  '#78350F',
+  '#92400E',
+  '#374151',
+  '#334155',
+  '#172554',
+  '#881337',
+] as const;
+
 export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailScreenProps) {
   const insets = useSafeAreaInsets();
 
-  const folders = Array.isArray(subject?.folders) ? subject.folders : [];
   const looseNotes = Array.isArray(subject?.notes)
     ? subject.notes.filter((note: any) => !note.folderId)
     : [];
+
+  const [folders, setFolders] = useState<any[]>(() => (Array.isArray(subject?.folders) ? subject.folders : []));
+  const [isFolderFormOpen, setIsFolderFormOpen] = useState(false);
+  const [folderName, setFolderName] = useState('');
+  const [selectedFolderColor, setSelectedFolderColor] = useState<(typeof FOLDER_COLORS)[number]>(FOLDER_COLORS[0]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadFolders = async () => {
+      if (!subject?.id) {
+        if (isMounted) {
+          setFolders([]);
+        }
+        return;
+      }
+
+      try {
+        const storedFolders = await getFoldersBySubjectId(subject.id);
+        if (isMounted) {
+          setFolders(storedFolders);
+        }
+      } catch (error) {
+        console.warn('Failed to load folders', error);
+        if (isMounted) {
+          setFolders(Array.isArray(subject?.folders) ? subject.folders : []);
+        }
+      }
+    };
+
+    loadFolders();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [subject?.id, subject?.folders]);
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'subject' | 'notes' | 'tasks'>('subject');
@@ -86,6 +147,8 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
   const sheetTranslate = useRef(new Animated.Value(18)).current;
   const buttonRotate = useRef(new Animated.Value(0)).current;
   const buttonScale = useRef(new Animated.Value(0)).current;
+  const folderSheetOpacity = useRef(new Animated.Value(0)).current;
+  const folderSheetTranslate = useRef(new Animated.Value(18)).current;
 
   useEffect(() => {
     Animated.sequence([
@@ -170,6 +233,73 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
         setIsActionSheetOpen(false);
       }
     });
+  };
+
+  const handleOpenFolderForm = () => {
+    handleCloseActions();
+    setTimeout(() => {
+      setIsFolderFormOpen(true);
+      Animated.parallel([
+        Animated.timing(folderSheetOpacity, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.spring(folderSheetTranslate, {
+          toValue: 0,
+          friction: 8,
+          tension: 42,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, 220);
+  };
+
+  const handleCloseFolderForm = () => {
+    Animated.parallel([
+      Animated.timing(folderSheetOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(folderSheetTranslate, {
+        toValue: 18,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setIsFolderFormOpen(false);
+      }
+    });
+  };
+
+  const handleSaveFolder = async () => {
+    const name = folderName.trim();
+
+    if (!name || !subject?.id) {
+      return;
+    }
+
+    try {
+      const savedFolder = await insertFolder({
+        subjectId: subject.id,
+        title: name,
+        color: selectedFolderColor,
+      });
+
+      setFolders((current) => [
+        {
+          ...savedFolder,
+          count: 0,
+        },
+        ...current,
+      ]);
+      setFolderName('');
+      handleCloseFolderForm();
+    } catch (error) {
+      console.warn('Failed to save folder', error);
+    }
   };
 
   return (
@@ -425,6 +555,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                 <View style={styles.folderGridRow}>
                   {folders.slice(0, 2).map((folder: any, index: number) => {
                     const count = typeof folder.count === 'number' ? folder.count : 0;
+                    const folderColor = folder.color ?? '#d8ddd8';
 
                     return (
                       <View
@@ -432,6 +563,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                         style={styles.folderCard}
                       >
                         <View style={styles.folderCardTopRow}>
+                          <View style={[styles.folderColorDot, { backgroundColor: folderColor }]} />
                           <Text style={styles.folderCardTitle} numberOfLines={1}>
                             {folder.title}
                           </Text>
@@ -572,7 +704,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
             </Pressable>
 
             {/* Shortcut 3: Create Folder */}
-            <Pressable style={styles.actionButton} onPress={() => { handleCloseActions(); setActiveTab('notes'); }}>
+            <Pressable style={styles.actionButton} onPress={handleOpenFolderForm}>
               <View style={styles.actionIconCircle}>
                 <Feather name="folder" size={18} color="#1e2b26" />
               </View>
@@ -581,6 +713,100 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
           </Animated.View>
         </View>
       ) : null}
+
+      <Modal
+        visible={isFolderFormOpen}
+        transparent
+        animationType="none"
+        onRequestClose={handleCloseFolderForm}
+      >
+        <View style={styles.folderFormOverlay}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: folderSheetOpacity }]}> 
+            <BlurView
+              intensity={80}
+              tint="light"
+              style={StyleSheet.absoluteFill}
+              experimentalBlurMethod="none"
+            />
+            <View style={styles.folderFormBackdrop} />
+          </Animated.View>
+
+          <Pressable style={styles.folderFormPressTarget} onPress={handleCloseFolderForm} />
+
+          <Animated.View
+            style={[
+              styles.folderFormSheet,
+              {
+                opacity: folderSheetOpacity,
+                transform: [{ translateY: folderSheetTranslate }],
+              },
+            ]}
+          >
+            <View style={styles.folderFormHandle} />
+
+            <View style={styles.folderFormHeader}>
+              <Text style={styles.folderFormTitle}>Create Folder</Text>
+            </View>
+
+            <View style={styles.folderFormSection}>
+              <Text style={styles.folderFormLabel}>Folder Name</Text>
+              <View style={styles.folderFormInputShell}>
+                <Feather name="folder" size={18} color="#59625d" style={styles.folderFormInputIcon} />
+                <TextInput
+                  value={folderName}
+                  onChangeText={setFolderName}
+                  placeholder="e.g. Fall Semester 2024"
+                  placeholderTextColor="#c1c5c1"
+                  style={styles.folderFormInput}
+                  autoCapitalize="words"
+                  returnKeyType="done"
+                />
+              </View>
+            </View>
+
+            <View style={styles.folderFormSection}>
+              <Text style={styles.folderFormLabel}>Folder Color</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.folderSwatchRow}
+              >
+                {FOLDER_COLORS.map((color) => {
+                  const isSelected = selectedFolderColor === color;
+                  return (
+                    <Pressable
+                      key={color}
+                      onPress={() => setSelectedFolderColor(color)}
+                      style={[
+                        styles.folderSwatch,
+                        {
+                          backgroundColor: color,
+                        },
+                        isSelected && styles.folderSwatchSelected,
+                      ]}
+                    >
+                      {isSelected ? <Feather name="check" size={20} color="#ffffff" /> : null}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            <View style={styles.folderFormFooter}>
+              <Pressable onPress={handleCloseFolderForm}>
+                <Text style={styles.folderFormCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.folderFormSubmitButton, !folderName.trim() && styles.folderFormSubmitButtonDisabled]}
+                onPress={handleSaveFolder}
+                disabled={!folderName.trim()}
+              >
+                <Text style={styles.folderFormSubmitText}>Create Folder</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -758,8 +984,14 @@ const styles = StyleSheet.create({
   folderCardTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    justifyContent: 'space-between',
     gap: 12,
+  },
+  folderColorDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginTop: 6,
+    flexShrink: 0,
   },
   folderCardTitle: {
     flex: 1,
@@ -981,6 +1213,143 @@ const styles = StyleSheet.create({
     color: '#6b746f',
     textAlign: 'center',
     marginBottom: 16,
+  },
+  notesOuterContainer: {
+    backgroundColor: '#f3f2ee',
+    borderRadius: 24,
+    padding: 16,
+    gap: 10,
+  },
+  folderFormOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+  },
+  folderFormBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10, 15, 14, 0.28)',
+  },
+  folderFormPressTarget: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  folderFormSheet: {
+    backgroundColor: '#F9F9F6',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 24,
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: -6 },
+    elevation: 14,
+  },
+  folderFormHandle: {
+    width: 68,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#e3e0d8',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  folderFormHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  folderFormTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 26,
+    lineHeight: 32,
+    color: '#101413',
+    letterSpacing: -0.3,
+  },
+  folderFormSection: {
+    marginBottom: 16,
+  },
+  folderFormLabel: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: '#39423e',
+    marginBottom: 8,
+  },
+  folderFormInputShell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 60,
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e6e2da',
+    paddingHorizontal: 16,
+    ...shadowLg,
+  },
+  folderFormInputIcon: {
+    marginRight: 10,
+  },
+  folderFormInput: {
+    flex: 1,
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 15,
+    color: '#1e2b26',
+    paddingVertical: 0,
+  },
+  folderSwatchRow: {
+    gap: 12,
+    paddingRight: 8,
+  },
+  folderSwatch: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  folderSwatchSelected: {
+    borderColor: '#111111',
+    shadowColor: '#000000',
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  folderFormFooter: {
+    marginTop: 4,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0ed',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  folderFormCancelText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 16,
+    color: '#9aa09a',
+    paddingHorizontal: 8,
+  },
+  folderFormSubmitButton: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 18,
+    backgroundColor: '#0f201b',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadowLgDark,
+  },
+  folderFormSubmitButtonDisabled: {
+    opacity: 0.5,
+  },
+  folderFormSubmitText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 16,
+    color: '#F9F9F6',
+    letterSpacing: 0.2,
   },
   noteCard: {
     backgroundColor: '#ffffff',
