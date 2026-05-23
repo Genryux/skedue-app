@@ -29,7 +29,16 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
-    ]
+      "expo-router",
+      "expo-font",
+      "expo-sqlite"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9e15ab95-3a8b-4a98-8d3b-fd3210815f57"
+      }
+    },
+    "owner": "kenzakigenryu"
   }
 }

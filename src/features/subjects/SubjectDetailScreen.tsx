@@ -10,6 +10,8 @@ import {
   Platform,
   Modal,
   TextInput,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -101,6 +103,16 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
   const [isFolderFormOpen, setIsFolderFormOpen] = useState(false);
   const [folderName, setFolderName] = useState('');
   const [selectedFolderColor, setSelectedFolderColor] = useState<(typeof FOLDER_COLORS)[number]>(FOLDER_COLORS[0]);
+  const [isFoldersExpanded, setIsFoldersExpanded] = useState(false);
+  const folderExpansionAnim = useRef(new Animated.Value(0)).current;
+  const featuredFolders = folders.slice(0, 3);
+  const remainingFolders = folders.slice(3);
+
+  useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -289,17 +301,43 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
       });
 
       setFolders((current) => [
+        ...current,
         {
           ...savedFolder,
           count: 0,
         },
-        ...current,
       ]);
       setFolderName('');
       handleCloseFolderForm();
     } catch (error) {
       console.warn('Failed to save folder', error);
     }
+  };
+
+  const handleToggleFolderExpansion = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+
+    if (isFoldersExpanded) {
+      Animated.timing(folderExpansionAnim, {
+        toValue: 0,
+        duration: 180,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) {
+          setIsFoldersExpanded(false);
+        }
+      });
+      return;
+    }
+
+    setIsFoldersExpanded(true);
+    Animated.timing(folderExpansionAnim, {
+      toValue: 1,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
   };
 
   return (
@@ -539,6 +577,20 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionHeaderTitle}>Workspace</Text>
+                {remainingFolders.length > 0 ? (
+                  <Pressable
+                    onPress={handleToggleFolderExpansion}
+                    style={styles.sectionHeaderActionButton}
+                    accessibilityRole="button"
+                    accessibilityLabel={isFoldersExpanded ? 'Collapse folders' : 'Expand folders'}
+                  >
+                    <Feather
+                      name={isFoldersExpanded ? 'minus' : 'plus'}
+                      size={18}
+                      color="#1e2b26"
+                    />
+                  </Pressable>
+                ) : null}
               </View>
 
               {folders.length === 0 ? (
@@ -552,68 +604,148 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                   </Text>
                 </View>
               ) : (
-                <View style={styles.folderGridRow}>
-                  {folders.slice(0, 2).map((folder: any, index: number) => {
-                    const count = typeof folder.count === 'number' ? folder.count : 0;
-                    const folderColor = folder.color ?? '#d8ddd8';
+                <View style={styles.folderStack}>
+                  {(() => {
+                    const renderFolderCard = (folder: any, variant: 'full' | 'compact') => {
+                      const count = typeof folder.count === 'number' ? folder.count : 0;
+                      const cardBackground = folder.color ?? '#2a4f4b';
+
+                      return (
+                        <View
+                          key={folder.id ?? `${folder.title}-${variant}`}
+                          style={[
+                            styles.folderCard,
+                            variant === 'full' ? styles.folderCardFull : styles.folderCardCompact,
+                            { backgroundColor: cardBackground },
+                          ]}
+                        >
+                          <LinearGradient
+                            colors={['rgba(255,255,255,0.07)', 'rgba(255,255,255,0.01)']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 0, y: 1 }}
+                            style={styles.folderCardSheen}
+                          />
+                          <View style={styles.folderCardTopRow}>
+                            <Text style={styles.folderCardTitle} numberOfLines={1}>
+                              {folder.title}
+                            </Text>
+                            <Feather name="chevron-right" size={22} color="rgba(255,255,255,0.92)" />
+                          </View>
+
+                          <View style={styles.folderCardBottomRow}>
+                            <Text style={styles.folderCardCount}>{count}</Text>
+                            <Text style={styles.folderCardCountLabel}>items</Text>
+                          </View>
+                        </View>
+                      );
+                    };
+
+                    const compactRows = [] as Array<[any | null, any | null]>;
+                    for (let index = 0; index < remainingFolders.length; index += 2) {
+                      compactRows.push([remainingFolders[index] ?? null, remainingFolders[index + 1] ?? null]);
+                    }
 
                     return (
-                      <View
-                        key={folder.id ?? `${folder.title}-${index}`}
-                        style={styles.folderCard}
-                      >
-                        <View style={styles.folderCardTopRow}>
-                          <View style={[styles.folderColorDot, { backgroundColor: folderColor }]} />
-                          <Text style={styles.folderCardTitle} numberOfLines={1}>
-                            {folder.title}
-                          </Text>
-                        </View>
+                      <>
+                        {featuredFolders.length > 0 ? (
+                          <View style={styles.folderGroup}>
+                            {renderFolderCard(featuredFolders[0], 'full')}
 
-                        <View style={styles.folderCardBottomRow}>
-                          <Text style={styles.folderCardCount}>{count}</Text>
-                          <Text style={styles.folderCardCountLabel}>items</Text>
-                        </View>
-                      </View>
+                            {featuredFolders.length > 1 ? (
+                              <View style={styles.folderGridRow}>
+                                {renderFolderCard(featuredFolders[1], 'compact')}
+                                {featuredFolders.length > 2 ? renderFolderCard(featuredFolders[2], 'compact') : <View style={styles.folderCardSpacer} />}
+                              </View>
+                            ) : null}
+                          </View>
+                        ) : null}
+
+                        {isFoldersExpanded ? (
+                          <Animated.View
+                            style={[
+                              styles.folderExpansionArea,
+                              {
+                                opacity: folderExpansionAnim,
+                                transform: [
+                                  {
+                                    translateY: folderExpansionAnim.interpolate({
+                                      inputRange: [0, 1],
+                                      outputRange: [14, 0],
+                                    }),
+                                  },
+                                ],
+                              },
+                            ]}
+                          >
+                            {compactRows.map(([leftFolder, rightFolder], rowIndex) => (
+                              <View key={`folder-row-${rowIndex}`} style={styles.folderGridRow}>
+                                {leftFolder ? renderFolderCard(leftFolder, 'compact') : <View style={styles.folderCardSpacer} />}
+                                {rightFolder ? renderFolderCard(rightFolder, 'compact') : <View style={styles.folderCardSpacer} />}
+                              </View>
+                            ))}
+                          </Animated.View>
+                        ) : null}
+                      </>
                     );
-                  })}
+                  })()}
                 </View>
               )}
             </View>
 
-            {/* Loose Notes Section */}
-            <View style={styles.section}>
-              <View style={styles.notesSectionHeader}>
-                <Feather name="file-text" size={22} color="#1e2b26" style={styles.notesHeaderIcon} />
-                <Text style={styles.sectionHeaderTitle}>Loose Notes</Text>
+            <Animated.View
+              style={[
+                styles.belowWorkspaceContent,
+                {
+                  opacity: folderExpansionAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.98, 1],
+                  }),
+                  transform: [
+                    {
+                      translateY: folderExpansionAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, 12],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              {/* Loose Notes Section */}
+              <View style={styles.section}>
+                <View style={styles.notesSectionHeader}>
+                  <Feather name="file-text" size={22} color="#1e2b26" style={styles.notesHeaderIcon} />
+                  <Text style={styles.sectionHeaderTitle}>Loose Notes</Text>
+                </View>
+
+                {looseNotes.length === 0 ? (
+                  <View style={styles.looseNotesEmptyState}>
+                    <View style={styles.looseNotesEmptyIconWrapper}>
+                      <Feather name="file-text" size={22} color="#8f968f" />
+                    </View>
+                    <Text style={styles.looseNotesEmptyTitle}>No loose notes yet</Text>
+                    <Text style={styles.looseNotesEmptyBody}>
+                      Notes saved here stay outside folders for quick capture.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.notesOuterContainer}>
+                    {looseNotes.map((note: any) => (
+                      <CardScale key={note.id} style={styles.noteCard}>
+                        <Text style={styles.noteText} numberOfLines={2}>
+                          {note.preview ?? note.title ?? 'Untitled note'}
+                        </Text>
+                      </CardScale>
+                    ))}
+                  </View>
+                )}
               </View>
 
-              {looseNotes.length === 0 ? (
-                <View style={styles.looseNotesEmptyState}>
-                  <View style={styles.looseNotesEmptyIconWrapper}>
-                    <Feather name="file-text" size={22} color="#8f968f" />
-                  </View>
-                  <Text style={styles.looseNotesEmptyTitle}>No loose notes yet</Text>
-                  <Text style={styles.looseNotesEmptyBody}>
-                    Notes saved here stay outside folders for quick capture.
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.notesOuterContainer}>
-                  {looseNotes.map((note: any) => (
-                    <CardScale key={note.id} style={styles.noteCard}>
-                      <Text style={styles.noteText} numberOfLines={2}>
-                        {note.preview ?? note.title ?? 'Untitled note'}
-                      </Text>
-                    </CardScale>
-                  ))}
-                </View>
-              )}
-            </View>
+              {/* Spacing bottom to allow scrolling over margins and floating dock nicely */}
+              <View style={{ height: 110 }} />
+            </Animated.View>
           </>
         )}
-
-        {/* Spacing bottom to allow scrolling over margins and floating dock nicely */}
-        <View style={{ height: 110 }} />
       </Animated.ScrollView>
 
       {/* Floating Bottom Tab Bar Navigation (Recreating Home Screen style exactly) */}
@@ -967,57 +1099,55 @@ const styles = StyleSheet.create({
   },
   folderCard: {
     flex: 1,
-    borderRadius: 28,
-    minHeight: 230,
-    padding: 22,
+    borderRadius: 26,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 14,
     justifyContent: 'space-between',
     overflow: 'hidden',
-    backgroundColor: '#f6f4ee',
-    borderWidth: 1,
-    borderColor: '#e4e0d6',
-    shadowColor: '#000000',
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
+    ...shadowLg,
+  },
+  folderCardFull: {
+    minHeight: 144,
+  },
+  folderCardCompact: {
+    minHeight: 118,
+  },
+  folderCardSheen: {
+    ...StyleSheet.absoluteFillObject,
   },
   folderCardTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    justifyContent: 'space-between',
     gap: 12,
-  },
-  folderColorDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginTop: 6,
-    flexShrink: 0,
   },
   folderCardTitle: {
     flex: 1,
     fontFamily: 'Manrope_600SemiBold',
-    fontSize: 20,
-    lineHeight: 24,
-    color: '#1e2b26',
+    fontSize: 16,
+    lineHeight: 21,
+    color: '#ffffff',
+    letterSpacing: -0.1,
   },
   folderCardBottomRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'baseline',
     gap: 10,
   },
   folderCardCount: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 70,
-    lineHeight: 70,
-    color: '#1e2b26',
-    letterSpacing: -2,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 34,
+    lineHeight: 36,
+    color: '#ffffff',
+    letterSpacing: -0.8,
   },
   folderCardCountLabel: {
     fontFamily: 'Manrope_400Regular',
-    fontSize: 28,
-    lineHeight: 34,
-    color: '#6b746f',
-    paddingBottom: 6,
+    fontSize: 14,
+    lineHeight: 18,
+    color: 'rgba(255, 255, 255, 0.78)',
+    paddingBottom: 2,
   },
   taskCard: {
     flexDirection: 'row',
@@ -1159,24 +1289,19 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     letterSpacing: 0.6,
   },
-  folderGridRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  halfWidthFolderCard: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 16,
-    ...shadowLg,
-  },
-  halfFolderBottomWrapper: {
-    marginTop: 4,
-  },
   notesSectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 14,
+  },
+  sectionHeaderActionButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   notesHeaderIcon: {
     marginRight: 10,
@@ -1219,6 +1344,26 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 16,
     gap: 10,
+  },
+  folderStack: {
+    gap: 14,
+  },
+  folderGroup: {
+    gap: 12,
+  },
+  folderGridRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  folderCardSpacer: {
+    flex: 1,
+  },
+  folderExpansionArea: {
+    gap: 12,
+    overflow: 'hidden',
+  },
+  belowWorkspaceContent: {
+    gap: 0,
   },
   folderFormOverlay: {
     ...StyleSheet.absoluteFillObject,
