@@ -18,7 +18,36 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
-import { getFoldersBySubjectId, insertFolder } from '../../data/local/db';
+import {
+  getFoldersBySubjectId,
+  getNotesBySubjectId,
+  insertFolder,
+  insertNote,
+  updateNote,
+  type FolderRecord,
+  type NoteRecord,
+} from '../../data/local/db';
+
+declare const require: any;
+
+const NoteEditorScreen = require('./NoteEditorScreen').default as React.ComponentType<{
+  subjectId: string;
+  subjectTitle: string;
+  note: NoteRecord | null;
+  folderOptions: Array<{ id: string; title: string; color: string }>;
+  onClose: () => void;
+  onSave: (
+    noteId: string | null,
+    draft: {
+      subjectId: string;
+      folderId: string | null;
+      title: string;
+      contentHtml: string;
+      contentText: string;
+      isPinned: boolean;
+    }
+  ) => Promise<void> | void;
+}>;
 
 type SubjectDetailScreenProps = {
   subject: any;
@@ -94,19 +123,25 @@ const FOLDER_COLORS = [
 
 export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailScreenProps) {
   const insets = useSafeAreaInsets();
-
-  const looseNotes = Array.isArray(subject?.notes)
-    ? subject.notes.filter((note: any) => !note.folderId)
-    : [];
-
-  const [folders, setFolders] = useState<any[]>(() => (Array.isArray(subject?.folders) ? subject.folders : []));
+  const [folders, setFolders] = useState<FolderRecord[]>([]);
+  const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [isFolderFormOpen, setIsFolderFormOpen] = useState(false);
   const [folderName, setFolderName] = useState('');
   const [selectedFolderColor, setSelectedFolderColor] = useState<(typeof FOLDER_COLORS)[number]>(FOLDER_COLORS[0]);
   const [isFoldersExpanded, setIsFoldersExpanded] = useState(false);
+  const [isNoteEditorOpen, setIsNoteEditorOpen] = useState(false);
+  const [selectedNote, setSelectedNote] = useState<NoteRecord | null>(null);
   const folderExpansionAnim = useRef(new Animated.Value(0)).current;
   const featuredFolders = folders.slice(0, 3);
   const remainingFolders = folders.slice(3);
+  const looseNotes = notes.filter((note) => !note.folderId);
+  const folderNoteCounts = notes.reduce<Record<string, number>>((accumulator, note) => {
+    if (note.folderId) {
+      accumulator[note.folderId] = (accumulator[note.folderId] ?? 0) + 1;
+    }
+
+    return accumulator;
+  }, {});
 
   useEffect(() => {
     if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -117,33 +152,77 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
   useEffect(() => {
     let isMounted = true;
 
-    const loadFolders = async () => {
+    const loadSubjectData = async () => {
       if (!subject?.id) {
         if (isMounted) {
           setFolders([]);
+          setNotes([]);
         }
         return;
       }
 
       try {
-        const storedFolders = await getFoldersBySubjectId(subject.id);
+        const [storedFolders, storedNotes] = await Promise.all([
+          getFoldersBySubjectId(subject.id),
+          getNotesBySubjectId(subject.id),
+        ]);
+
         if (isMounted) {
           setFolders(storedFolders);
+          setNotes(storedNotes);
         }
       } catch (error) {
-        console.warn('Failed to load folders', error);
+        console.warn('Failed to load subject detail data', error);
         if (isMounted) {
-          setFolders(Array.isArray(subject?.folders) ? subject.folders : []);
+          setFolders([]);
+          setNotes([]);
         }
       }
     };
 
-    loadFolders();
+    loadSubjectData();
 
     return () => {
       isMounted = false;
     };
   }, [subject?.id, subject?.folders]);
+
+  const handleOpenNoteEditor = (note: NoteRecord | null = null) => {
+    setSelectedNote(note);
+    setIsNoteEditorOpen(true);
+  };
+
+  const handleCloseNoteEditor = () => {
+    setIsNoteEditorOpen(false);
+    setSelectedNote(null);
+  };
+
+  const handleSaveNote = async (
+    noteId: string | null,
+    draft: {
+      subjectId: string;
+      folderId: string | null;
+      title: string;
+      contentHtml: string;
+      contentText: string;
+      isPinned: boolean;
+    }
+  ): Promise<void> => {
+    let savedNote: NoteRecord;
+
+    if (noteId) {
+      savedNote = await updateNote(noteId, draft);
+    } else {
+      savedNote = await insertNote(draft);
+    }
+
+    if (subject?.id) {
+      const refreshedNotes = await getNotesBySubjectId(subject.id);
+      setNotes(refreshedNotes);
+    }
+
+    setSelectedNote(savedNote);
+  };
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'subject' | 'notes' | 'tasks'>('subject');
@@ -186,6 +265,23 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
       ]),
     ]).start();
   }, []);
+
+  if (isNoteEditorOpen) {
+    return (
+      <NoteEditorScreen
+        subjectId={subject?.id ?? ''}
+        subjectTitle={subject?.title ?? subject?.code ?? 'Subject'}
+        note={selectedNote}
+        folderOptions={folders.map((folder) => ({
+          id: folder.id,
+          title: folder.title,
+          color: folder.color,
+        }))}
+        onClose={handleCloseNoteEditor}
+        onSave={handleSaveNote}
+      />
+    );
+  }
 
   const handleOpenActions = () => {
     setIsActionSheetOpen(true);
@@ -607,7 +703,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                 <View style={styles.folderStack}>
                   {(() => {
                     const renderFolderCard = (folder: any, variant: 'full' | 'compact') => {
-                      const count = typeof folder.count === 'number' ? folder.count : 0;
+                      const count = typeof folder.count === 'number' ? folder.count : (folderNoteCounts[folder.id] ?? 0);
                       const cardBackground = folder.color ?? '#2a4f4b';
 
                       return (
@@ -716,6 +812,14 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                 <View style={styles.notesSectionHeader}>
                   <Feather name="file-text" size={22} color="#1e2b26" style={styles.notesHeaderIcon} />
                   <Text style={styles.sectionHeaderTitle}>Loose Notes</Text>
+                  <Pressable
+                    onPress={() => handleOpenNoteEditor()}
+                    style={styles.sectionHeaderActionButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Create note"
+                  >
+                    <Feather name="plus" size={18} color="#1e2b26" />
+                  </Pressable>
                 </View>
 
                 {looseNotes.length === 0 ? (
@@ -727,13 +831,23 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                     <Text style={styles.looseNotesEmptyBody}>
                       Notes saved here stay outside folders for quick capture.
                     </Text>
+                    <Pressable style={styles.looseNotesEmptyButton} onPress={() => handleOpenNoteEditor()}>
+                      <Feather name="plus" size={16} color="#f9f9f6" />
+                      <Text style={styles.looseNotesEmptyButtonText}>Create note</Text>
+                    </Pressable>
                   </View>
                 ) : (
                   <View style={styles.notesOuterContainer}>
-                    {looseNotes.map((note: any) => (
-                      <CardScale key={note.id} style={styles.noteCard}>
-                        <Text style={styles.noteText} numberOfLines={2}>
-                          {note.preview ?? note.title ?? 'Untitled note'}
+                    {looseNotes.map((note) => (
+                      <CardScale key={note.id} onPress={() => handleOpenNoteEditor(note)} style={styles.noteCard}>
+                        <View style={styles.noteCardTopRow}>
+                          <Text style={styles.noteCardTitle} numberOfLines={1}>
+                            {note.title || 'Untitled note'}
+                          </Text>
+                          {note.isPinned ? <Feather name="star" size={14} color="#9A6700" /> : null}
+                        </View>
+                        <Text style={styles.noteCardPreview} numberOfLines={2}>
+                          {note.contentText || 'Tap to start your first draft.'}
                         </Text>
                       </CardScale>
                     ))}
@@ -828,7 +942,14 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
             </Pressable>
 
             {/* Shortcut 2: New Note */}
-            <Pressable style={styles.actionButton} onPress={() => { handleCloseActions(); setActiveTab('notes'); }}>
+            <Pressable
+              style={styles.actionButton}
+              onPress={() => {
+                handleCloseActions();
+                setActiveTab('notes');
+                handleOpenNoteEditor();
+              }}
+            >
               <View style={styles.actionIconCircle}>
                 <Feather name="file-text" size={18} color="#1e2b26" />
               </View>
@@ -939,6 +1060,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
           </Animated.View>
         </View>
       </Modal>
+
     </View>
   );
 }
@@ -1339,6 +1461,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  looseNotesEmptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#16312b',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    ...shadowLgDark,
+  },
+  looseNotesEmptyButtonText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+    color: '#f9f9f6',
+  },
   notesOuterContainer: {
     backgroundColor: '#f3f2ee',
     borderRadius: 24,
@@ -1502,7 +1639,20 @@ const styles = StyleSheet.create({
     padding: 16,
     ...shadowLg,
   },
-  noteText: {
+  noteCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 8,
+  },
+  noteCardTitle: {
+    flex: 1,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 15,
+    color: '#1e2b26',
+  },
+  noteCardPreview: {
     fontFamily: 'Manrope_500Medium',
     fontSize: 14,
     color: '#2a332e',

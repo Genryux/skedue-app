@@ -22,6 +22,18 @@ type FolderRow = {
   createdAt: number;
 };
 
+type NoteRow = {
+  id: string;
+  subjectId: string;
+  folderId: string | null;
+  title: string;
+  contentHtml: string;
+  contentText: string;
+  isPinned: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type SubjectRecord = {
   id: string;
   title: string;
@@ -41,6 +53,18 @@ export type FolderRecord = {
   title: string;
   color: string;
   createdAt: number;
+};
+
+export type NoteRecord = {
+  id: string;
+  subjectId: string;
+  folderId?: string | null;
+  title: string;
+  contentHtml: string;
+  contentText: string;
+  isPinned: boolean;
+  createdAt: number;
+  updatedAt: number;
 };
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -188,4 +212,127 @@ export const insertFolder = async (folder: Omit<FolderRecord, 'id' | 'createdAt'
     color: folder.color,
     createdAt,
   };
+};
+
+const parseBoolean = (value: number | null | undefined) => value === 1;
+
+export const getNotesBySubjectId = async (subjectId: string): Promise<NoteRecord[]> => {
+  const db = await getDb();
+  const rows = await db.getAllAsync<NoteRow>(
+    `
+      SELECT *
+      FROM notes
+      WHERE subjectId = ?
+      ORDER BY isPinned DESC, updatedAt DESC, createdAt DESC
+    `,
+    [subjectId]
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    subjectId: row.subjectId,
+    folderId: row.folderId,
+    title: row.title,
+    contentHtml: row.contentHtml,
+    contentText: row.contentText,
+    isPinned: parseBoolean(row.isPinned),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }));
+};
+
+export const insertNote = async (
+  note: Omit<NoteRecord, 'id' | 'createdAt' | 'updatedAt'>
+): Promise<NoteRecord> => {
+  const db = await getDb();
+  const id = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+  const createdAt = Date.now();
+  const updatedAt = createdAt;
+
+  await db.runAsync(
+    `
+      INSERT INTO notes (
+        id,
+        subjectId,
+        folderId,
+        title,
+        contentHtml,
+        contentText,
+        isPinned,
+        createdAt,
+        updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      id,
+      note.subjectId,
+      note.folderId ?? null,
+      note.title,
+      note.contentHtml,
+      note.contentText,
+      note.isPinned ? 1 : 0,
+      createdAt,
+      updatedAt,
+    ]
+  );
+
+  return {
+    id,
+    subjectId: note.subjectId,
+    folderId: note.folderId ?? null,
+    title: note.title,
+    contentHtml: note.contentHtml,
+    contentText: note.contentText,
+    isPinned: note.isPinned,
+    createdAt,
+    updatedAt,
+  };
+};
+
+export const updateNote = async (
+  noteId: string,
+  note: Omit<NoteRecord, 'id' | 'createdAt' | 'updatedAt'>
+): Promise<NoteRecord> => {
+  const db = await getDb();
+  const updatedAt = Date.now();
+
+  await db.runAsync(
+    `
+      UPDATE notes
+      SET folderId = ?, title = ?, contentHtml = ?, contentText = ?, isPinned = ?, updatedAt = ?
+      WHERE id = ?
+    `,
+    [
+      note.folderId ?? null,
+      note.title,
+      note.contentHtml,
+      note.contentText,
+      note.isPinned ? 1 : 0,
+      updatedAt,
+      noteId,
+    ]
+  );
+
+  const row = await db.getFirstAsync<NoteRow>('SELECT * FROM notes WHERE id = ?', [noteId]);
+
+  if (!row) {
+    throw new Error('Note not found after update');
+  }
+
+  return {
+    id: row.id,
+    subjectId: row.subjectId,
+    folderId: row.folderId,
+    title: row.title,
+    contentHtml: row.contentHtml,
+    contentText: row.contentText,
+    isPinned: parseBoolean(row.isPinned),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+};
+
+export const deleteNote = async (noteId: string) => {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM notes WHERE id = ?', [noteId]);
 };

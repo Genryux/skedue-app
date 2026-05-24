@@ -52,4 +52,24 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 4,
+    up: async (db) => {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS notes (
+          id TEXT PRIMARY KEY,
+          subjectId TEXT NOT NULL,
+          folderId TEXT,
+          title TEXT NOT NULL,
+          contentHtml TEXT NOT NULL,
+          contentText TEXT NOT NULL,
+          isPinned INTEGER NOT NULL DEFAULT 0,
+          createdAt INTEGER NOT NULL,
+          updatedAt INTEGER NOT NULL,
+          FOREIGN KEY(subjectId) REFERENCES subjects(id) ON DELETE CASCADE,
+          FOREIGN KEY(folderId) REFERENCES folders(id) ON DELETE SET NULL
+        );
+      `);
+    },
+  },
 ];
