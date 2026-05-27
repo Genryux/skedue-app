@@ -1,0 +1,16 @@
+name: Local Qwen Setup
+version: 1.0.0
+schema: v1
+
+models:
+  - name: QwenCoder
+    provider: ollama
+    model: qwen2.5-coder:7b
+    roles:
+      - chat
+
+context:
+  - provider: code
+  - provider: docs
+  - provider: diff
+  - provider: terminal

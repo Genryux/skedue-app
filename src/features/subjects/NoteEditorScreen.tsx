@@ -37,7 +37,7 @@ type NoteEditorScreenProps = {
   subjectTitle: string;
   note: NoteRecord | null;
   folderOptions: FolderOption[];
-  onClose: () => void;
+  onClose: (options?: { saved?: boolean }) => void;
   onSave: (noteId: string | null, draft: NoteEditorDraft) => Promise<NoteRecord | null | void> | NoteRecord | null | void;
 };
 
@@ -57,7 +57,14 @@ type FormattingAction =
 type NoteSnapshot = {
   html: string;
   text: string;
+  ts: number;
 };
+
+const UI_TEXT_THROTTLE_MS = 160;
+const HISTORY_SNAPSHOT_DEBOUNCE_MS = 320;
+const HISTORY_SNAPSHOT_MAX_WAIT_MS = 1500;
+const HISTORY_MAX_ENTRIES = 180;
+const AUTOSAVE_IDLE_MS = 2000;
 
 const BLOCK_ACTIONS = [
   { key: 'text', label: 'Text', icon: 'type', action: null },
@@ -77,40 +84,31 @@ const INLINE_ACTIONS = [
   { key: 'strikethrough', label: 'S', action: 'toggleStrikeThrough' as const },
 ] as const;
 
-const stripHtml = (value: string) =>
-  value
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+\n/g, '\n')
-    .replace(/\n\s+/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-
 /**
  * Wraps the inner text of checked checklist items in <s>…</s> so they render
  * with a strikethrough. Unchecked items are left untouched.
  */
 const applyChecklistStrikethrough = (html: string): string => {
-  // Checked items: <li data-checked="true">…</li>
-  // We inject <s> around everything between the opening and closing tags
-  // while preserving any nested <p> tags the editor emits.
-  return html.replace(
-    /(<li[^>]*data-checked="true"[^>]*>)(.*?)(<\/li>)/gs,
-    (_, open, inner, close) => {
-      // Avoid double-wrapping if already has <s>
-      if (inner.includes('<s>')) return _ ;
-      return `${open}<s>${inner}</s>${close}`;
-    }
-  ).replace(
-    // Remove stray <s> from unchecked items
-    /(<li[^>]*data-checked="false"[^>]*>)<s>(.*?)<\/s>(<\/li>)/gs,
-    (_, open, inner, close) => `${open}${inner}${close}`
-  );
+  if (!html.includes('<li') || (!html.includes('checked') && !html.includes('data-checked="true"'))) {
+    return html;
+  }
+
+  return html
+    .replace(
+      // Checked items can appear as either:
+      // - <li checked>…</li>
+      // - <li data-checked="true" ...>…</li>
+      /(<li\b[^>]*\b(?:data-checked="true"|checked)\b[^>]*>)(.*?)(<\/li>)/gs,
+      (full, open: string, inner: string, close: string) => {
+        if (inner.includes('<s>')) return full;
+        return `${open}<s>${inner}</s>${close}`;
+      }
+    )
+    .replace(
+      // Unchecked items: remove accidental <s> wrappers.
+      /(<li\b[^>]*\bdata-checked="false"\b[^>]*>)\s*<s>(.*?)<\/s>\s*(<\/li>)/gs,
+      (_full, open: string, inner: string, close: string) => `${open}${inner}${close}`
+    );
 };
 
 const countWords = (value: string) => {
@@ -130,57 +128,59 @@ const formatDateLabel = (timestamp: number) => {
 export default function NoteEditorScreen({ subjectId, subjectTitle, note, folderOptions, onClose, onSave }: NoteEditorScreenProps) {
   const insets = useSafeAreaInsets();
   const editorRef = useRef<EnrichedTextInputInstance>(null);
-  const historyRef = useRef<{ entries: NoteSnapshot[]; index: number }>({ entries: [], index: -1 });
+  const historyRef = useRef<{ entries: NoteSnapshot[]; index: number }>({
+    entries: [{ html: note?.contentHtml ?? '', text: note?.contentText ?? '', ts: Date.now() }],
+    index: 0,
+  });
   const isApplyingHistoryRef = useRef(false);
 
-  const [savedNoteId, setSavedNoteId] = useState<string | null>(note?.id ?? null);
-  const [title, setTitle] = useState('');
-  const [contentHtml, setContentHtml] = useState('');
-  const [contentText, setContentText] = useState('');
-  const [folderId, setFolderId] = useState<string | null>(null);
-  const [isPinned, setIsPinned] = useState(false);
+  const contentHtmlRef = useRef(note?.contentHtml ?? '');
+  const contentTextRef = useRef(note?.contentText ?? '');
+
+  const [savedNoteId, setSavedNoteId] = useState<string | null>(() => note?.id ?? null);
+  const [title, setTitle] = useState(() => note?.title ?? '');
+  const [contentTextUi, setContentTextUi] = useState(() => note?.contentText ?? '');
+  const [folderId, setFolderId] = useState<string | null>(() => note?.folderId ?? null);
+  const [isPinned, setIsPinned] = useState(() => note?.isPinned ?? false);
   const [isSaving, setIsSaving] = useState(false);
   const [isBlockMenuOpen, setIsBlockMenuOpen] = useState(false);
   const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [styleState, setStyleState] = useState<Record<string, { isActive: boolean; isBlocking: boolean; isConflicting: boolean }>>({});
+  const [inlineStyleState, setInlineStyleState] = useState({
+    bold: false,
+    italic: false,
+    underline: false,
+    strikethrough: false,
+  });
   const [showToast, setShowToast] = useState(false);
 
-  const draftStateRef = useRef({ savedNoteId, title, contentHtml, contentText, folderId, isPinned, subjectId: note?.subjectId ?? subjectId });
-  draftStateRef.current = { savedNoteId, title, contentHtml, contentText, folderId, isPinned, subjectId: note?.subjectId ?? subjectId };
+  const savingInFlightRef = useRef(false);
 
-  const initialTitle = note?.title ?? '';
-  const initialHtml = note?.contentHtml ?? '';
-  const initialText = note?.contentText ?? '';
-  const initialFolder = note?.folderId ?? null;
-
-  const lastSavedStateRef = useRef({ title: initialTitle, contentHtml: initialHtml, folderId: initialFolder, isPinned: note?.isPinned ?? false });
+  const isDirtyRef = useRef(false);
   const [isDirty, setIsDirty] = useState(false);
 
-  useEffect(() => {
-    setIsDirty(
-      title.trim() !== lastSavedStateRef.current.title.trim() ||
-      contentHtml.trim() !== lastSavedStateRef.current.contentHtml.trim() ||
-      folderId !== lastSavedStateRef.current.folderId ||
-      isPinned !== lastSavedStateRef.current.isPinned
-    );
-  }, [title, contentHtml, folderId, isPinned]);
+  const hasBodyContentRef = useRef(Boolean((note?.contentText ?? '').trim().length));
+  const [hasBodyContent, setHasBodyContent] = useState(hasBodyContentRef.current);
 
-  useEffect(() => {
-    setSavedNoteId(note?.id ?? null);
-    setTitle(initialTitle);
-    setContentHtml(initialHtml);
-    setContentText(initialText);
-    setFolderId(initialFolder);
-    setIsPinned(note?.isPinned ?? false);
-    setIsSaving(false);
-    setIsBlockMenuOpen(false);
-    setIsFolderMenuOpen(false);
-    setIsMoreMenuOpen(false);
-    setStyleState({});
-    historyRef.current = { entries: [{ html: initialHtml, text: initialText }], index: 0 };
-  }, [initialFolder, initialHtml, initialText, initialTitle, note?.id, note?.isPinned]);
+  const uiTextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const historyDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const historyMaxWaitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const historyBurstActiveRef = useRef(false);
+  const contentDirtySinceHistoryRef = useRef(false);
+  const lastInputAtRef = useRef(0);
+  const [historyVersion, setHistoryVersion] = useState(0);
+
+  const pendingInlineStyleRef = useRef(inlineStyleState);
+  const inlineStyleFrameRef = useRef<number | null>(null);
+
+  const lastSavedStateRef = useRef({
+    title: note?.title ?? '',
+    contentHtml: note?.contentHtml ?? '',
+    folderId: note?.folderId ?? null,
+    isPinned: note?.isPinned ?? false,
+  });
 
   useEffect(() => {
     const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
@@ -198,13 +198,29 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
 
   useEffect(() => {
     const backSubscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      onClose();
+      void requestClose();
       return true;
     });
 
     return () => {
       backSubscription.remove();
-      void persistNote(true);
+      if (uiTextTimerRef.current) {
+        clearTimeout(uiTextTimerRef.current);
+        uiTextTimerRef.current = null;
+      }
+      if (historyDebounceTimerRef.current) {
+        clearTimeout(historyDebounceTimerRef.current);
+        historyDebounceTimerRef.current = null;
+      }
+      if (historyMaxWaitTimerRef.current) {
+        clearTimeout(historyMaxWaitTimerRef.current);
+        historyMaxWaitTimerRef.current = null;
+      }
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+      void persistNote({ isUnmounting: true, source: 'unmount' });
     };
   }, []);
 
@@ -217,39 +233,159 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   }, [folderId, folderOptions, subjectTitle]);
 
   const displayMeta = useMemo(() => {
-    const wordCount = countWords(stripHtml(contentHtml));
+    const wordCount = countWords(contentTextUi);
 
     if (note) {
       return { updatedLabel: formatDateLabel(note.updatedAt), wordCount };
     }
 
     return { updatedLabel: 'New note', wordCount };
-  }, [contentHtml, note]);
+  }, [contentTextUi, note]);
 
-  const canUndo = historyRef.current.index > 0;
-  const canRedo = historyRef.current.index < historyRef.current.entries.length - 1;
+  const { canUndo, canRedo } = useMemo(() => {
+    const history = historyRef.current;
+    return {
+      canUndo: history.index > 0 || contentDirtySinceHistoryRef.current,
+      canRedo: !contentDirtySinceHistoryRef.current && history.index < history.entries.length - 1,
+    };
+  }, [historyVersion]);
+
+  const markDirty = () => {
+    if (isDirtyRef.current) {
+      return;
+    }
+    isDirtyRef.current = true;
+    setIsDirty(true);
+  };
+
+  const scheduleUiTextSync = () => {
+    if (uiTextTimerRef.current) {
+      return;
+    }
+
+    uiTextTimerRef.current = setTimeout(() => {
+      uiTextTimerRef.current = null;
+      setContentTextUi(contentTextRef.current);
+    }, UI_TEXT_THROTTLE_MS);
+  };
 
   const pushHistorySnapshot = (html: string, text: string) => {
     if (isApplyingHistoryRef.current) {
       return;
     }
 
-    const currentEntry = historyRef.current.entries[historyRef.current.index];
+    const history = historyRef.current;
+
+    const currentEntry = history.entries[history.index];
     if (currentEntry && currentEntry.html === html && currentEntry.text === text) {
       return;
     }
 
-    if (historyRef.current.index === 0) {
-      const firstEntry = historyRef.current.entries[0];
-      if (!firstEntry.text.trim() && !text.trim()) {
-        historyRef.current.entries[0] = { html, text };
-        return;
-      }
+    const now = Date.now();
+
+    // If user has undone, drop the redo branch before recording a new snapshot.
+    const baseEntries = history.entries.slice(0, history.index + 1);
+    baseEntries.push({ html, text, ts: now });
+
+    // Keep history bounded for long notes.
+    if (baseEntries.length > HISTORY_MAX_ENTRIES) {
+      const sliceStart = baseEntries.length - HISTORY_MAX_ENTRIES;
+      const nextEntries = baseEntries.slice(sliceStart);
+      historyRef.current = { entries: nextEntries, index: nextEntries.length - 1 };
+    } else {
+      historyRef.current = { entries: baseEntries, index: baseEntries.length - 1 };
     }
 
-    const nextEntries = historyRef.current.entries.slice(0, historyRef.current.index + 1);
-    nextEntries.push({ html, text });
-    historyRef.current = { entries: nextEntries, index: nextEntries.length - 1 };
+    contentDirtySinceHistoryRef.current = false;
+    setHistoryVersion((v) => v + 1);
+  };
+
+  const markContentDirtyForHistory = () => {
+    if (!contentDirtySinceHistoryRef.current) {
+      contentDirtySinceHistoryRef.current = true;
+      setHistoryVersion((v) => v + 1);
+    }
+  };
+
+  const truncateRedoBranchIfNeeded = () => {
+    const history = historyRef.current;
+    if (history.index < history.entries.length - 1) {
+      historyRef.current = {
+        entries: history.entries.slice(0, history.index + 1),
+        index: history.index,
+      };
+      setHistoryVersion((v) => v + 1);
+    }
+  };
+
+  const flushPendingHistorySnapshot = () => {
+    if (historyDebounceTimerRef.current) {
+      clearTimeout(historyDebounceTimerRef.current);
+      historyDebounceTimerRef.current = null;
+    }
+    if (historyMaxWaitTimerRef.current) {
+      clearTimeout(historyMaxWaitTimerRef.current);
+      historyMaxWaitTimerRef.current = null;
+    }
+    historyBurstActiveRef.current = false;
+
+    if (!contentDirtySinceHistoryRef.current) {
+      return;
+    }
+
+    pushHistorySnapshot(contentHtmlRef.current, contentTextRef.current);
+  };
+
+  const scheduleHistorySnapshot = () => {
+    if (isApplyingHistoryRef.current) {
+      return;
+    }
+
+    if (historyDebounceTimerRef.current) {
+      clearTimeout(historyDebounceTimerRef.current);
+    }
+
+    historyDebounceTimerRef.current = setTimeout(() => {
+      historyDebounceTimerRef.current = null;
+      if (historyMaxWaitTimerRef.current) {
+        clearTimeout(historyMaxWaitTimerRef.current);
+        historyMaxWaitTimerRef.current = null;
+      }
+      historyBurstActiveRef.current = false;
+      pushHistorySnapshot(contentHtmlRef.current, contentTextRef.current);
+    }, HISTORY_SNAPSHOT_DEBOUNCE_MS);
+
+    if (!historyBurstActiveRef.current) {
+      historyBurstActiveRef.current = true;
+      historyMaxWaitTimerRef.current = setTimeout(() => {
+        historyMaxWaitTimerRef.current = null;
+        if (historyDebounceTimerRef.current) {
+          clearTimeout(historyDebounceTimerRef.current);
+          historyDebounceTimerRef.current = null;
+        }
+        historyBurstActiveRef.current = false;
+        pushHistorySnapshot(contentHtmlRef.current, contentTextRef.current);
+      }, HISTORY_SNAPSHOT_MAX_WAIT_MS);
+    }
+  };
+
+  const scheduleAutosave = () => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+    }
+
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      if (!isDirtyRef.current) {
+        return;
+      }
+
+      if (savingInFlightRef.current) {
+        return;
+      }
+
+      void persistNote({ source: 'autosave' });
+    }, AUTOSAVE_IDLE_MS);
   };
 
   const applyHistorySnapshot = (index: number) => {
@@ -260,13 +396,38 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
 
     isApplyingHistoryRef.current = true;
     historyRef.current = { entries: historyRef.current.entries, index };
-    setContentHtml(snapshot.html);
-    setContentText(snapshot.text);
+    contentHtmlRef.current = snapshot.html;
+    contentTextRef.current = snapshot.text;
+    contentDirtySinceHistoryRef.current = false;
+    const nextHasBody = Boolean(snapshot.text.trim().length);
+    if (nextHasBody !== hasBodyContentRef.current) {
+      hasBodyContentRef.current = nextHasBody;
+      setHasBodyContent(nextHasBody);
+    }
+    scheduleUiTextSync();
     editorRef.current?.setValue(snapshot.html || snapshot.text);
+    markDirty();
+    setHistoryVersion((v) => v + 1);
 
     setTimeout(() => {
       isApplyingHistoryRef.current = false;
     }, 0);
+  };
+
+  const requestClose = async () => {
+    if (savingInFlightRef.current) {
+      return;
+    }
+
+    const hasContent = title.trim().length > 0 || contentTextRef.current.trim().length > 0;
+
+    if (isDirtyRef.current && hasContent) {
+      await persistNote({ source: 'back' });
+      onClose({ saved: true });
+      return;
+    }
+
+    onClose();
   };
 
   const handleUndo = () => {
@@ -274,7 +435,12 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
       return;
     }
 
-    applyHistorySnapshot(historyRef.current.index - 1);
+    flushPendingHistorySnapshot();
+    const nextIndex = historyRef.current.index - 1;
+    if (nextIndex < 0) {
+      return;
+    }
+    applyHistorySnapshot(nextIndex);
   };
 
   const handleRedo = () => {
@@ -326,6 +492,17 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
         input.toggleCheckboxList(false);
         break;
     }
+
+    // Formatting operations can change HTML without changing plain text.
+    // Ensure we capture a snapshot + schedule autosave after the native transaction settles.
+    truncateRedoBranchIfNeeded();
+    markContentDirtyForHistory();
+    markDirty();
+    lastInputAtRef.current = Date.now();
+    setTimeout(() => {
+      scheduleHistorySnapshot();
+      scheduleAutosave();
+    }, 0);
   };
 
   const handleBlockAction = (action: FormattingAction | null) => {
@@ -338,57 +515,166 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   const handleFolderSelect = (selectedFolderId: string | null) => {
     setFolderId(selectedFolderId);
     setIsFolderMenuOpen(false);
+    markDirty();
+    scheduleAutosave();
   };
 
   const togglePinned = () => {
     setIsPinned((prev) => !prev);
     setIsMoreMenuOpen(false);
+    markDirty();
+    scheduleAutosave();
   };
 
-  const persistNote = async (isUnmounting = false) => {
-    const state = draftStateRef.current;
-
-    // Prevent saving purely empty note strings
-    if (!state.title.trim() && (!state.contentText.trim() || state.contentHtml === '<p></p>')) {
+  const persistNote = async ({
+    isUnmounting = false,
+    source = 'manual',
+  }: {
+    isUnmounting?: boolean;
+    source?: 'manual' | 'autosave' | 'unmount';
+  } = {}) => {
+    if (savingInFlightRef.current) {
       return;
     }
 
-    const draft: NoteEditorDraft = {
-      subjectId: state.subjectId,
-      folderId: state.folderId,
-      title: state.title.trim(),
-      contentHtml: state.contentHtml.trim() || '<p></p>',
-      contentText: state.contentText.trim() || state.title.trim(),
-      isPinned: state.isPinned,
-    };
+    const titleTrim = title.trim();
+    const textTrim = contentTextRef.current.trim();
 
-    if (!isUnmounting) {
+    // Prevent saving purely empty note strings.
+    if (!titleTrim && !textTrim) {
+      return;
+    }
+
+    savingInFlightRef.current = true;
+
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+
+    const shouldShowSavingUi = !isUnmounting && source === 'manual';
+
+    if (shouldShowSavingUi) {
       setIsSaving(true);
     }
 
     try {
-      const saved = await onSave(state.savedNoteId, draft);
+      // Use a fresh HTML snapshot at save time for correctness.
+      // This avoids depending on high-frequency state sync while typing.
+      const htmlFromNative = await editorRef.current?.getHTML().catch(() => null);
+      const rawHtml = typeof htmlFromNative === 'string' ? htmlFromNative : contentHtmlRef.current;
+      const contentHtml = applyChecklistStrikethrough(rawHtml.trim() || '<p></p>');
+
+      const draft: NoteEditorDraft = {
+        subjectId: note?.subjectId ?? subjectId,
+        folderId,
+        title: titleTrim,
+        contentHtml,
+        contentText: textTrim || titleTrim,
+        isPinned,
+      };
+
+      const saved = await onSave(savedNoteId, draft);
       if (saved && typeof saved === 'object' && 'id' in saved && typeof saved.id === 'string') {
-        state.savedNoteId = saved.id;
-        
+        setSavedNoteId(saved.id);
+        contentHtmlRef.current = contentHtml;
         lastSavedStateRef.current = {
-          title: state.title,
-          contentHtml: state.contentHtml,
-          folderId: state.folderId,
-          isPinned: state.isPinned,
+          title,
+          contentHtml,
+          folderId,
+          isPinned,
         };
 
-        if (!isUnmounting) {
-          setSavedNoteId(saved.id);
-          setIsDirty(false);
+        isDirtyRef.current = false;
+        setIsDirty(false);
+
+        if (!isUnmounting && source === 'manual') {
           setShowToast(true);
         }
       }
     } finally {
-      if (!isUnmounting) {
+      savingInFlightRef.current = false;
+      if (shouldShowSavingUi) {
         setIsSaving(false);
       }
     }
+  };
+
+  const handleTitleChange = (value: string) => {
+    if (value === title) {
+      return;
+    }
+
+    setTitle(value);
+    markDirty();
+    scheduleAutosave();
+  };
+
+  const handleChangeText = (value: string) => {
+    if (value === contentTextRef.current) {
+      return;
+    }
+
+    truncateRedoBranchIfNeeded();
+    contentTextRef.current = value;
+    lastInputAtRef.current = Date.now();
+
+    const nextHasBody = Boolean(value.trim().length);
+    if (nextHasBody !== hasBodyContentRef.current) {
+      hasBodyContentRef.current = nextHasBody;
+      setHasBodyContent(nextHasBody);
+    }
+
+    markContentDirtyForHistory();
+    markDirty();
+    scheduleUiTextSync();
+    scheduleHistorySnapshot();
+    scheduleAutosave();
+  };
+
+  const handleChangeHtml = (value: string) => {
+    if (value === contentHtmlRef.current) {
+      return;
+    }
+
+    truncateRedoBranchIfNeeded();
+    // Keep HTML in a ref only; never set React state on each keystroke.
+    contentHtmlRef.current = value;
+    lastInputAtRef.current = Date.now();
+    markContentDirtyForHistory();
+    markDirty();
+    scheduleHistorySnapshot();
+    scheduleAutosave();
+  };
+
+  const handleChangeState = (nativeState: any) => {
+    // Only track inline styles used by the toolbar to reduce object churn.
+    pendingInlineStyleRef.current = {
+      bold: Boolean(nativeState.bold?.isActive),
+      italic: Boolean(nativeState.italic?.isActive),
+      underline: Boolean(nativeState.underline?.isActive),
+      strikethrough: Boolean(nativeState.strikeThrough?.isActive),
+    };
+
+    if (inlineStyleFrameRef.current != null) {
+      return;
+    }
+
+    inlineStyleFrameRef.current = requestAnimationFrame(() => {
+      inlineStyleFrameRef.current = null;
+      const next = pendingInlineStyleRef.current;
+      setInlineStyleState((prev) => {
+        if (
+          prev.bold === next.bold &&
+          prev.italic === next.italic &&
+          prev.underline === next.underline &&
+          prev.strikethrough === next.strikethrough
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    });
   };
 
   return (
@@ -397,7 +683,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
       <StatusBar barStyle="dark-content" />
       <View style={styles.screen}>
         <View style={styles.header}>
-          <Pressable style={styles.headerIconButton} onPress={onClose} hitSlop={8}>
+          <Pressable style={styles.headerIconButton} onPress={() => void requestClose()} hitSlop={8}>
             <Feather name="arrow-left" size={26} color="#111111" />
           </Pressable>
 
@@ -432,7 +718,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
 
           <TextInput
             value={title}
-            onChangeText={setTitle}
+            onChangeText={handleTitleChange}
             placeholder="Note title"
             placeholderTextColor="#a7a7a1"
             autoCapitalize="sentences"
@@ -448,23 +734,15 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
 
           <View style={styles.bodyWrap}>
             <EnrichedTextInput
-              key={savedNoteId ?? 'new-note'}
               ref={editorRef}
-              defaultValue={initialHtml}
+              defaultValue={note?.contentHtml ?? ''}
               placeholder="Start writing your note..."
               placeholderTextColor="#10141366"
               autoCapitalize="sentences"
               scrollEnabled={false}
-              onChangeText={(event) => setContentText(event.nativeEvent.value)}
-              onChangeHtml={(event) => {
-                const rawValue = event.nativeEvent.value;
-                const value = applyChecklistStrikethrough(rawValue);
-                const strippedValue = stripHtml(value);
-                setContentHtml(value);
-                setContentText(strippedValue);
-                pushHistorySnapshot(value, strippedValue);
-              }}
-              onChangeState={(event) => setStyleState(event.nativeEvent)}
+              onChangeText={(event) => handleChangeText(event.nativeEvent.value)}
+              onChangeHtml={(event) => handleChangeHtml(event.nativeEvent.value)}
+              onChangeState={(event) => handleChangeState(event.nativeEvent)}
               style={styles.bodyInput}
               htmlStyle={styles.bodyHtmlStyle}
               returnKeyType="default"
@@ -501,7 +779,14 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.inlineActionRow}>
               {INLINE_ACTIONS.map((item) => {
-                const active = Boolean(styleState[item.key]?.isActive);
+                const active =
+                  item.key === 'bold'
+                    ? inlineStyleState.bold
+                    : item.key === 'italic'
+                      ? inlineStyleState.italic
+                      : item.key === 'underline'
+                        ? inlineStyleState.underline
+                        : inlineStyleState.strikethrough;
 
                 return (
                   <ToolbarButton
@@ -518,10 +803,10 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
             </ScrollView>
 
             {/* Save button: only visible when there is content AND unsaved changes */}
-            {(isDirty && (title.trim().length > 0 || contentText.trim().length > 0)) ? (
+            {(isDirty && (title.trim().length > 0 || hasBodyContent)) ? (
               <Pressable
                 style={[styles.saveDockButton, isSaving && styles.saveDockButtonDisabled]}
-                onPress={() => !isSaving && void persistNote()}
+                onPress={() => !isSaving && void persistNote({ source: 'manual' })}
                 disabled={isSaving}
               >
                 {isSaving ? (
@@ -558,7 +843,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
               <Pressable style={styles.menuRow} onPress={togglePinned}>
                 <Text style={styles.menuRowLabel}>{isPinned ? 'Unpin note' : 'Pin note'}</Text>
               </Pressable>
-              <Pressable style={styles.menuRow} onPress={() => { setIsMoreMenuOpen(false); void persistNote(); }}>
+              <Pressable style={styles.menuRow} onPress={() => { setIsMoreMenuOpen(false); void persistNote({ source: 'manual' }); }}>
                 <Text style={styles.menuRowLabel}>{isSaving ? 'Saving…' : 'Save note'}</Text>
               </Pressable>
             </View>

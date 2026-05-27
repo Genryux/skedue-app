@@ -17,6 +17,7 @@ import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import DynamicIslandToast from '../../ui/DynamicIslandToast';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import {
   getFoldersBySubjectId,
@@ -35,7 +36,7 @@ const NoteEditorScreen = require('./NoteEditorScreen').default as React.Componen
   subjectTitle: string;
   note: NoteRecord | null;
   folderOptions: Array<{ id: string; title: string; color: string }>;
-  onClose: () => void;
+  onClose: (options?: { saved?: boolean }) => void;
   onSave: (
     noteId: string | null,
     draft: {
@@ -46,7 +47,7 @@ const NoteEditorScreen = require('./NoteEditorScreen').default as React.Componen
       contentText: string;
       isPinned: boolean;
     }
-  ) => Promise<void> | void;
+  ) => Promise<NoteRecord>;
 }>;
 
 type SubjectDetailScreenProps = {
@@ -131,7 +132,14 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
   const [isFoldersExpanded, setIsFoldersExpanded] = useState(false);
   const [isNoteEditorOpen, setIsNoteEditorOpen] = useState(false);
   const [selectedNote, setSelectedNote] = useState<NoteRecord | null>(null);
+  const [showSaveToast, setShowSaveToast] = useState(false);
   const folderExpansionAnim = useRef(new Animated.Value(0)).current;
+  const sheetOpacity = useRef(new Animated.Value(0)).current;
+  const sheetTranslate = useRef(new Animated.Value(18)).current;
+  const buttonRotate = useRef(new Animated.Value(0)).current;
+  const buttonScale = useRef(new Animated.Value(0)).current;
+  const folderSheetOpacity = useRef(new Animated.Value(0)).current;
+  const folderSheetTranslate = useRef(new Animated.Value(18)).current;
   const featuredFolders = folders.slice(0, 3);
   const remainingFolders = folders.slice(3);
   const looseNotes = notes.filter((note) => !note.folderId);
@@ -188,13 +196,30 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
   }, [subject?.id, subject?.folders]);
 
   const handleOpenNoteEditor = (note: NoteRecord | null = null) => {
+    setIsActionSheetOpen(false);
+    sheetOpacity.setValue(0);
+    sheetTranslate.setValue(18);
+    buttonRotate.setValue(0);
+    buttonScale.setValue(0);
     setSelectedNote(note);
     setIsNoteEditorOpen(true);
   };
 
-  const handleCloseNoteEditor = () => {
+  const handleCloseNoteEditor = (options?: { saved?: boolean }) => {
+    setIsActionSheetOpen(false);
+    sheetOpacity.setValue(0);
+    sheetTranslate.setValue(18);
+    buttonRotate.setValue(0);
+    buttonScale.setValue(0);
+    setIsFolderFormOpen(false);
+    folderSheetOpacity.setValue(0);
+    folderSheetTranslate.setValue(18);
     setIsNoteEditorOpen(false);
     setSelectedNote(null);
+
+    if (options?.saved) {
+      setShowSaveToast(true);
+    }
   };
 
   const handleSaveNote = async (
@@ -207,7 +232,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
       contentText: string;
       isPinned: boolean;
     }
-  ): Promise<void> => {
+  ): Promise<NoteRecord> => {
     let savedNote: NoteRecord;
 
     if (noteId) {
@@ -222,6 +247,8 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
     }
 
     setSelectedNote(savedNote);
+
+    return savedNote;
   };
 
   // Tab State
@@ -232,14 +259,6 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
   const contentFadeAnim = useRef(new Animated.Value(0)).current;
   const contentSlideAnim = useRef(new Animated.Value(35)).current;
   const headerFadeAnim = useRef(new Animated.Value(0)).current;
-
-  // Bottom Sheet Animations
-  const sheetOpacity = useRef(new Animated.Value(0)).current;
-  const sheetTranslate = useRef(new Animated.Value(18)).current;
-  const buttonRotate = useRef(new Animated.Value(0)).current;
-  const buttonScale = useRef(new Animated.Value(0)).current;
-  const folderSheetOpacity = useRef(new Animated.Value(0)).current;
-  const folderSheetTranslate = useRef(new Animated.Value(18)).current;
 
   useEffect(() => {
     Animated.sequence([
@@ -1060,6 +1079,14 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
           </Animated.View>
         </View>
       </Modal>
+
+      {showSaveToast ? (
+        <DynamicIslandToast
+          visible={showSaveToast}
+          message="Note saved successfully"
+          onHide={() => setShowSaveToast(false)}
+        />
+      ) : null}
 
     </View>
   );
