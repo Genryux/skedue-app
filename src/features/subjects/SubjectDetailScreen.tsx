@@ -21,7 +21,9 @@ import DynamicIslandToast from '../../ui/DynamicIslandToast';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import {
   getFoldersBySubjectId,
+  findRecentMatchingNote,
   getNotesBySubjectId,
+  deleteNote,
   insertFolder,
   insertNote,
   updateNote,
@@ -36,7 +38,7 @@ const NoteEditorScreen = require('./NoteEditorScreen').default as React.Componen
   subjectTitle: string;
   note: NoteRecord | null;
   folderOptions: Array<{ id: string; title: string; color: string }>;
-  onClose: (options?: { saved?: boolean }) => void;
+  onClose: (options?: { saved?: boolean; deleted?: boolean }) => void;
   onSave: (
     noteId: string | null,
     draft: {
@@ -48,6 +50,7 @@ const NoteEditorScreen = require('./NoteEditorScreen').default as React.Componen
       isPinned: boolean;
     }
   ) => Promise<NoteRecord>;
+  onDelete: (noteId: string) => Promise<void> | void;
 }>;
 
 type SubjectDetailScreenProps = {
@@ -133,6 +136,8 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
   const [isNoteEditorOpen, setIsNoteEditorOpen] = useState(false);
   const [selectedNote, setSelectedNote] = useState<NoteRecord | null>(null);
   const [showSaveToast, setShowSaveToast] = useState(false);
+  const [showDeleteToast, setShowDeleteToast] = useState(false);
+  const saveInFlightRef = useRef<Promise<NoteRecord> | null>(null);
   const folderExpansionAnim = useRef(new Animated.Value(0)).current;
   const sheetOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslate = useRef(new Animated.Value(18)).current;
@@ -196,6 +201,8 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
   }, [subject?.id, subject?.folders]);
 
   const handleOpenNoteEditor = (note: NoteRecord | null = null) => {
+    setShowSaveToast(false);
+    setShowDeleteToast(false);
     setIsActionSheetOpen(false);
     sheetOpacity.setValue(0);
     sheetTranslate.setValue(18);
@@ -205,7 +212,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
     setIsNoteEditorOpen(true);
   };
 
-  const handleCloseNoteEditor = (options?: { saved?: boolean }) => {
+  const handleCloseNoteEditor = (options?: { saved?: boolean; deleted?: boolean }) => {
     setIsActionSheetOpen(false);
     sheetOpacity.setValue(0);
     sheetTranslate.setValue(18);
@@ -220,6 +227,10 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
     if (options?.saved) {
       setShowSaveToast(true);
     }
+
+    if (options?.deleted) {
+      setShowDeleteToast(true);
+    }
   };
 
   const handleSaveNote = async (
@@ -233,22 +244,53 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
       isPinned: boolean;
     }
   ): Promise<NoteRecord> => {
-    let savedNote: NoteRecord;
-
-    if (noteId) {
-      savedNote = await updateNote(noteId, draft);
-    } else {
-      savedNote = await insertNote(draft);
+    if (saveInFlightRef.current) {
+      return saveInFlightRef.current;
     }
+
+    const savePromise = (async () => {
+      let savedNote: NoteRecord;
+
+      if (noteId) {
+        savedNote = await updateNote(noteId, draft);
+      } else {
+        const recentMatch = await findRecentMatchingNote(draft);
+        if (recentMatch) {
+          savedNote = recentMatch;
+        } else {
+          savedNote = await insertNote(draft);
+        }
+      }
+
+      if (subject?.id) {
+        const refreshedNotes = await getNotesBySubjectId(subject.id);
+        setNotes(refreshedNotes);
+      }
+
+      setSelectedNote(savedNote);
+
+      return savedNote;
+    })();
+
+    saveInFlightRef.current = savePromise;
+
+    try {
+      const savedNote = await savePromise;
+      return savedNote;
+    } finally {
+      if (saveInFlightRef.current === savePromise) {
+        saveInFlightRef.current = null;
+      }
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    await deleteNote(noteId);
 
     if (subject?.id) {
       const refreshedNotes = await getNotesBySubjectId(subject.id);
       setNotes(refreshedNotes);
     }
-
-    setSelectedNote(savedNote);
-
-    return savedNote;
   };
 
   // Tab State
@@ -298,6 +340,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
         }))}
         onClose={handleCloseNoteEditor}
         onSave={handleSaveNote}
+        onDelete={handleDeleteNote}
       />
     );
   }
@@ -1085,6 +1128,14 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
           visible={showSaveToast}
           message="Note saved successfully"
           onHide={() => setShowSaveToast(false)}
+        />
+      ) : null}
+
+      {showDeleteToast ? (
+        <DynamicIslandToast
+          visible={showDeleteToast}
+          message="Note deleted successfully"
+          onHide={() => setShowDeleteToast(false)}
         />
       ) : null}
 

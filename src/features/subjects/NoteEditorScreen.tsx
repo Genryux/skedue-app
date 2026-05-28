@@ -3,7 +3,9 @@ import { EnrichedTextInput, type EnrichedTextInputInstance } from 'react-native-
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackHandler,
+  Share,
   Keyboard,
+  Modal,
   Pressable,
   ScrollView,
   StatusBar,
@@ -37,8 +39,9 @@ type NoteEditorScreenProps = {
   subjectTitle: string;
   note: NoteRecord | null;
   folderOptions: FolderOption[];
-  onClose: (options?: { saved?: boolean }) => void;
+  onClose: (options?: { saved?: boolean; deleted?: boolean }) => void;
   onSave: (noteId: string | null, draft: NoteEditorDraft) => Promise<NoteRecord | null | void> | NoteRecord | null | void;
+  onDelete: (noteId: string) => Promise<void> | void;
 };
 
 type FormattingAction =
@@ -125,7 +128,19 @@ const formatDateLabel = (timestamp: number) => {
   return `Last edited today at ${displayHour}:${minutes} ${suffix}`;
 };
 
-export default function NoteEditorScreen({ subjectId, subjectTitle, note, folderOptions, onClose, onSave }: NoteEditorScreenProps) {
+const isBlankEditorHtml = (value: string) => {
+  const normalized = value
+    .replace(/<!--.*?-->/gs, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/<\/?(?:p|div|span|li|ul|ol|blockquote|h1|h2|h3|h4|h5|h6|section|article)\b[^>]*>/gi, '')
+    .replace(/<br\s*\/?>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .trim();
+
+  return normalized.length === 0;
+};
+
+export default function NoteEditorScreen({ subjectId, subjectTitle, note, folderOptions, onClose, onSave, onDelete }: NoteEditorScreenProps) {
   const insets = useSafeAreaInsets();
   const editorRef = useRef<EnrichedTextInputInstance>(null);
   const historyRef = useRef<{ entries: NoteSnapshot[]; index: number }>({
@@ -146,6 +161,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   const [isBlockMenuOpen, setIsBlockMenuOpen] = useState(false);
   const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [inlineStyleState, setInlineStyleState] = useState({
     bold: false,
@@ -169,6 +185,10 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const historyBurstActiveRef = useRef(false);
   const contentDirtySinceHistoryRef = useRef(false);
+  const skipUnmountSaveRef = useRef(false);
+  const isHydratingRef = useRef(true);
+  const hydrationFrameRef = useRef<number | null>(null);
+  const hasUserEditedRef = useRef(false);
   const lastInputAtRef = useRef(0);
   const [historyVersion, setHistoryVersion] = useState(0);
 
@@ -197,12 +217,22 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   }, []);
 
   useEffect(() => {
+    hydrationFrameRef.current = requestAnimationFrame(() => {
+      isHydratingRef.current = false;
+      hydrationFrameRef.current = null;
+    });
+
     const backSubscription = BackHandler.addEventListener('hardwareBackPress', () => {
       void requestClose();
       return true;
     });
 
     return () => {
+      if (hydrationFrameRef.current != null) {
+        cancelAnimationFrame(hydrationFrameRef.current);
+        hydrationFrameRef.current = null;
+      }
+
       backSubscription.remove();
       if (uiTextTimerRef.current) {
         clearTimeout(uiTextTimerRef.current);
@@ -220,6 +250,16 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
         clearTimeout(autosaveTimerRef.current);
         autosaveTimerRef.current = null;
       }
+
+      if (skipUnmountSaveRef.current) {
+        skipUnmountSaveRef.current = false;
+        return;
+      }
+
+      if (!isDirtyRef.current) {
+        return;
+      }
+
       void persistNote({ isUnmounting: true, source: 'unmount' });
     };
   }, []);
@@ -423,6 +463,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
 
     if (isDirtyRef.current && hasContent) {
       await persistNote({ source: 'back' });
+      skipUnmountSaveRef.current = true;
       onClose({ saved: true });
       return;
     }
@@ -495,6 +536,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
 
     // Formatting operations can change HTML without changing plain text.
     // Ensure we capture a snapshot + schedule autosave after the native transaction settles.
+    hasUserEditedRef.current = true;
     truncateRedoBranchIfNeeded();
     markContentDirtyForHistory();
     markDirty();
@@ -524,6 +566,69 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
     setIsMoreMenuOpen(false);
     markDirty();
     scheduleAutosave();
+  };
+
+  const handleExportNote = async () => {
+    setIsMoreMenuOpen(false);
+
+    const titleText = title.trim();
+    const bodyText = contentTextRef.current.trim();
+    const exportText = [titleText, bodyText].filter(Boolean).join('\n\n');
+
+    if (!exportText) {
+      return;
+    }
+
+    await Share.share({ message: exportText });
+  };
+
+  const handleDeleteNote = () => {
+    setIsMoreMenuOpen(false);
+
+    const noteId = savedNoteId;
+    if (!noteId) {
+      skipUnmountSaveRef.current = true;
+      onClose({ deleted: true });
+      return;
+    }
+
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const cancelDelete = () => {
+    setIsDeleteConfirmOpen(false);
+  };
+
+  const confirmDelete = () => {
+    const noteId = savedNoteId;
+    if (!noteId) {
+      setIsDeleteConfirmOpen(false);
+      return;
+    }
+
+    setIsDeleteConfirmOpen(false);
+
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    if (historyDebounceTimerRef.current) {
+      clearTimeout(historyDebounceTimerRef.current);
+      historyDebounceTimerRef.current = null;
+    }
+    if (historyMaxWaitTimerRef.current) {
+      clearTimeout(historyMaxWaitTimerRef.current);
+      historyMaxWaitTimerRef.current = null;
+    }
+
+    skipUnmountSaveRef.current = true;
+    isDirtyRef.current = false;
+    setIsDirty(false);
+
+    void (async () => {
+      await onDelete(noteId);
+      onClose({ deleted: true });
+    })();
   };
 
   const persistNote = async ({
@@ -577,13 +682,18 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
       const saved = await onSave(savedNoteId, draft);
       if (saved && typeof saved === 'object' && 'id' in saved && typeof saved.id === 'string') {
         setSavedNoteId(saved.id);
-        contentHtmlRef.current = contentHtml;
+        contentHtmlRef.current = rawHtml;
+        contentTextRef.current = textTrim || titleTrim;
         lastSavedStateRef.current = {
           title,
-          contentHtml,
+          contentHtml: rawHtml,
           folderId,
           isPinned,
         };
+
+        hasUserEditedRef.current = false;
+        contentDirtySinceHistoryRef.current = false;
+        setHistoryVersion((v) => v + 1);
 
         isDirtyRef.current = false;
         setIsDirty(false);
@@ -611,10 +721,20 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   };
 
   const handleChangeText = (value: string) => {
+    if (isHydratingRef.current) {
+      contentTextRef.current = value;
+      return;
+    }
+
     if (value === contentTextRef.current) {
       return;
     }
 
+    if (!value.trim() && !contentTextRef.current.trim() && isBlankEditorHtml(contentHtmlRef.current)) {
+      return;
+    }
+
+    hasUserEditedRef.current = true;
     truncateRedoBranchIfNeeded();
     contentTextRef.current = value;
     lastInputAtRef.current = Date.now();
@@ -633,7 +753,22 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   };
 
   const handleChangeHtml = (value: string) => {
+    if (isHydratingRef.current) {
+      contentHtmlRef.current = value;
+      return;
+    }
+
     if (value === contentHtmlRef.current) {
+      return;
+    }
+
+    if (!hasUserEditedRef.current) {
+      contentHtmlRef.current = value;
+      return;
+    }
+
+    if (!contentTextRef.current.trim() && isBlankEditorHtml(value) && isBlankEditorHtml(contentHtmlRef.current)) {
+      contentHtmlRef.current = value;
       return;
     }
 
@@ -725,6 +860,8 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
             style={styles.titleInput}
             multiline
           />
+
+          <View style={styles.titleDivider} />
 
           <View style={styles.metaRow}>
             <Text style={styles.metaText}>{displayMeta.updatedLabel}</Text>
@@ -840,15 +977,53 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
           <View style={styles.menuOverlay} pointerEvents="box-none">
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsMoreMenuOpen(false)} />
             <View style={styles.menuSheet}>
-              <Pressable style={styles.menuRow} onPress={togglePinned}>
-                <Text style={styles.menuRowLabel}>{isPinned ? 'Unpin note' : 'Pin note'}</Text>
+              <Pressable style={styles.menuActionRow} onPress={togglePinned}>
+                <View style={[styles.menuActionIcon, isPinned && styles.menuActionIconActive]}>
+                  <Feather name="map-pin" size={16} color={isPinned ? '#1f5f4d' : '#4d5a54'} />
+                </View>
+                <Text style={styles.menuActionLabel}>{isPinned ? 'Unpin' : 'Pin'}</Text>
               </Pressable>
-              <Pressable style={styles.menuRow} onPress={() => { setIsMoreMenuOpen(false); void persistNote({ source: 'manual' }); }}>
-                <Text style={styles.menuRowLabel}>{isSaving ? 'Saving…' : 'Save note'}</Text>
+              <Pressable style={styles.menuActionRow} onPress={() => void handleExportNote()}>
+                <View style={styles.menuActionIcon}>
+                  <Feather name="share-2" size={16} color="#4d5a54" />
+                </View>
+                <Text style={styles.menuActionLabel}>Export</Text>
+              </Pressable>
+              <Pressable style={styles.menuActionRow} onPress={handleDeleteNote}>
+                <View style={styles.menuActionIcon}>
+                  <Feather name="trash-2" size={16} color="#b42318" />
+                </View>
+                <Text style={[styles.menuActionLabel, styles.menuActionLabelDanger]}>Delete</Text>
               </Pressable>
             </View>
           </View>
         ) : null}
+
+        <Modal
+          visible={isDeleteConfirmOpen}
+          transparent
+          animationType="none"
+          onRequestClose={cancelDelete}
+        >
+          <View style={styles.deleteConfirmOverlay}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={cancelDelete} />
+            <View style={styles.deleteConfirmCard}>
+              <Text style={styles.deleteConfirmTitle}>Delete note?</Text>
+              <Text style={styles.deleteConfirmBody}>
+                This will permanently remove the note from your device.
+              </Text>
+
+              <View style={styles.deleteConfirmActions}>
+                <Pressable style={styles.deleteConfirmCancelButton} onPress={cancelDelete}>
+                  <Text style={styles.deleteConfirmCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable style={styles.deleteConfirmDeleteButton} onPress={confirmDelete}>
+                  <Text style={styles.deleteConfirmDeleteText}>Delete</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
       </View>
     </SafeAreaView>
@@ -1007,6 +1182,12 @@ const styles = StyleSheet.create({
     letterSpacing: -1.1,
     paddingVertical: 0,
     marginBottom: 14,
+  },
+  titleDivider: {
+    height: 1,
+    backgroundColor: '#d9d6ce',
+    marginTop: 0,
+    marginBottom: 10,
   },
   metaRow: {
     flexDirection: 'row',
@@ -1245,19 +1426,98 @@ const styles = StyleSheet.create({
     right: 14,
     top: 68,
     width: 220,
-    backgroundColor: '#ffffff',
-    borderRadius: 22,
-    padding: 8,
-    ...shadowLgDark,
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    borderRadius: 26,
+    padding: 10,
+    ...shadowLg,
   },
-  menuRow: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
+  menuActionRow: {
+    minHeight: 48,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  menuRowLabel: {
+  menuActionIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f2f4f1',
+  },
+  menuActionIconActive: {
+    backgroundColor: '#e6f2ed',
+  },
+  menuActionLabel: {
+    flex: 1,
     fontFamily: 'Manrope_700Bold',
-    fontSize: 14,
+    fontSize: 15,
     color: '#111111',
+  },
+  menuActionLabelDanger: {
+    color: '#b42318',
+  },
+  deleteConfirmOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 18, 20, 0.28)',
+    paddingHorizontal: 18,
+  },
+  deleteConfirmCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    ...shadowLg,
+  },
+  deleteConfirmTitle: {
+    fontFamily: 'Manrope_800ExtraBold',
+    fontSize: 20,
+    color: '#111111',
+    letterSpacing: -0.4,
+  },
+  deleteConfirmBody: {
+    marginTop: 8,
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#5f6661',
+  },
+  deleteConfirmActions: {
+    marginTop: 18,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  deleteConfirmCancelButton: {
+    flex: 1,
+    height: 46,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eef2ee',
+  },
+  deleteConfirmCancelText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 15,
+    color: '#1f2b25',
+  },
+  deleteConfirmDeleteButton: {
+    flex: 1,
+    height: 46,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#b42318',
+  },
+  deleteConfirmDeleteText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 15,
+    color: '#ffffff',
   },
 });

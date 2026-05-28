@@ -289,6 +289,56 @@ export const insertNote = async (
   };
 };
 
+export const findRecentMatchingNote = async (
+  note: Omit<NoteRecord, 'id' | 'createdAt' | 'updatedAt'>,
+  windowMs = 5000
+): Promise<NoteRecord | null> => {
+  const db = await getDb();
+  const since = Date.now() - windowMs;
+
+  const row = await db.getFirstAsync<NoteRow>(
+    `
+      SELECT *
+      FROM notes
+      WHERE subjectId = ?
+        AND (folderId = ? OR (folderId IS NULL AND ? IS NULL))
+        AND title = ?
+        AND contentHtml = ?
+        AND contentText = ?
+        AND isPinned = ?
+        AND createdAt >= ?
+      ORDER BY createdAt DESC
+      LIMIT 1
+    `,
+    [
+      note.subjectId,
+      note.folderId ?? null,
+      note.folderId ?? null,
+      note.title,
+      note.contentHtml,
+      note.contentText,
+      note.isPinned ? 1 : 0,
+      since,
+    ]
+  );
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    subjectId: row.subjectId,
+    folderId: row.folderId,
+    title: row.title,
+    contentHtml: row.contentHtml,
+    contentText: row.contentText,
+    isPinned: parseBoolean(row.isPinned),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+};
+
 export const updateNote = async (
   noteId: string,
   note: Omit<NoteRecord, 'id' | 'createdAt' | 'updatedAt'>
