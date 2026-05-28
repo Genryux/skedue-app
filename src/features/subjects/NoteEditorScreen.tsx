@@ -15,7 +15,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import DynamicIslandToast from '../../ui/DynamicIslandToast';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import type { NoteRecord } from '../../data/local/db';
 
@@ -67,7 +66,7 @@ const UI_TEXT_THROTTLE_MS = 160;
 const HISTORY_SNAPSHOT_DEBOUNCE_MS = 320;
 const HISTORY_SNAPSHOT_MAX_WAIT_MS = 1500;
 const HISTORY_MAX_ENTRIES = 180;
-const AUTOSAVE_IDLE_MS = 2000;
+const AUTOSAVE_IDLE_MS = 5000;
 
 const BLOCK_ACTIONS = [
   { key: 'text', label: 'Text', icon: 'type', action: null },
@@ -140,6 +139,13 @@ const isBlankEditorHtml = (value: string) => {
   return normalized.length === 0;
 };
 
+const normalizeTextForCompare = (value: string) =>
+  value
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u00AD\uFFFC]/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .trimEnd();
+
 export default function NoteEditorScreen({ subjectId, subjectTitle, note, folderOptions, onClose, onSave, onDelete }: NoteEditorScreenProps) {
   const insets = useSafeAreaInsets();
   const editorRef = useRef<EnrichedTextInputInstance>(null);
@@ -157,7 +163,6 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   const [contentTextUi, setContentTextUi] = useState(() => note?.contentText ?? '');
   const [folderId, setFolderId] = useState<string | null>(() => note?.folderId ?? null);
   const [isPinned, setIsPinned] = useState(() => note?.isPinned ?? false);
-  const [isSaving, setIsSaving] = useState(false);
   const [isBlockMenuOpen, setIsBlockMenuOpen] = useState(false);
   const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
@@ -169,7 +174,6 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
     underline: false,
     strikethrough: false,
   });
-  const [showToast, setShowToast] = useState(false);
 
   const savingInFlightRef = useRef(false);
 
@@ -188,6 +192,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   const skipUnmountSaveRef = useRef(false);
   const isHydratingRef = useRef(true);
   const hydrationFrameRef = useRef<number | null>(null);
+  const isInputFocusedRef = useRef(false);
   const hasUserEditedRef = useRef(false);
   const lastInputAtRef = useRef(0);
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -410,20 +415,24 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   };
 
   const scheduleAutosave = () => {
+    if (isHydratingRef.current) {
+      return;
+    }
+
+    if (!isDirtyRef.current) {
+      return;
+    }
+
+    if (savingInFlightRef.current) {
+      return;
+    }
+
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
     }
 
     autosaveTimerRef.current = setTimeout(() => {
       autosaveTimerRef.current = null;
-      if (!isDirtyRef.current) {
-        return;
-      }
-
-      if (savingInFlightRef.current) {
-        return;
-      }
-
       void persistNote({ source: 'autosave' });
     }, AUTOSAVE_IDLE_MS);
   };
@@ -633,10 +642,10 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
 
   const persistNote = async ({
     isUnmounting = false,
-    source = 'manual',
+    source = 'back',
   }: {
     isUnmounting?: boolean;
-    source?: 'manual' | 'autosave' | 'unmount';
+    source?: 'autosave' | 'unmount' | 'back';
   } = {}) => {
     if (savingInFlightRef.current) {
       return;
@@ -655,12 +664,6 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
-    }
-
-    const shouldShowSavingUi = !isUnmounting && source === 'manual';
-
-    if (shouldShowSavingUi) {
-      setIsSaving(true);
     }
 
     try {
@@ -697,16 +700,9 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
 
         isDirtyRef.current = false;
         setIsDirty(false);
-
-        if (!isUnmounting && source === 'manual') {
-          setShowToast(true);
-        }
       }
     } finally {
       savingInFlightRef.current = false;
-      if (shouldShowSavingUi) {
-        setIsSaving(false);
-      }
     }
   };
 
@@ -726,7 +722,17 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
       return;
     }
 
+    if (!hasUserEditedRef.current && !isInputFocusedRef.current) {
+      contentTextRef.current = value;
+      return;
+    }
+
     if (value === contentTextRef.current) {
+      return;
+    }
+
+    if (normalizeTextForCompare(value) === normalizeTextForCompare(contentTextRef.current)) {
+      contentTextRef.current = value;
       return;
     }
 
@@ -754,6 +760,11 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
 
   const handleChangeHtml = (value: string) => {
     if (isHydratingRef.current) {
+      contentHtmlRef.current = value;
+      return;
+    }
+
+    if (!hasUserEditedRef.current && !isInputFocusedRef.current) {
       contentHtmlRef.current = value;
       return;
     }
@@ -877,6 +888,15 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
               placeholderTextColor="#10141366"
               autoCapitalize="sentences"
               scrollEnabled={false}
+              onFocus={() => {
+                isInputFocusedRef.current = true;
+              }}
+              onBlur={() => {
+                isInputFocusedRef.current = false;
+              }}
+              onKeyPress={() => {
+                hasUserEditedRef.current = true;
+              }}
               onChangeText={(event) => handleChangeText(event.nativeEvent.value)}
               onChangeHtml={(event) => handleChangeHtml(event.nativeEvent.value)}
               onChangeState={(event) => handleChangeState(event.nativeEvent)}
@@ -938,21 +958,6 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
                 );
               })}
             </ScrollView>
-
-            {/* Save button: only visible when there is content AND unsaved changes */}
-            {(isDirty && (title.trim().length > 0 || hasBodyContent)) ? (
-              <Pressable
-                style={[styles.saveDockButton, isSaving && styles.saveDockButtonDisabled]}
-                onPress={() => !isSaving && void persistNote({ source: 'manual' })}
-                disabled={isSaving}
-              >
-                {isSaving ? (
-                  <Feather name="loader" size={24} color="#111111" />
-                ) : (
-                  <Feather name="check" size={24} color="#1f5f4d" />
-                )}
-              </Pressable>
-            ) : null}
           </View>
         </View>
 
@@ -1028,14 +1033,6 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
       </View>
     </SafeAreaView>
 
-    {/* Toast lives outside SafeAreaView so it can float at the true top of the screen */}
-    {showToast ? (
-      <DynamicIslandToast
-        visible={showToast}
-        message="Note saved successfully"
-        onHide={() => setShowToast(false)}
-      />
-    ) : null}
     </View>
   );
 }
@@ -1311,18 +1308,6 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: 'center',
     paddingRight: 10,
-  },
-  saveDockButton: {
-    marginLeft: 'auto',
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveDockButtonDisabled: {
-    opacity: 0.5,
   },
   toolbarButton: {
     minWidth: 32,
