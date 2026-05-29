@@ -175,6 +175,16 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
     strikethrough: false,
   });
 
+  const [blockStyleState, setBlockStyleState] = useState({
+    h1: false,
+    h2: false,
+    blockQuote: false,
+    unorderedList: false,
+    orderedList: false,
+    checklist: false,
+    inlineCode: false,
+  });
+
   const savingInFlightRef = useRef(false);
 
   const isDirtyRef = useRef(false);
@@ -199,6 +209,9 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
 
   const pendingInlineStyleRef = useRef(inlineStyleState);
   const inlineStyleFrameRef = useRef<number | null>(null);
+
+  const pendingBlockStyleRef = useRef(blockStyleState);
+  const blockStyleFrameRef = useRef<number | null>(null);
 
   const lastSavedStateRef = useRef({
     title: note?.title ?? '',
@@ -794,12 +807,21 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   };
 
   const handleChangeState = (nativeState: any) => {
-    // Only track inline styles used by the toolbar to reduce object churn.
     pendingInlineStyleRef.current = {
       bold: Boolean(nativeState.bold?.isActive),
       italic: Boolean(nativeState.italic?.isActive),
       underline: Boolean(nativeState.underline?.isActive),
       strikethrough: Boolean(nativeState.strikeThrough?.isActive),
+    };
+
+    pendingBlockStyleRef.current = {
+      h1: Boolean(nativeState.h1?.isActive),
+      h2: Boolean(nativeState.h2?.isActive),
+      blockQuote: Boolean(nativeState.blockQuote?.isActive),
+      unorderedList: Boolean(nativeState.unorderedList?.isActive),
+      orderedList: Boolean(nativeState.orderedList?.isActive),
+      checklist: Boolean(nativeState.checklist?.isActive),
+      inlineCode: Boolean(nativeState.inlineCode?.isActive),
     };
 
     if (inlineStyleFrameRef.current != null) {
@@ -808,17 +830,34 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
 
     inlineStyleFrameRef.current = requestAnimationFrame(() => {
       inlineStyleFrameRef.current = null;
-      const next = pendingInlineStyleRef.current;
+      const nextInline = pendingInlineStyleRef.current;
+      const nextBlock = pendingBlockStyleRef.current;
+
       setInlineStyleState((prev) => {
         if (
-          prev.bold === next.bold &&
-          prev.italic === next.italic &&
-          prev.underline === next.underline &&
-          prev.strikethrough === next.strikethrough
+          prev.bold === nextInline.bold &&
+          prev.italic === nextInline.italic &&
+          prev.underline === nextInline.underline &&
+          prev.strikethrough === nextInline.strikethrough
         ) {
           return prev;
         }
-        return next;
+        return nextInline;
+      });
+
+      setBlockStyleState((prev) => {
+        if (
+          prev.h1 === nextBlock.h1 &&
+          prev.h2 === nextBlock.h2 &&
+          prev.blockQuote === nextBlock.blockQuote &&
+          prev.unorderedList === nextBlock.unorderedList &&
+          prev.orderedList === nextBlock.orderedList &&
+          prev.checklist === nextBlock.checklist &&
+          prev.inlineCode === nextBlock.inlineCode
+        ) {
+          return prev;
+        }
+        return nextBlock;
       });
     });
   };
@@ -912,18 +951,33 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
           {isBlockMenuOpen ? (
             <View style={styles.blockMenuCard}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.blockMenuRow}>
-                {BLOCK_ACTIONS.map((item) => (
-                  <Pressable key={item.key} style={styles.blockMenuButton} onPress={() => handleBlockAction(item.action)}>
-                    <View style={styles.blockMenuIconWrap}>
-                      {item.key === 'h1' || item.key === 'h2' ? (
-                        <Text style={styles.blockMenuIconText}>{item.key.toUpperCase()}</Text>
-                      ) : (
-                        <Feather name={item.icon as any} size={17} color="#1f3b34" />
-                      )}
-                    </View>
-                    <Text style={styles.blockMenuButtonText}>{item.label}</Text>
-                  </Pressable>
-                ))}
+                {BLOCK_ACTIONS.map((item) => {
+                  const active = item.key === 'h1' ? blockStyleState.h1
+                    : item.key === 'h2' ? blockStyleState.h2
+                    : item.key === 'quote' ? blockStyleState.blockQuote
+                    : item.key === 'bullets' ? blockStyleState.unorderedList
+                    : item.key === 'numbers' ? blockStyleState.orderedList
+                    : item.key === 'checklist' ? blockStyleState.checklist
+                    : item.key === 'code' ? blockStyleState.inlineCode
+                    : false;
+
+                  return (
+                    <Pressable
+                      key={item.key}
+                      style={[styles.blockMenuButton, active && styles.blockMenuButtonActive]}
+                      onPress={() => handleBlockAction(item.action)}
+                    >
+                      <View style={[styles.blockMenuIconWrap, active && styles.blockMenuIconWrapActive]}>
+                        {item.key === 'h1' || item.key === 'h2' ? (
+                          <Text style={[styles.blockMenuIconText, active && styles.blockMenuIconTextActive]}>{item.key.toUpperCase()}</Text>
+                        ) : (
+                          <Feather name={item.icon as any} size={17} color={active ? '#ffffff' : '#1f3b34'} />
+                        )}
+                      </View>
+                      <Text style={[styles.blockMenuButtonText, active && styles.blockMenuButtonTextActive]}>{item.label}</Text>
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
             </View>
           ) : null}
@@ -1353,19 +1407,31 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: 12,
   },
+  blockMenuButtonActive: {
+    backgroundColor: '#1c2f2a',
+  },
   blockMenuIconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  blockMenuIconWrapActive: {
+    backgroundColor: 'transparent',
   },
   blockMenuIconText: {
     fontFamily: 'Manrope_800ExtraBold',
     fontSize: 12,
     color: '#1f3b34',
   },
+  blockMenuIconTextActive: {
+    color: '#ffffff',
+  },
   blockMenuButtonText: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
     color: '#111111',
+  },
+  blockMenuButtonTextActive: {
+    color: '#ffffff',
   },
   menuOverlay: {
     ...StyleSheet.absoluteFillObject,

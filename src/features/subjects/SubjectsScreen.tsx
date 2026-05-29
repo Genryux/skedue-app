@@ -10,6 +10,7 @@ export type FormattedSubject = {
   days: string[];
   time: string;
   location: string;
+  term: string;
   tasksCount: number;
   notesCount: number;
 };

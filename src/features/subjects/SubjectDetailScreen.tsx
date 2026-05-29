@@ -12,6 +12,7 @@ import {
   TextInput,
   LayoutAnimation,
   UIManager,
+  BackHandler,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -161,6 +162,14 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
       UIManager.setLayoutAnimationEnabledExperimental(true);
     }
   }, []);
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      onBack();
+      return true;
+    });
+    return () => backHandler.remove();
+  }, [onBack]);
 
   useEffect(() => {
     let isMounted = true;
@@ -542,13 +551,13 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
               {/* Top Row: Academic Period Pill */}
               <View style={styles.periodPill}>
                 <Text style={styles.periodPillText}>
-                  {subject?.term || '1ST SEMESTER'}
+                  {subject?.term || 'NO TERM SET'}
                 </Text>
               </View>
 
               {/* Prominent Subject Title */}
               <Text style={styles.heroSubjectTitle}>
-                {subject?.title ?? 'Advanced Calculus'}
+                  {subject?.title || 'Untitled Subject'}
               </Text>
 
               {/* Divider */}
@@ -561,13 +570,13 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                   <View style={styles.cardMetaItem}>
                     <Feather name="user" size={14} color="#A2C9BA" style={styles.metaIcon} />
                     <Text style={styles.cardMetaText} numberOfLines={1}>
-                      {subject?.instructor || 'Dr. Elena Rostova'}
+                      {subject?.instructor || 'No instructor'}
                     </Text>
                   </View>
                   <View style={styles.cardMetaItem}>
                     <Feather name="map-pin" size={14} color="#A2C9BA" style={styles.metaIcon} />
                     <Text style={styles.cardMetaText} numberOfLines={1}>
-                      {subject?.location || 'Room 402, Tech Bldg'}
+                      {subject?.location || 'No location'}
                     </Text>
                   </View>
                 </View>
@@ -579,13 +588,13 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                     <Text style={styles.cardMetaText} numberOfLines={1}>
                       {subject?.days && subject.days.length > 0
                         ? subject.days.join(', ')
-                        : 'Mon, Wed, Fri'}
+                        : 'No days set'}
                     </Text>
                   </View>
                   <View style={styles.cardMetaItem}>
                     <Feather name="clock" size={14} color="#A2C9BA" style={styles.metaIcon} />
                     <Text style={styles.cardMetaText} numberOfLines={1}>
-                      {subject?.time || '2:00 PM - 3:30 PM'}
+                      {subject?.time || 'No time set'}
                     </Text>
                   </View>
                 </View>
@@ -871,18 +880,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
             >
               {/* Loose Notes Section */}
               <View style={styles.section}>
-                <View style={styles.notesSectionHeader}>
-                  <Feather name="file-text" size={22} color="#1e2b26" style={styles.notesHeaderIcon} />
-                  <Text style={styles.sectionHeaderTitle}>Loose Notes</Text>
-                  <Pressable
-                    onPress={() => handleOpenNoteEditor()}
-                    style={styles.sectionHeaderActionButton}
-                    accessibilityRole="button"
-                    accessibilityLabel="Create note"
-                  >
-                    <Feather name="plus" size={18} color="#1e2b26" />
-                  </Pressable>
-                </View>
+                <Text style={styles.sectionHeaderTitle}>Loose Notes</Text>
 
                 {looseNotes.length === 0 ? (
                   <View style={styles.looseNotesEmptyState}>
@@ -891,29 +889,37 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                     </View>
                     <Text style={styles.looseNotesEmptyTitle}>No loose notes yet</Text>
                     <Text style={styles.looseNotesEmptyBody}>
-                      Notes saved here stay outside folders for quick capture.
+                      Notes without a folder will appear here.
                     </Text>
-                    <Pressable style={styles.looseNotesEmptyButton} onPress={() => handleOpenNoteEditor()}>
-                      <Feather name="plus" size={16} color="#f9f9f6" />
-                      <Text style={styles.looseNotesEmptyButtonText}>Create note</Text>
-                    </Pressable>
                   </View>
                 ) : (
-                  <View style={styles.notesOuterContainer}>
-                    {looseNotes.map((note) => (
-                      <CardScale key={note.id} onPress={() => handleOpenNoteEditor(note)} style={styles.noteCard}>
-                        <View style={styles.noteCardTopRow}>
-                          <Text style={styles.noteCardTitle} numberOfLines={1}>
-                            {note.title || 'Untitled note'}
+                    looseNotes.map((note) => {
+                      const date = new Date(note.updatedAt);
+                      const now = new Date();
+                      const isToday = date.toDateString() === now.toDateString();
+                      const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                      const dateStr = isToday
+                        ? timeStr
+                        : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` at ${timeStr}`;
+
+                      return (
+                        <CardScale key={note.id} onPress={() => handleOpenNoteEditor(note)} style={styles.noteCard}>
+                          <View style={styles.noteCardTopRow}>
+                            <Text style={styles.noteCardTitle} numberOfLines={1}>
+                              {note.title || 'Untitled note'}
+                            </Text>
+                            {note.isPinned ? <Feather name="star" size={14} color="#9A6700" /> : null}
+                          </View>
+                          <Text style={styles.noteCardPreview} numberOfLines={2}>
+                            {note.contentText || 'Tap to start your first draft.'}
                           </Text>
-                          {note.isPinned ? <Feather name="star" size={14} color="#9A6700" /> : null}
-                        </View>
-                        <Text style={styles.noteCardPreview} numberOfLines={2}>
-                          {note.contentText || 'Tap to start your first draft.'}
-                        </Text>
-                      </CardScale>
-                    ))}
-                  </View>
+                          <View style={styles.noteCardDateRow}>
+                            <Feather name="clock" size={12} color="#8f968f" />
+                            <Text style={styles.noteCardDateText}>{dateStr}</Text>
+                          </View>
+                        </CardScale>
+                      );
+                    })
                 )}
               </View>
 
@@ -1554,12 +1560,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#f9f9f6',
   },
-  notesOuterContainer: {
-    backgroundColor: '#f3f2ee',
-    borderRadius: 24,
-    padding: 16,
-    gap: 10,
-  },
   folderStack: {
     gap: 14,
   },
@@ -1715,6 +1715,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#efede8',
     ...shadowLg,
   },
   noteCardTopRow: {
@@ -1735,6 +1738,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#2a332e',
     lineHeight: 20,
+    marginBottom: 8,
+  },
+  noteCardDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  noteCardDateText: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 12,
+    color: '#8f968f',
   },
   navDock: {
     position: 'absolute',

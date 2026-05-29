@@ -397,6 +397,7 @@ export default function MainScreen() {
             ? formatTime(s.startTime)
             : '',
       location: s.location ?? '',
+      term: s.term ?? '',
       tasksCount: 0,
       notesCount: 0,
     }));
