@@ -18,6 +18,7 @@ import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import { useRouter } from 'expo-router';
 import DynamicIslandToast from '../../ui/DynamicIslandToast';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import {
@@ -103,7 +104,7 @@ const CardScale = ({
   );
 };
 
-const FOLDER_COLORS = [
+export const FOLDER_COLORS = [
   '#0B3B39',
   '#1B4332',
   '#14532D',
@@ -126,7 +127,36 @@ const FOLDER_COLORS = [
   '#881337',
 ] as const;
 
+export const FOLDER_BG_COLORS = [
+  '#D9F2EF',
+  '#E1F0E8',
+  '#DCF4E2',
+  '#E3EEF1',
+  '#E2F0EE',
+  '#D7F4F1',
+  '#EEF7D8',
+  '#DCEFF5',
+  '#E0F5E3',
+  '#E3EBF8',
+  '#E8E7FC',
+  '#EFE8FC',
+  '#F2E8FC',
+  '#FBE8E8',
+  '#FAF0E2',
+  '#FDF2D8',
+  '#F3F4F6',
+  '#F1F5F9',
+  '#E7EDFF',
+  '#FCE7F3',
+] as const;
+
+export const getFolderBgColor = (folderColor: string): string => {
+  const idx = (FOLDER_COLORS as readonly string[]).indexOf(folderColor);
+  return idx >= 0 ? FOLDER_BG_COLORS[idx] : '#f8f7f2';
+};
+
 export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailScreenProps) {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [folders, setFolders] = useState<FolderRecord[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
@@ -162,14 +192,6 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
       UIManager.setLayoutAnimationEnabledExperimental(true);
     }
   }, []);
-
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      onBack();
-      return true;
-    });
-    return () => backHandler.remove();
-  }, [onBack]);
 
   useEffect(() => {
     let isMounted = true;
@@ -241,6 +263,18 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
       setShowDeleteToast(true);
     }
   };
+
+  const handleOpenFolderDetail = (folder: FolderRecord) => {
+    router.push(`/folder/${folder.id}`);
+  };
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      onBack();
+      return true;
+    });
+    return () => backHandler.remove();
+  }, [onBack]);
 
   const handleSaveNote = async (
     noteId: string | null,
@@ -778,18 +812,20 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                       const cardBackground = folder.color ?? '#2a4f4b';
 
                       return (
-                        <View
+                        <Pressable
                           key={folder.id ?? `${folder.title}-${variant}`}
-                          style={[
+                          onPress={() => handleOpenFolderDetail(folder)}
+                          style={({ pressed }) => [
                             styles.folderCard,
                             variant === 'full' ? styles.folderCardFull : styles.folderCardCompact,
                             { backgroundColor: cardBackground },
+                            pressed ? styles.folderCardPressed : null,
                           ]}
                         >
                           <LinearGradient
-                            colors={['rgba(255,255,255,0.07)', 'rgba(255,255,255,0.01)']}
+                            colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.02)']}
                             start={{ x: 0, y: 0 }}
-                            end={{ x: 0, y: 1 }}
+                            end={{ x: 1, y: 1 }}
                             style={styles.folderCardSheen}
                           />
                           <View style={styles.folderCardTopRow}>
@@ -803,7 +839,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                             <Text style={styles.folderCardCount}>{count}</Text>
                             <Text style={styles.folderCardCountLabel}>items</Text>
                           </View>
-                        </View>
+                        </Pressable>
                       );
                     };
 
@@ -932,50 +968,50 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
 
       {/* Floating Bottom Tab Bar Navigation (Recreating Home Screen style exactly) */}
       <View style={styles.navDock}>
-        <View style={styles.navPill}>
-          <Pressable style={styles.navItem} onPress={() => setActiveTab('subject')}>
-            <View style={[styles.navItemInner, activeTab === 'subject' ? styles.navItemActive : null]}>
-              <Feather name="book-open" size={18} color={activeTab === 'subject' ? '#d7e4dd' : '#5c6762'} />
-              <Text style={activeTab === 'subject' ? styles.navLabelActive : styles.navLabel}>Subject</Text>
-            </View>
-          </Pressable>
-          <Pressable style={styles.navItem} onPress={() => setActiveTab('notes')}>
-            <View style={[styles.navItemInner, activeTab === 'notes' ? styles.navItemActive : null]}>
-              <Feather name="folder" size={18} color={activeTab === 'notes' ? '#d7e4dd' : '#5c6762'} />
-              <Text style={activeTab === 'notes' ? styles.navLabelActive : styles.navLabel}>Notes</Text>
-            </View>
-          </Pressable>
-          <Pressable style={styles.navItem} onPress={() => setActiveTab('tasks')}>
-            <View style={[styles.navItemInner, activeTab === 'tasks' ? styles.navItemActive : null]}>
-              <Feather name="check-circle" size={18} color={activeTab === 'tasks' ? '#d7e4dd' : '#5c6762'} />
-              <Text style={activeTab === 'tasks' ? styles.navLabelActive : styles.navLabel}>Tasks</Text>
-            </View>
-          </Pressable>
-        </View>
+          <View style={styles.navPill}>
+            <Pressable style={styles.navItem} onPress={() => setActiveTab('subject')}>
+              <View style={[styles.navItemInner, activeTab === 'subject' ? styles.navItemActive : null]}>
+                <Feather name="book-open" size={18} color={activeTab === 'subject' ? '#d7e4dd' : '#5c6762'} />
+                <Text style={activeTab === 'subject' ? styles.navLabelActive : styles.navLabel}>Subject</Text>
+              </View>
+            </Pressable>
+            <Pressable style={styles.navItem} onPress={() => setActiveTab('notes')}>
+              <View style={[styles.navItemInner, activeTab === 'notes' ? styles.navItemActive : null]}>
+                <Feather name="folder" size={18} color={activeTab === 'notes' ? '#d7e4dd' : '#5c6762'} />
+                <Text style={activeTab === 'notes' ? styles.navLabelActive : styles.navLabel}>Notes</Text>
+              </View>
+            </Pressable>
+            <Pressable style={styles.navItem} onPress={() => setActiveTab('tasks')}>
+              <View style={[styles.navItemInner, activeTab === 'tasks' ? styles.navItemActive : null]}>
+                <Feather name="check-circle" size={18} color={activeTab === 'tasks' ? '#d7e4dd' : '#5c6762'} />
+                <Text style={activeTab === 'tasks' ? styles.navLabelActive : styles.navLabel}>Tasks</Text>
+              </View>
+            </Pressable>
+          </View>
 
-        {/* Plus Button beside the navigation bar */}
-        <Animated.View style={[styles.floatingButtonContainer, {
-          transform: [{
-            scale: buttonScale.interpolate({
-              inputRange: [0, 1],
-              outputRange: [1, 0.9],
-            })
-          }]
-        }]}>
-          <Pressable style={styles.navAddButton} onPress={isActionSheetOpen ? handleCloseActions : handleOpenActions}>
-            <Animated.View style={{
-              transform: [{
-                rotate: buttonRotate.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ['0deg', '45deg'],
-                })
-              }]
-            }}>
-              <Feather name="plus" size={24} color="#f4f7f4" />
-            </Animated.View>
-          </Pressable>
-        </Animated.View>
-      </View>
+          {/* Plus Button beside the navigation bar */}
+          <Animated.View style={[styles.floatingButtonContainer, {
+            transform: [{
+              scale: buttonScale.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 0.9],
+              })
+            }]
+          }]}>
+            <Pressable style={styles.navAddButton} onPress={isActionSheetOpen ? handleCloseActions : handleOpenActions}>
+              <Animated.View style={{
+                transform: [{
+                  rotate: buttonRotate.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '45deg'],
+                  })
+                }]
+              }}>
+                <Feather name="plus" size={24} color="#f4f7f4" />
+              </Animated.View>
+            </Pressable>
+          </Animated.View>
+        </View>
 
       {/* Interactive Action Sheet Modal */}
       {isActionSheetOpen ? (
@@ -1311,7 +1347,10 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     justifyContent: 'space-between',
     overflow: 'hidden',
-    ...shadowLg,
+    ...shadowLgDark,
+  },
+  folderCardPressed: {
+    transform: [{ scale: 0.98 }],
   },
   folderCardFull: {
     minHeight: 144,

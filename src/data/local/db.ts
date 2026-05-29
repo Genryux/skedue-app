@@ -195,6 +195,61 @@ export const getFoldersBySubjectId = async (subjectId: string): Promise<FolderRe
   }));
 };
 
+export const getFolderById = async (folderId: string): Promise<FolderRecord | null> => {
+  const db = await getDb();
+  const row = await db.getFirstAsync<FolderRow>('SELECT * FROM folders WHERE id = ?', [folderId]);
+  if (!row) return null;
+  return {
+    id: row.id,
+    subjectId: row.subjectId,
+    title: row.title,
+    color: row.color,
+    createdAt: row.createdAt,
+  };
+};
+
+export const getNotesByFolderId = async (folderId: string): Promise<NoteRecord[]> => {
+  const db = await getDb();
+  const rows = await db.getAllAsync<NoteRow>(
+    `
+      SELECT *
+      FROM notes
+      WHERE folderId = ?
+      ORDER BY isPinned DESC, updatedAt DESC, createdAt DESC
+    `,
+    [folderId]
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    subjectId: row.subjectId,
+    folderId: row.folderId,
+    title: row.title,
+    contentHtml: row.contentHtml,
+    contentText: row.contentText,
+    isPinned: parseBoolean(row.isPinned),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }));
+};
+
+export const getSubjectById = async (subjectId: string): Promise<SubjectRecord | null> => {
+  const db = await getDb();
+  const row = await db.getFirstAsync<SubjectRow>('SELECT * FROM subjects WHERE id = ?', [subjectId]);
+  if (!row) return null;
+  return {
+    id: row.id,
+    title: row.title,
+    code: row.code ?? undefined,
+    instructor: row.instructor ?? undefined,
+    term: row.term ?? undefined,
+    days: parseDays(row.days),
+    startTime: row.startTime ?? undefined,
+    endTime: row.endTime ?? undefined,
+    location: row.location ?? undefined,
+    createdAt: row.createdAt,
+  };
+};
+
 export const insertFolder = async (folder: Omit<FolderRecord, 'id' | 'createdAt'>): Promise<FolderRecord> => {
   const db = await getDb();
   const id = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
