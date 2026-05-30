@@ -2,10 +2,11 @@ import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { EnrichedTextInput, type EnrichedTextInputInstance } from 'react-native-enriched';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   BackHandler,
+  Dimensions,
   Share,
   Keyboard,
-  Modal,
   Pressable,
   ScrollView,
   StatusBar,
@@ -16,7 +17,8 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import DynamicIslandToast from '../../ui/DynamicIslandToast';
-import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
+import { shadowLg } from '../../ui/tokens/shadows';
+import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
 import type { NoteRecord } from '../../data/local/db';
 
 type FolderOption = {
@@ -165,15 +167,20 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
   const [title, setTitle] = useState(() => note?.title ?? '');
   const [contentTextUi, setContentTextUi] = useState(() => note?.contentText ?? '');
   const [folderId, setFolderId] = useState<string | null>(() => note?.folderId ?? defaultFolderId ?? null);
+  const folderIdRef = useRef(folderId);
+  folderIdRef.current = folderId;
   const [isPinned, setIsPinned] = useState(() => note?.isPinned ?? false);
   const isPinnedRef = useRef(isPinned);
   isPinnedRef.current = isPinned;
   const [isBlockMenuOpen, setIsBlockMenuOpen] = useState(false);
-  const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
-  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isNoteSheetOpen, setIsNoteSheetOpen] = useState(false);
+  const isNoteSheetOpenRef = useRef(false);
+  const [noteSheetView, setNoteSheetView] = useState<'main' | 'delete' | 'folders'>('main');
   const [showBackSaveToast, setShowBackSaveToast] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const noteSheetSlide = useRef(new Animated.Value(0)).current;
+  const noteSheetOpacity = useRef(new Animated.Value(0)).current;
+  const { height: screenHeight } = Dimensions.get('window');
   const [inlineStyleState, setInlineStyleState] = useState({
     bold: false,
     italic: false,
@@ -248,6 +255,11 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
     });
 
     const backSubscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (isNoteSheetOpenRef.current) {
+        closeNoteSheet();
+        return true;
+      }
+
       if (savedOnBackRef.current) {
         skipUnmountSaveRef.current = true;
         onClose();
@@ -609,22 +621,66 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
 
   const handleFolderSelect = (selectedFolderId: string | null) => {
     setFolderId(selectedFolderId);
-    setIsFolderMenuOpen(false);
     markDirty();
     scheduleAutosave();
+    closeNoteSheet();
   };
+
+  const closeNoteSheet = () => {
+    Animated.parallel([
+      Animated.timing(noteSheetSlide, {
+        toValue: 0,
+        duration: 280,
+        useNativeDriver: true,
+      }),
+      Animated.timing(noteSheetOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        isNoteSheetOpenRef.current = false;
+        setIsNoteSheetOpen(false);
+      }
+    });
+  };
+
+  const openNoteSheet = () => {
+    Keyboard.dismiss();
+    setNoteSheetView('main');
+    isNoteSheetOpenRef.current = true;
+    setIsNoteSheetOpen(true);
+    Animated.parallel([
+      Animated.spring(noteSheetSlide, {
+        toValue: 1,
+        ...springModalSlide,
+      }),
+      Animated.timing(noteSheetOpacity, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const noteSheetDrag = useDragToClose(
+    noteSheetSlide,
+    () => { Animated.spring(noteSheetSlide, { toValue: 1, ...springModalSlide }).start(); },
+    closeNoteSheet,
+  );
 
   const togglePinned = () => {
     const next = !isPinned;
     setIsPinned(next);
     isPinnedRef.current = next;
-    setIsMoreMenuOpen(false);
+    closeNoteSheet();
     markDirty();
     scheduleAutosave();
   };
 
   const handleExportNote = async () => {
-    setIsMoreMenuOpen(false);
+    closeNoteSheet();
 
     const titleText = title.trim();
     const bodyText = contentTextRef.current.trim();
@@ -638,8 +694,6 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
   };
 
   const handleDeleteNote = () => {
-    setIsMoreMenuOpen(false);
-
     const noteId = savedNoteId;
     if (!noteId) {
       skipUnmountSaveRef.current = true;
@@ -647,21 +701,21 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
       return;
     }
 
-    setIsDeleteConfirmOpen(true);
+    setNoteSheetView('delete');
   };
 
   const cancelDelete = () => {
-    setIsDeleteConfirmOpen(false);
+    setNoteSheetView('main');
   };
 
   const confirmDelete = () => {
     const noteId = savedNoteId;
     if (!noteId) {
-      setIsDeleteConfirmOpen(false);
+      closeNoteSheet();
       return;
     }
 
-    setIsDeleteConfirmOpen(false);
+    closeNoteSheet();
 
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
@@ -718,7 +772,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
 
       const draft: NoteEditorDraft = {
         subjectId: note?.subjectId ?? subjectId,
-        folderId,
+        folderId: folderIdRef.current,
         title: titleTrim,
         contentHtml,
         contentText: textTrim || titleTrim,
@@ -733,7 +787,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
         lastSavedStateRef.current = {
           title: titleTrim,
           contentHtml: rawHtml,
-          folderId,
+          folderId: folderIdRef.current,
           isPinned: isPinnedRef.current,
         };
 
@@ -912,7 +966,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
             </Pressable>
           </View>
 
-          <Pressable style={styles.headerIconButton} onPress={() => setIsMoreMenuOpen(true)} hitSlop={8}>
+          <Pressable style={styles.headerIconButton} onPress={openNoteSheet} hitSlop={8}>
             <Feather name="more-horizontal" size={24} color="#111111" />
           </Pressable>
         </View>
@@ -926,10 +980,6 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
               <Feather name="chevron-right" size={15} color="#8a9088" />
               <Text style={styles.breadcrumbFolder} numberOfLines={1}>{folderId ? folderLabel : 'Loose notes'}</Text>
             </View>
-
-            <Pressable style={styles.folderDropdownButton} onPress={() => setIsFolderMenuOpen((current) => !current)} hitSlop={8}>
-              <Feather name="chevron-down" size={18} color="#2d4d43" />
-            </Pressable>
           </View>
 
           <TextInput
@@ -1046,74 +1096,116 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
           </View>
         </View>
 
-        {isFolderMenuOpen ? (
-          <View style={styles.menuOverlay} pointerEvents="box-none">
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsFolderMenuOpen(false)} />
-            <View style={styles.folderMenuSheet}>
-              {folderOptions.map((folder) => (
-                <FolderRow
-                  key={folder.id}
-                  label={folder.title}
-                  color={folder.color}
-                  active={folder.id === folderId}
-                  onPress={() => handleFolderSelect(folder.id)}
-                />
-              ))}
-            </View>
-          </View>
+        {isNoteSheetOpen ? (
+          <Animated.View style={[styles.noteSheetBackdrop, { opacity: noteSheetOpacity }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeNoteSheet} />
+          </Animated.View>
         ) : null}
 
-        {isMoreMenuOpen ? (
-          <View style={styles.menuOverlay} pointerEvents="box-none">
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsMoreMenuOpen(false)} />
-            <View style={styles.menuSheet}>
-              <Pressable style={styles.menuActionRow} onPress={togglePinned}>
-                <View style={[styles.menuActionIcon, isPinned && styles.menuActionIconActive]}>
-                  <MaterialCommunityIcons name={isPinned ? 'bookmark' : 'bookmark-outline'} size={16} color={isPinned ? '#1f5f4d' : '#4d5a54'} />
-                </View>
-                <Text style={styles.menuActionLabel}>{isPinned ? 'Unpin' : 'Pin'}</Text>
-              </Pressable>
-              <Pressable style={styles.menuActionRow} onPress={() => void handleExportNote()}>
-                <View style={styles.menuActionIcon}>
-                  <Feather name="share-2" size={16} color="#4d5a54" />
-                </View>
-                <Text style={styles.menuActionLabel}>Export</Text>
-              </Pressable>
-              <Pressable style={styles.menuActionRow} onPress={handleDeleteNote}>
-                <View style={styles.menuActionIcon}>
-                  <Feather name="trash-2" size={16} color="#b42318" />
-                </View>
-                <Text style={[styles.menuActionLabel, styles.menuActionLabelDanger]}>Delete</Text>
-              </Pressable>
+        {isNoteSheetOpen ? (
+          <Animated.View
+            style={[styles.noteSheetPanelWrapper, {
+              transform: [{
+                translateY: noteSheetSlide.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [screenHeight, 0],
+                }),
+              }],
+            }]}
+          >
+            <View style={styles.noteSheetPanel} {...noteSheetDrag.panResponder.panHandlers}>
+              <View style={styles.noteSheetHandle} />
+              <ScrollView bounces={false} showsVerticalScrollIndicator={false}
+                onScroll={(e) => { noteSheetDrag.scrollYRef.current = e.nativeEvent.contentOffset.y; }}
+                scrollEventThrottle={16}
+              >
+                {noteSheetView === 'main' && (
+                  <>
+                    <Text style={styles.noteSheetTitle}>Note Actions</Text>
+
+                    <Pressable style={styles.noteSheetActionRow} onPress={togglePinned}>
+                      <View style={[styles.noteSheetActionIcon, isPinned && styles.noteSheetActionIconActive]}>
+                        <MaterialCommunityIcons name={isPinned ? 'bookmark' : 'bookmark-outline'} size={16} color={isPinned ? '#1f5f4d' : '#4d5a54'} />
+                      </View>
+                      <Text style={styles.noteSheetActionLabel}>{isPinned ? 'Unpin' : 'Pin'}</Text>
+                    </Pressable>
+
+                    <Pressable style={styles.noteSheetActionRow} onPress={() => void handleExportNote()}>
+                      <View style={styles.noteSheetActionIcon}>
+                        <Feather name="share-2" size={16} color="#4d5a54" />
+                      </View>
+                      <Text style={styles.noteSheetActionLabel}>Export</Text>
+                    </Pressable>
+
+                    <Pressable style={styles.noteSheetActionRow} onPress={() => setNoteSheetView('folders')}>
+                      <View style={styles.noteSheetActionIcon}>
+                        <Feather name="folder" size={16} color="#4d5a54" />
+                      </View>
+                      <Text style={styles.noteSheetActionLabel}>Move to folder...</Text>
+                    </Pressable>
+
+                    <View style={styles.noteSheetDivider} />
+
+                    <Pressable style={styles.noteSheetActionRow} onPress={handleDeleteNote}>
+                      <View style={styles.noteSheetActionIcon}>
+                        <Feather name="trash-2" size={16} color="#b42318" />
+                      </View>
+                      <Text style={[styles.noteSheetActionLabel, styles.noteSheetActionLabelDanger]}>Delete</Text>
+                    </Pressable>
+                  </>
+                )}
+
+                {noteSheetView === 'delete' && (
+                  <>
+                    <Text style={styles.noteSheetTitle}>Delete note?</Text>
+                    <Text style={styles.noteSheetDeleteBody}>
+                      This will permanently remove the note from your device.
+                    </Text>
+
+                    <View style={styles.noteSheetDeleteActions}>
+                      <Pressable style={styles.noteSheetCancelButton} onPress={cancelDelete}>
+                        <Text style={styles.noteSheetCancelText}>Cancel</Text>
+                      </Pressable>
+                      <Pressable style={styles.noteSheetDeleteButton} onPress={confirmDelete}>
+                        <Text style={styles.noteSheetDeleteText}>Delete</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                )}
+
+                {noteSheetView === 'folders' && (
+                  <>
+                    <View style={styles.noteSheetFolderHeader}>
+                      <Pressable onPress={() => setNoteSheetView('main')} hitSlop={8}>
+                        <Feather name="arrow-left" size={22} color="#111111" />
+                      </Pressable>
+                      <Text style={styles.noteSheetFolderTitle}>Move to folder</Text>
+                      <View style={{ width: 22 }} />
+                    </View>
+
+                    <Pressable style={styles.noteSheetActionRow} onPress={() => handleFolderSelect(null)}>
+                      <View style={styles.noteSheetActionIcon}>
+                        <Feather name="file-text" size={16} color="#4d5a54" />
+                      </View>
+                      <Text style={styles.noteSheetActionLabel}>Loose notes</Text>
+                      {!folderId ? <Feather name="check" size={16} color="#1f5f4d" /> : null}
+                    </Pressable>
+
+                    {folderOptions.map((folder) => (
+                      <Pressable key={folder.id} style={styles.noteSheetActionRow} onPress={() => handleFolderSelect(folder.id)}>
+                        <View style={[styles.noteSheetActionIcon, { backgroundColor: folder.color + '20' }]}>
+                          <Feather name="folder" size={16} color={folder.color} />
+                        </View>
+                        <Text style={styles.noteSheetActionLabel}>{folder.title}</Text>
+                        {folder.id === folderId ? <Feather name="check" size={16} color="#1f5f4d" /> : null}
+                      </Pressable>
+                    ))}
+                  </>
+                )}
+              </ScrollView>
             </View>
-          </View>
+          </Animated.View>
         ) : null}
-
-        <Modal
-          visible={isDeleteConfirmOpen}
-          transparent
-          animationType="none"
-          onRequestClose={cancelDelete}
-        >
-          <View style={styles.deleteConfirmOverlay}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={cancelDelete} />
-            <View style={styles.deleteConfirmCard}>
-              <Text style={styles.deleteConfirmTitle}>Delete note?</Text>
-              <Text style={styles.deleteConfirmBody}>
-                This will permanently remove the note from your device.
-              </Text>
-
-              <View style={styles.deleteConfirmActions}>
-                <Pressable style={styles.deleteConfirmCancelButton} onPress={cancelDelete}>
-                  <Text style={styles.deleteConfirmCancelText}>Cancel</Text>
-                </Pressable>
-                <Pressable style={styles.deleteConfirmDeleteButton} onPress={confirmDelete}>
-                  <Text style={styles.deleteConfirmDeleteText}>Delete</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
 
       </View>
     </SafeAreaView>
@@ -1157,24 +1249,6 @@ const ToolbarButton = ({
     >
       {label}
     </Text>
-  </Pressable>
-);
-
-const FolderRow = ({
-  label,
-  color,
-  active,
-  onPress,
-}: {
-  label: string;
-  color?: string;
-  active: boolean;
-  onPress: () => void;
-}) => (
-  <Pressable style={[styles.folderMenuRow, active && styles.folderMenuRowActive]} onPress={onPress}>
-    <Feather name={active ? 'folder' : 'folder'} size={18} color={active ? '#1f5f4d' : '#8f968f'} />
-    <Text style={styles.folderMenuText}>{label}</Text>
-    {active ? <Feather name="check" size={16} color="#1f5f4d" /> : null}
   </Pressable>
 );
 
@@ -1237,6 +1311,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 18,
+    opacity: 0.55,
   },
   breadcrumbTextWrap: {
     flex: 1,
@@ -1253,18 +1328,9 @@ const styles = StyleSheet.create({
   },
   breadcrumbFolder: {
     flexShrink: 1,
-    fontFamily: 'Manrope_700Bold',
+    fontFamily: 'Manrope_500Medium',
     fontSize: 13,
-    color: '#22433a',
-  },
-  folderDropdownButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#eef2ed',
-    marginLeft: 10,
+    color: '#66706b',
   },
   titleInput: {
     fontFamily: 'Manrope_800ExtraBold',
@@ -1474,64 +1540,50 @@ const styles = StyleSheet.create({
   blockMenuButtonTextActive: {
     color: '#ffffff',
   },
-  menuOverlay: {
+  noteSheetBackdrop: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(5, 8, 7, 0.3)',
+    zIndex: 99,
   },
-  folderMenuSheet: {
+  noteSheetPanelWrapper: {
     position: 'absolute',
-    top: 128,
-    right: 14,
-    width: 240,
-    backgroundColor: '#ffffff',
-    borderRadius: 22,
-    padding: 8,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+  },
+  noteSheetPanel: {
+    backgroundColor: '#f8f7f2',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 40,
     ...shadowLg,
   },
-  folderMenuRow: {
-    minHeight: 44,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  noteSheetHandle: {
+    width: 68,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#e3e0d8',
+    alignSelf: 'center',
+    marginBottom: 16,
   },
-  folderMenuRowActive: {
-    backgroundColor: '#edf2ef',
-  },
-  folderMenuDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#c3cac5',
-  },
-  folderMenuDotActive: {
-    backgroundColor: '#2d4d43',
-  },
-  folderMenuText: {
-    flex: 1,
-    fontFamily: 'Manrope_600SemiBold',
-    fontSize: 14,
+  noteSheetTitle: {
+    fontFamily: 'Manrope_800ExtraBold',
+    fontSize: 24,
     color: '#111111',
+    letterSpacing: -0.4,
+    marginBottom: 20,
   },
-  menuSheet: {
-    position: 'absolute',
-    right: 14,
-    top: 68,
-    width: 220,
-    backgroundColor: 'rgba(255,255,255,0.98)',
-    borderRadius: 26,
-    padding: 10,
-    ...shadowLg,
-  },
-  menuActionRow: {
-    minHeight: 48,
-    paddingHorizontal: 12,
-    borderRadius: 18,
+  noteSheetActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 4,
   },
-  menuActionIcon: {
+  noteSheetActionIcon: {
     width: 30,
     height: 30,
     borderRadius: 15,
@@ -1539,54 +1591,47 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#f2f4f1',
   },
-  menuActionIconActive: {
+  noteSheetActionIconActive: {
     backgroundColor: '#e6f2ed',
   },
-  menuActionLabel: {
+  noteSheetActionLabel: {
     flex: 1,
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
     color: '#111111',
   },
-  menuActionLabelDanger: {
+  noteSheetActionLabelDanger: {
     color: '#b42318',
   },
-  deleteConfirmOverlay: {
-    flex: 1,
-    justifyContent: 'center',
+  noteSheetDivider: {
+    height: 1,
+    backgroundColor: '#e8e6de',
+    marginVertical: 4,
+  },
+  noteSheetFolderHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 18, 20, 0.28)',
-    paddingHorizontal: 18,
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
-  deleteConfirmCard: {
-    width: '100%',
-    maxWidth: 360,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.98)',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
-    ...shadowLg,
-  },
-  deleteConfirmTitle: {
+  noteSheetFolderTitle: {
     fontFamily: 'Manrope_800ExtraBold',
     fontSize: 20,
     color: '#111111',
-    letterSpacing: -0.4,
+    letterSpacing: -0.3,
   },
-  deleteConfirmBody: {
-    marginTop: 8,
+  noteSheetDeleteBody: {
     fontFamily: 'Manrope_500Medium',
     fontSize: 14,
     lineHeight: 21,
     color: '#5f6661',
+    marginBottom: 24,
   },
-  deleteConfirmActions: {
-    marginTop: 18,
+  noteSheetDeleteActions: {
     flexDirection: 'row',
     gap: 10,
   },
-  deleteConfirmCancelButton: {
+  noteSheetCancelButton: {
     flex: 1,
     height: 46,
     borderRadius: 16,
@@ -1594,12 +1639,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#eef2ee',
   },
-  deleteConfirmCancelText: {
+  noteSheetCancelText: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
     color: '#1f2b25',
   },
-  deleteConfirmDeleteButton: {
+  noteSheetDeleteButton: {
     flex: 1,
     height: 46,
     borderRadius: 16,
@@ -1607,7 +1652,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#b42318',
   },
-  deleteConfirmDeleteText: {
+  noteSheetDeleteText: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
     color: '#ffffff',
