@@ -19,6 +19,7 @@ type FolderRow = {
   subjectId: string;
   title: string;
   color: string;
+  isPinned: number;
   createdAt: number;
 };
 
@@ -52,6 +53,7 @@ export type FolderRecord = {
   subjectId: string;
   title: string;
   color: string;
+  isPinned: boolean;
   createdAt: number;
 };
 
@@ -182,7 +184,7 @@ export const insertSubject = async (
 export const getFoldersBySubjectId = async (subjectId: string): Promise<FolderRecord[]> => {
   const db = await getDb();
   const rows = await db.getAllAsync<FolderRow>(
-    'SELECT * FROM folders WHERE subjectId = ? ORDER BY createdAt ASC',
+    'SELECT * FROM folders WHERE subjectId = ? ORDER BY isPinned DESC, createdAt ASC',
     [subjectId]
   );
 
@@ -191,6 +193,7 @@ export const getFoldersBySubjectId = async (subjectId: string): Promise<FolderRe
     subjectId: row.subjectId,
     title: row.title,
     color: row.color,
+    isPinned: parseBoolean(row.isPinned),
     createdAt: row.createdAt,
   }));
 };
@@ -204,6 +207,7 @@ export const getFolderById = async (folderId: string): Promise<FolderRecord | nu
     subjectId: row.subjectId,
     title: row.title,
     color: row.color,
+    isPinned: parseBoolean(row.isPinned),
     createdAt: row.createdAt,
   };
 };
@@ -256,8 +260,8 @@ export const insertFolder = async (folder: Omit<FolderRecord, 'id' | 'createdAt'
   const createdAt = Date.now();
 
   await db.runAsync(
-    'INSERT INTO folders (id, subjectId, title, color, createdAt) VALUES (?, ?, ?, ?, ?)',
-    [id, folder.subjectId, folder.title, folder.color, createdAt]
+    'INSERT INTO folders (id, subjectId, title, color, isPinned, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, folder.subjectId, folder.title, folder.color, folder.isPinned ? 1 : 0, createdAt]
   );
 
   return {
@@ -265,8 +269,61 @@ export const insertFolder = async (folder: Omit<FolderRecord, 'id' | 'createdAt'
     subjectId: folder.subjectId,
     title: folder.title,
     color: folder.color,
+    isPinned: folder.isPinned,
     createdAt,
   };
+};
+
+export const updateFolder = async (
+  folderId: string,
+  updates: { title?: string; color?: string; isPinned?: boolean }
+): Promise<FolderRecord> => {
+  const db = await getDb();
+  const sets: string[] = [];
+  const params: any[] = [];
+
+  if (updates.title !== undefined) {
+    sets.push('title = ?');
+    params.push(updates.title);
+  }
+  if (updates.color !== undefined) {
+    sets.push('color = ?');
+    params.push(updates.color);
+  }
+  if (updates.isPinned !== undefined) {
+    sets.push('isPinned = ?');
+    params.push(updates.isPinned ? 1 : 0);
+  }
+
+  if (sets.length === 0) {
+    const existing = await getFolderById(folderId);
+    if (!existing) throw new Error('Folder not found');
+    return existing;
+  }
+
+  params.push(folderId);
+  await db.runAsync(`UPDATE folders SET ${sets.join(', ')} WHERE id = ?`, params);
+
+  const row = await db.getFirstAsync<FolderRow>('SELECT * FROM folders WHERE id = ?', [folderId]);
+  if (!row) throw new Error('Folder not found after update');
+  return {
+    id: row.id,
+    subjectId: row.subjectId,
+    title: row.title,
+    color: row.color,
+    isPinned: parseBoolean(row.isPinned),
+    createdAt: row.createdAt,
+  };
+};
+
+export const deleteFolder = async (folderId: string): Promise<void> => {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM folders WHERE id = ?', [folderId]);
+};
+
+export const moveNotesToFolder = async (sourceFolderId: string, targetFolderId: string | null): Promise<void> => {
+  const db = await getDb();
+  await db.runAsync('UPDATE notes SET folderId = ? WHERE folderId = ?', [targetFolderId, sourceFolderId]);
 };
 
 const parseBoolean = (value: number | null | undefined) => value === 1;

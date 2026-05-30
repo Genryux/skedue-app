@@ -72,4 +72,12 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 5,
+    up: async (db) => {
+      await db.execAsync(`
+        ALTER TABLE folders ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0;
+      `);
+    },
+  },
 ];

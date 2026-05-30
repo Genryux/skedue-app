@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,12 +13,14 @@ import {
   LayoutAnimation,
   UIManager,
   BackHandler,
+  RefreshControl,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import DynamicIslandToast from '../../ui/DynamicIslandToast';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import {
@@ -157,6 +159,7 @@ export const getFolderBgColor = (folderColor: string): string => {
 
 export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailScreenProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const [folders, setFolders] = useState<FolderRecord[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
@@ -168,6 +171,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
   const [selectedNote, setSelectedNote] = useState<NoteRecord | null>(null);
   const [showSaveToast, setShowSaveToast] = useState(false);
   const [showDeleteToast, setShowDeleteToast] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const saveInFlightRef = useRef<Promise<NoteRecord> | null>(null);
   const folderExpansionAnim = useRef(new Animated.Value(0)).current;
   const sheetOpacity = useRef(new Animated.Value(0)).current;
@@ -193,43 +197,43 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
     }
   }, []);
 
+  const loadSubjectData = useCallback(async () => {
+    if (!subject?.id) {
+      setFolders([]);
+      setNotes([]);
+      return;
+    }
+
+    try {
+      const [storedFolders, storedNotes] = await Promise.all([
+        getFoldersBySubjectId(subject.id),
+        getNotesBySubjectId(subject.id),
+      ]);
+
+      setFolders(storedFolders);
+      setNotes(storedNotes);
+    } catch (error) {
+      console.warn('Failed to load subject detail data', error);
+      setFolders([]);
+      setNotes([]);
+    }
+  }, [subject?.id]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadSubjectData();
+    setRefreshing(false);
+  }, [loadSubjectData]);
+
   useEffect(() => {
-    let isMounted = true;
-
-    const loadSubjectData = async () => {
-      if (!subject?.id) {
-        if (isMounted) {
-          setFolders([]);
-          setNotes([]);
-        }
-        return;
-      }
-
-      try {
-        const [storedFolders, storedNotes] = await Promise.all([
-          getFoldersBySubjectId(subject.id),
-          getNotesBySubjectId(subject.id),
-        ]);
-
-        if (isMounted) {
-          setFolders(storedFolders);
-          setNotes(storedNotes);
-        }
-      } catch (error) {
-        console.warn('Failed to load subject detail data', error);
-        if (isMounted) {
-          setFolders([]);
-          setNotes([]);
-        }
-      }
-    };
-
     loadSubjectData();
+  }, [loadSubjectData, subject?.folders]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [subject?.id, subject?.folders]);
+  useFocusEffect(
+    useCallback(() => {
+      loadSubjectData();
+    }, [loadSubjectData])
+  );
 
   const handleOpenNoteEditor = (note: NoteRecord | null = null) => {
     setShowSaveToast(false);
@@ -270,11 +274,17 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
 
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (pathname !== '/') {
+        return false;
+      }
+      if (isNoteEditorOpen) {
+        return false;
+      }
       onBack();
       return true;
     });
     return () => backHandler.remove();
-  }, [onBack]);
+  }, [onBack, isNoteEditorOpen, pathname]);
 
   const handleSaveNote = async (
     noteId: string | null,
@@ -499,6 +509,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
         subjectId: subject.id,
         title: name,
         color: selectedFolderColor,
+        isPinned: false,
       });
 
       setFolders((current) => [
@@ -573,6 +584,14 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
           opacity: contentFadeAnim,
           transform: [{ translateY: contentSlideAnim }],
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#2d4d43"
+            colors={['#2d4d43']}
+          />
+        }
       >
         {/* Dynamic Screen Content Based on Active Tab */}
         {activeTab === 'subject' && (
@@ -836,8 +855,13 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                           </View>
 
                           <View style={styles.folderCardBottomRow}>
-                            <Text style={styles.folderCardCount}>{count}</Text>
-                            <Text style={styles.folderCardCountLabel}>items</Text>
+                            <View style={styles.folderCardCountGroup}>
+                              <Text style={styles.folderCardCount}>{count}</Text>
+                              <Text style={styles.folderCardCountLabel}>items</Text>
+                            </View>
+                            {folder.isPinned ? (
+                              <MaterialCommunityIcons name="bookmark" size={28} color="#FFD666" />
+                            ) : null}
                           </View>
                         </Pressable>
                       );
@@ -944,7 +968,6 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                             <Text style={styles.noteCardTitle} numberOfLines={1}>
                               {note.title || 'Untitled note'}
                             </Text>
-                            {note.isPinned ? <Feather name="star" size={14} color="#9A6700" /> : null}
                           </View>
                           <Text style={styles.noteCardPreview} numberOfLines={2}>
                             {note.contentText || 'Tap to start your first draft.'}
@@ -952,6 +975,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
                           <View style={styles.noteCardDateRow}>
                             <Feather name="clock" size={12} color="#8f968f" />
                             <Text style={styles.noteCardDateText}>{dateStr}</Text>
+                            {note.isPinned ? <MaterialCommunityIcons name="bookmark" size={16} color="#FFD666" style={{ marginLeft: 'auto' }} /> : null}
                           </View>
                         </CardScale>
                       );
@@ -1229,7 +1253,7 @@ const styles = StyleSheet.create({
     ...shadowLg,
   },
   scrollContainer: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
     paddingTop: 18,
   },
   heroCard: {
@@ -1361,6 +1385,12 @@ const styles = StyleSheet.create({
   folderCardSheen: {
     ...StyleSheet.absoluteFillObject,
   },
+  folderCardCountGroup: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+    flex: 1,
+  },
   folderCardTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1377,7 +1407,7 @@ const styles = StyleSheet.create({
   },
   folderCardBottomRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     gap: 10,
   },
   folderCardCount: {

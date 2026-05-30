@@ -1,4 +1,4 @@
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { EnrichedTextInput, type EnrichedTextInputInstance } from 'react-native-enriched';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import DynamicIslandToast from '../../ui/DynamicIslandToast';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import type { NoteRecord } from '../../data/local/db';
 
@@ -37,6 +38,7 @@ type NoteEditorScreenProps = {
   subjectId: string;
   subjectTitle: string;
   note: NoteRecord | null;
+  defaultFolderId?: string | null;
   folderOptions: FolderOption[];
   onClose: (options?: { saved?: boolean; deleted?: boolean }) => void;
   onSave: (noteId: string | null, draft: NoteEditorDraft) => Promise<NoteRecord | null | void> | NoteRecord | null | void;
@@ -146,7 +148,7 @@ const normalizeTextForCompare = (value: string) =>
     .replace(/[ \t]+\n/g, '\n')
     .trimEnd();
 
-export default function NoteEditorScreen({ subjectId, subjectTitle, note, folderOptions, onClose, onSave, onDelete }: NoteEditorScreenProps) {
+export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaultFolderId, folderOptions, onClose, onSave, onDelete }: NoteEditorScreenProps) {
   const insets = useSafeAreaInsets();
   const editorRef = useRef<EnrichedTextInputInstance>(null);
   const historyRef = useRef<{ entries: NoteSnapshot[]; index: number }>({
@@ -155,18 +157,22 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   });
   const isApplyingHistoryRef = useRef(false);
 
+  const titleRef = useRef(note?.title ?? '');
   const contentHtmlRef = useRef(note?.contentHtml ?? '');
   const contentTextRef = useRef(note?.contentText ?? '');
 
   const [savedNoteId, setSavedNoteId] = useState<string | null>(() => note?.id ?? null);
   const [title, setTitle] = useState(() => note?.title ?? '');
   const [contentTextUi, setContentTextUi] = useState(() => note?.contentText ?? '');
-  const [folderId, setFolderId] = useState<string | null>(() => note?.folderId ?? null);
+  const [folderId, setFolderId] = useState<string | null>(() => note?.folderId ?? defaultFolderId ?? null);
   const [isPinned, setIsPinned] = useState(() => note?.isPinned ?? false);
+  const isPinnedRef = useRef(isPinned);
+  isPinnedRef.current = isPinned;
   const [isBlockMenuOpen, setIsBlockMenuOpen] = useState(false);
   const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [showBackSaveToast, setShowBackSaveToast] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [inlineStyleState, setInlineStyleState] = useState({
     bold: false,
@@ -200,6 +206,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   const historyBurstActiveRef = useRef(false);
   const contentDirtySinceHistoryRef = useRef(false);
   const skipUnmountSaveRef = useRef(false);
+  const savedOnBackRef = useRef(false);
   const isHydratingRef = useRef(true);
   const hydrationFrameRef = useRef<number | null>(null);
   const isInputFocusedRef = useRef(false);
@@ -241,7 +248,30 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
     });
 
     const backSubscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      void requestClose();
+      if (savedOnBackRef.current) {
+        skipUnmountSaveRef.current = true;
+        onClose();
+        return true;
+      }
+
+      if (savingInFlightRef.current) {
+        skipUnmountSaveRef.current = true;
+        onClose();
+        return true;
+      }
+
+      const hasContent = titleRef.current.trim().length > 0 || contentTextRef.current.trim().length > 0;
+
+      if (isDirtyRef.current && hasContent) {
+        savedOnBackRef.current = true;
+        void persistNote({ source: 'back' }).then(() => {
+          setShowBackSaveToast(true);
+        });
+        return true;
+      }
+
+      skipUnmountSaveRef.current = true;
+      onClose();
       return true;
     });
 
@@ -313,6 +343,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
       return;
     }
     isDirtyRef.current = true;
+    savedOnBackRef.current = false;
     setIsDirty(true);
   };
 
@@ -481,7 +512,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
       return;
     }
 
-    const hasContent = title.trim().length > 0 || contentTextRef.current.trim().length > 0;
+    const hasContent = titleRef.current.trim().length > 0 || contentTextRef.current.trim().length > 0;
 
     if (isDirtyRef.current && hasContent) {
       await persistNote({ source: 'back' });
@@ -584,7 +615,9 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   };
 
   const togglePinned = () => {
-    setIsPinned((prev) => !prev);
+    const next = !isPinned;
+    setIsPinned(next);
+    isPinnedRef.current = next;
     setIsMoreMenuOpen(false);
     markDirty();
     scheduleAutosave();
@@ -664,10 +697,9 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
       return;
     }
 
-    const titleTrim = title.trim();
+    const titleTrim = titleRef.current.trim();
     const textTrim = contentTextRef.current.trim();
 
-    // Prevent saving purely empty note strings.
     if (!titleTrim && !textTrim) {
       return;
     }
@@ -680,8 +712,6 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
     }
 
     try {
-      // Use a fresh HTML snapshot at save time for correctness.
-      // This avoids depending on high-frequency state sync while typing.
       const htmlFromNative = await editorRef.current?.getHTML().catch(() => null);
       const rawHtml = typeof htmlFromNative === 'string' ? htmlFromNative : contentHtmlRef.current;
       const contentHtml = applyChecklistStrikethrough(rawHtml.trim() || '<p></p>');
@@ -692,7 +722,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
         title: titleTrim,
         contentHtml,
         contentText: textTrim || titleTrim,
-        isPinned,
+        isPinned: isPinnedRef.current,
       };
 
       const saved = await onSave(savedNoteId, draft);
@@ -701,10 +731,10 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
         contentHtmlRef.current = rawHtml;
         contentTextRef.current = textTrim || titleTrim;
         lastSavedStateRef.current = {
-          title,
+          title: titleTrim,
           contentHtml: rawHtml,
           folderId,
-          isPinned,
+          isPinned: isPinnedRef.current,
         };
 
         hasUserEditedRef.current = false;
@@ -720,10 +750,11 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
   };
 
   const handleTitleChange = (value: string) => {
-    if (value === title) {
+    if (value === titleRef.current) {
       return;
     }
 
+    titleRef.current = value;
     setTitle(value);
     markDirty();
     scheduleAutosave();
@@ -1019,11 +1050,11 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
           <View style={styles.menuOverlay} pointerEvents="box-none">
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsFolderMenuOpen(false)} />
             <View style={styles.folderMenuSheet}>
-              <FolderRow label={subjectTitle} active={folderId === null} onPress={() => handleFolderSelect(null)} />
               {folderOptions.map((folder) => (
                 <FolderRow
                   key={folder.id}
                   label={folder.title}
+                  color={folder.color}
                   active={folder.id === folderId}
                   onPress={() => handleFolderSelect(folder.id)}
                 />
@@ -1038,7 +1069,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
             <View style={styles.menuSheet}>
               <Pressable style={styles.menuActionRow} onPress={togglePinned}>
                 <View style={[styles.menuActionIcon, isPinned && styles.menuActionIconActive]}>
-                  <Feather name="map-pin" size={16} color={isPinned ? '#1f5f4d' : '#4d5a54'} />
+                  <MaterialCommunityIcons name={isPinned ? 'bookmark' : 'bookmark-outline'} size={16} color={isPinned ? '#1f5f4d' : '#4d5a54'} />
                 </View>
                 <Text style={styles.menuActionLabel}>{isPinned ? 'Unpin' : 'Pin'}</Text>
               </Pressable>
@@ -1087,6 +1118,14 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, folder
       </View>
     </SafeAreaView>
 
+      {showBackSaveToast ? (
+        <DynamicIslandToast
+          visible={showBackSaveToast}
+          message="Note saved"
+          onHide={() => setShowBackSaveToast(false)}
+        />
+      ) : null}
+
     </View>
   );
 }
@@ -1123,17 +1162,19 @@ const ToolbarButton = ({
 
 const FolderRow = ({
   label,
+  color,
   active,
   onPress,
 }: {
   label: string;
+  color?: string;
   active: boolean;
   onPress: () => void;
 }) => (
   <Pressable style={[styles.folderMenuRow, active && styles.folderMenuRowActive]} onPress={onPress}>
-    <View style={[styles.folderMenuDot, active && styles.folderMenuDotActive]} />
+    <Feather name={active ? 'folder' : 'folder'} size={18} color={active ? '#1f5f4d' : '#8f968f'} />
     <Text style={styles.folderMenuText}>{label}</Text>
-    {active ? <Feather name="check" size={16} color="#1f3b34" /> : null}
+    {active ? <Feather name="check" size={16} color="#1f5f4d" /> : null}
   </Pressable>
 );
 
@@ -1444,7 +1485,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 22,
     padding: 8,
-    ...shadowLgDark,
+    ...shadowLg,
   },
   folderMenuRow: {
     minHeight: 44,
