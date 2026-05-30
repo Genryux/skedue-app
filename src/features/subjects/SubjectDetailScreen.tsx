@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {
   UIManager,
   BackHandler,
   RefreshControl,
+  Dimensions,
+  Keyboard,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -21,18 +23,25 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { usePathname, useRouter } from 'expo-router';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import DynamicIslandToast from '../../ui/DynamicIslandToast';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
+import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
+import { formatTimeDisplay, parseTimeToMinutes } from '../../utils/timeUtils';
+import { findTimeConflicts } from './conflictUtils';
 import {
   getFoldersBySubjectId,
   findRecentMatchingNote,
   getNotesBySubjectId,
+  getSubjects,
   deleteNote,
   insertFolder,
   insertNote,
   updateNote,
+  updateSubject,
   type FolderRecord,
   type NoteRecord,
+  type SubjectRecord,
 } from '../../data/local/db';
 
 declare const require: any;
@@ -60,6 +69,7 @@ const NoteEditorScreen = require('./NoteEditorScreen').default as React.Componen
 type SubjectDetailScreenProps = {
   subject: any;
   onBack: () => void;
+  onUpdate?: (updatedSubject?: any) => void;
 };
 
 // Premium Touch Feedback - Scales down card on press and springs back on release
@@ -157,7 +167,17 @@ export const getFolderBgColor = (folderColor: string): string => {
   return idx >= 0 ? FOLDER_BG_COLORS[idx] : '#f8f7f2';
 };
 
-export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailScreenProps) {
+const DAYS = [
+  { label: 'Su', value: 'Su' },
+  { label: 'Mo', value: 'Mo' },
+  { label: 'Tu', value: 'Tu' },
+  { label: 'We', value: 'We' },
+  { label: 'Th', value: 'Th' },
+  { label: 'Fr', value: 'Fr' },
+  { label: 'Sa', value: 'Sa' },
+] as const;
+
+export default function SubjectDetailScreen({ subject, onBack, onUpdate }: SubjectDetailScreenProps) {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -171,6 +191,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
   const [selectedNote, setSelectedNote] = useState<NoteRecord | null>(null);
   const [showSaveToast, setShowSaveToast] = useState(false);
   const [showDeleteToast, setShowDeleteToast] = useState(false);
+  const [showSubjectSavedToast, setShowSubjectSavedToast] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const saveInFlightRef = useRef<Promise<NoteRecord> | null>(null);
   const folderExpansionAnim = useRef(new Animated.Value(0)).current;
@@ -180,9 +201,28 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
   const buttonScale = useRef(new Animated.Value(0)).current;
   const folderSheetOpacity = useRef(new Animated.Value(0)).current;
   const folderSheetTranslate = useRef(new Animated.Value(18)).current;
+  const [isSubjectSheetOpen, setIsSubjectSheetOpen] = useState(false);
+  const subjectSheetSlide = useRef(new Animated.Value(0)).current;
+  const subjectSheetOpacity = useRef(new Animated.Value(0)).current;
+  const [subjectSheetView, setSubjectSheetView] = useState<'main' | 'editInfo' | 'editTerm' | 'editSchedule'>('main');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const { height: screenHeight } = Dimensions.get('window');
+  const [editTitle, setEditTitle] = useState('');
+  const [editCode, setEditCode] = useState('');
+  const [editInstructor, setEditInstructor] = useState('');
+  const [editTerm, setEditTerm] = useState('');
+  
+  const [editDays, setEditDays] = useState<Set<string>>(new Set());
+  const [editStartDate, setEditStartDate] = useState(new Date(2026, 0, 1, 9, 0));
+  const [editEndDate, setEditEndDate] = useState(new Date(2026, 0, 1, 10, 30));
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
+  const [editLocation, setEditLocation] = useState('');
+  const [existingSubjects, setExistingSubjects] = useState<SubjectRecord[]>([]);
   const featuredFolders = folders.slice(0, 3);
   const remainingFolders = folders.slice(3);
   const looseNotes = notes.filter((note) => !note.folderId);
+  const recentNotes = [...notes].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
   const folderNoteCounts = notes.reduce<Record<string, number>>((accumulator, note) => {
     if (note.folderId) {
       accumulator[note.folderId] = (accumulator[note.folderId] ?? 0) + 1;
@@ -196,6 +236,38 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
       UIManager.setLayoutAnimationEnabledExperimental(true);
     }
   }, []);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    getSubjects().then(setExistingSubjects).catch(console.warn);
+  }, []);
+
+  const scheduleConflicts = useMemo(() => {
+    if (!subject?.id) return [];
+    return findTimeConflicts(
+      {
+        id: subject.id,
+        days: Array.from(editDays),
+        startTime: formatTimeDisplay(editStartDate),
+        endTime: formatTimeDisplay(editEndDate),
+      },
+      existingSubjects,
+    );
+  }, [subject?.id, editDays, editStartDate, editEndDate, existingSubjects]);
+
+  const hasScheduleConflict = scheduleConflicts.length > 0;
 
   const loadSubjectData = useCallback(async () => {
     if (!subject?.id) {
@@ -271,20 +343,6 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
   const handleOpenFolderDetail = (folder: FolderRecord) => {
     router.push(`/folder/${folder.id}`);
   };
-
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (pathname !== '/') {
-        return false;
-      }
-      if (isNoteEditorOpen) {
-        return false;
-      }
-      onBack();
-      return true;
-    });
-    return () => backHandler.remove();
-  }, [onBack, isNoteEditorOpen, pathname]);
 
   const handleSaveNote = async (
     noteId: string | null,
@@ -497,6 +555,176 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
     });
   };
 
+  const closeSubjectSheet = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(subjectSheetOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.spring(subjectSheetSlide, {
+        toValue: 0,
+        friction: 9,
+        tension: 50,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setIsSubjectSheetOpen(false);
+        setSubjectSheetView('main');
+        Keyboard.dismiss();
+      }
+    });
+  }, [subjectSheetOpacity, subjectSheetSlide]);
+
+  const openSubjectSheet = () => {
+    Keyboard.dismiss();
+    setIsSubjectSheetOpen(true);
+    setSubjectSheetView('main');
+    Animated.parallel([
+      Animated.timing(subjectSheetOpacity, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.spring(subjectSheetSlide, {
+        toValue: 1,
+        ...springModalSlide,
+      }),
+    ]).start();
+  };
+
+  const snapSubjectSheetOpen = useCallback(() => {
+    Animated.spring(subjectSheetSlide, { toValue: 1, ...springModalSlide }).start();
+  }, [subjectSheetSlide]);
+
+  const { panResponder: subjectSheetPanResponder, scrollYRef: subjectSheetScrollYRef } = useDragToClose(
+    subjectSheetSlide,
+    snapSubjectSheetOpen,
+    closeSubjectSheet,
+  );
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (isSubjectSheetOpen) {
+        if (subjectSheetView === 'editTerm') {
+          setSubjectSheetView('editInfo');
+          return true;
+        }
+        if (subjectSheetView === 'editInfo' || subjectSheetView === 'editSchedule') {
+          Keyboard.dismiss();
+          setSubjectSheetView('main');
+          return true;
+        }
+        closeSubjectSheet();
+        return true;
+      }
+      if (pathname !== '/') {
+        return false;
+      }
+      if (isNoteEditorOpen) {
+        return false;
+      }
+      onBack();
+      return true;
+    });
+    return () => backHandler.remove();
+  }, [onBack, isNoteEditorOpen, pathname, isSubjectSheetOpen, subjectSheetView, closeSubjectSheet]);
+
+  const openEditInfo = () => {
+    setEditTitle(subject?.title ?? '');
+    setEditCode(subject?.code ?? '');
+    setEditInstructor(subject?.instructor ?? '');
+    setEditTerm(subject?.term ?? '');
+    setSubjectSheetView('editInfo');
+  };
+
+  const handleSaveEditInfo = async () => {
+    const trimmedTitle = editTitle.trim();
+    if (!trimmedTitle || !subject?.id) {
+      return;
+    }
+
+    await updateSubject(subject.id, {
+      title: trimmedTitle,
+      code: editCode.trim() || undefined,
+      instructor: editInstructor.trim() || undefined,
+      term: editTerm || undefined,
+    });
+
+    setSubjectSheetView('main');
+    setShowSubjectSavedToast(true);
+    onUpdate?.({
+      title: trimmedTitle,
+      code: editCode.trim() || subject?.code,
+      instructor: editInstructor.trim() || subject?.instructor,
+      term: editTerm || subject?.term,
+    });
+  };
+
+  const openEditSchedule = () => {
+    setEditDays(new Set(subject?.days ?? []));
+    const startMins = parseTimeToMinutes(subject?.startTime);
+    const endMins = parseTimeToMinutes(subject?.endTime);
+    
+    const dStart = new Date();
+    if (startMins !== null) {
+      dStart.setHours(Math.floor(startMins / 60), startMins % 60, 0, 0);
+    } else {
+      dStart.setHours(9, 0, 0, 0);
+    }
+    setEditStartDate(dStart);
+
+    const dEnd = new Date();
+    if (endMins !== null) {
+      dEnd.setHours(Math.floor(endMins / 60), endMins % 60, 0, 0);
+    } else {
+      dEnd.setHours(10, 30, 0, 0);
+    }
+    setEditEndDate(dEnd);
+    
+    setEditLocation(subject?.location ?? '');
+    getSubjects().then(setExistingSubjects).catch(console.warn);
+    setSubjectSheetView('editSchedule');
+  };
+
+  const handleToggleEditDay = (day: string) => {
+    setEditDays((prev) => {
+      const updated = new Set(prev);
+      if (updated.has(day)) {
+        updated.delete(day);
+      } else {
+        updated.add(day);
+      }
+      return updated;
+    });
+  };
+
+  const handleSaveEditSchedule = async () => {
+    if (!subject?.id) return;
+    
+    const newDays = Array.from(editDays);
+    const newStart = formatTimeDisplay(editStartDate);
+    const newEnd = formatTimeDisplay(editEndDate);
+    const newLocation = editLocation.trim() || undefined;
+
+    await updateSubject(subject.id, {
+      days: newDays,
+      startTime: newStart,
+      endTime: newEnd,
+      location: newLocation,
+    });
+
+    setSubjectSheetView('main');
+    setShowSubjectSavedToast(true);
+    onUpdate?.({
+      days: newDays,
+      startTime: newStart,
+      endTime: newEnd,
+      location: newLocation,
+    });
+  };
+
   const handleSaveFolder = async () => {
     const name = folderName.trim();
 
@@ -572,7 +800,7 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
           <Text style={styles.headerSubjectCode}>{subject?.code ?? 'MTH 301'}</Text>
         </View>
 
-        <Pressable style={styles.headerActionButton}>
+        <Pressable style={styles.headerActionButton} onPress={openSubjectSheet}>
           <Feather name="more-vertical" size={22} color="#1e2b26" />
         </Pressable>
       </Animated.View>
@@ -704,31 +932,38 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
               </CardScale>
             </View>
 
-            {/* Redesigned Recent Notes Section */}
+            {/* Recent Notes Section */}
             <View style={styles.section}>
               <Text style={styles.sectionHeaderTitle}>Recent Notes</Text>
-              
-              {/* Note 1 */}
-              <CardScale onPress={() => setActiveTab('notes')} style={styles.recentNoteCard}>
-                <View style={styles.noteHeaderRow}>
-                  <Feather name="file-text" size={16} color="#2b4a3f" style={{ marginRight: 8 }} />
-                  <Text style={styles.recentNoteTitle}>Theorem 4.1 Proofs</Text>
-                </View>
-                <Text style={styles.recentNoteBody} numberOfLines={2}>
-                  Theorem 4.1 proof variations from office hours, including integration bounds and derivatives...
-                </Text>
-              </CardScale>
 
-              {/* Note 2 */}
-              <CardScale onPress={() => setActiveTab('notes')} style={styles.recentNoteCard}>
-                <View style={styles.noteHeaderRow}>
-                  <Feather name="file-text" size={16} color="#2b4a3f" style={{ marginRight: 8 }} />
-                  <Text style={styles.recentNoteTitle}>Midterm Prep Ideas</Text>
-                </View>
-                <Text style={styles.recentNoteBody} numberOfLines={2}>
-                  Study group ideas for midterm prep, focusing on double integrals, vectors, and polar coords.
-                </Text>
-              </CardScale>
+              {recentNotes.length === 0 ? (
+                <Text style={styles.recentNoteEmpty}>No notes yet. Tap the + button to create one.</Text>
+              ) : recentNotes.map((note) => {
+                const folderLabel = note.folderId ? folders.find((f) => f.id === note.folderId)?.title ?? 'Unknown' : 'Loose notes';
+                const date = new Date(note.updatedAt);
+                const now = new Date();
+                const isToday = date.toDateString() === now.toDateString();
+                const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                const dateStr = isToday
+                  ? timeStr
+                  : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` at ${timeStr}`;
+
+                return (
+                  <CardScale key={note.id} onPress={() => handleOpenNoteEditor(note)} style={styles.recentNoteCard}>
+                    <Text style={styles.recentNoteTitle} numberOfLines={1}>{note.title || 'Untitled note'}</Text>
+                    <Text style={styles.recentNoteBody} numberOfLines={3}>
+                      {note.contentText || 'Tap to start writing.'}
+                    </Text>
+                    <View style={styles.recentNoteMetaRow}>
+                      <Feather name="clock" size={12} color="#8f968f" />
+                      <Text style={styles.recentNoteMetaText}>{dateStr}</Text>
+                      <View style={styles.recentNoteMetaDot} />
+                      <Feather name="folder" size={12} color="#8f968f" />
+                      <Text style={styles.recentNoteMetaText}>{folderLabel}</Text>
+                    </View>
+                  </CardScale>
+                );
+              })}
             </View>
           </>
         )}
@@ -1189,6 +1424,270 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
         </View>
       </Modal>
 
+      {isSubjectSheetOpen ? (
+        <Animated.View style={[styles.subjectSheetBackdrop, { opacity: subjectSheetOpacity }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeSubjectSheet} />
+        </Animated.View>
+      ) : null}
+
+      {isSubjectSheetOpen ? (
+        <Animated.View
+          style={[styles.subjectSheetPanelWrapper, {
+            bottom: keyboardHeight > 0 ? keyboardHeight + 16 : 0,
+            transform: [{
+              translateY: subjectSheetSlide.interpolate({
+                inputRange: [0, 1],
+                outputRange: [screenHeight, 0],
+              }),
+            }],
+          }]}
+        >
+          <View
+            style={[styles.subjectSheetPanel, { maxHeight: screenHeight * 0.8 }]}
+            {...subjectSheetPanResponder.panHandlers}
+          >
+            <View style={styles.subjectSheetHandle} />
+            <ScrollView bounces={false} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
+              onScroll={(e) => { subjectSheetScrollYRef.current = e.nativeEvent.contentOffset.y; }}
+              scrollEventThrottle={16}
+            >
+              {subjectSheetView === 'main' && (
+                <>
+                  <Text style={styles.subjectSheetTitle}>Subject Actions</Text>
+
+                  <Pressable style={styles.subjectSheetActionRow} onPress={openEditInfo}>
+                    <View style={styles.subjectSheetActionIcon}>
+                      <Feather name="edit-3" size={16} color="#4d5a54" />
+                    </View>
+                    <Text style={styles.subjectSheetActionLabel}>Edit subject info</Text>
+                  </Pressable>
+
+                  <Pressable style={styles.subjectSheetActionRow} onPress={openEditSchedule}>
+                    <View style={styles.subjectSheetActionIcon}>
+                      <Feather name="calendar" size={16} color="#4d5a54" />
+                    </View>
+                    <Text style={styles.subjectSheetActionLabel}>Edit subject schedule</Text>
+                  </Pressable>
+
+                  <Pressable style={styles.subjectSheetActionRow} onPress={() => {}}>
+                    <View style={styles.subjectSheetActionIcon}>
+                      <Feather name="archive" size={16} color="#4d5a54" />
+                    </View>
+                    <Text style={styles.subjectSheetActionLabel}>Archive</Text>
+                  </Pressable>
+
+                  <Pressable style={styles.subjectSheetActionRow} onPress={() => {}}>
+                    <View style={styles.subjectSheetActionIcon}>
+                      <Feather name="bar-chart-2" size={16} color="#4d5a54" />
+                    </View>
+                    <Text style={styles.subjectSheetActionLabel}>View statistics</Text>
+                  </Pressable>
+
+                  <View style={styles.subjectSheetDivider} />
+
+                  <Pressable style={styles.subjectSheetActionRow} onPress={() => {}}>
+                    <View style={styles.subjectSheetActionIcon}>
+                      <Feather name="trash-2" size={16} color="#b42318" />
+                    </View>
+                    <Text style={[styles.subjectSheetActionLabel, styles.subjectSheetActionLabelDanger]}>Delete subject</Text>
+                  </Pressable>
+                </>
+              )}
+
+              {subjectSheetView === 'editInfo' && (
+                <>
+                  <Text style={styles.subjectSheetTitle}>Edit Subject Info</Text>
+
+                  <View style={styles.editInfoCard}>
+                    <View style={styles.editInfoRow}>
+                      <TextInput
+                        value={editTitle}
+                        onChangeText={setEditTitle}
+                        placeholder="Subject Title"
+                        placeholderTextColor="#91948f"
+                        style={styles.editInfoInput}
+                      />
+                    </View>
+                    <View style={styles.editInfoSeparator} />
+                    <View style={styles.editInfoRow}>
+                      <TextInput
+                        value={editCode}
+                        onChangeText={setEditCode}
+                        placeholder="Subject Code (Optional)"
+                        placeholderTextColor="#91948f"
+                        style={styles.editInfoInput}
+                      />
+                    </View>
+                    <View style={styles.editInfoSeparator} />
+                    <View style={styles.editInfoRow}>
+                      <TextInput
+                        value={editInstructor}
+                        onChangeText={setEditInstructor}
+                        placeholder="Instructor (Optional)"
+                        placeholderTextColor="#91948f"
+                        style={styles.editInfoInput}
+                      />
+                    </View>
+                    <View style={styles.editInfoSeparator} />
+                    <Pressable style={styles.editInfoRow} onPress={() => setSubjectSheetView('editTerm')}>
+                      <Text style={[styles.editInfoInput, !editTerm && { color: '#91948f' }]}>
+                        {editTerm || 'Academic Period (Optional)'}
+                      </Text>
+                      <Feather name="chevron-right" size={20} color="#9aa09a" />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.editInfoActions}>
+                    <Pressable style={styles.editInfoCancelButton} onPress={() => setSubjectSheetView('main')}>
+                      <Text style={styles.editInfoCancelText}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.editInfoSaveButton, !editTitle.trim() && styles.editInfoSaveButtonDisabled]}
+                      onPress={() => void handleSaveEditInfo()}
+                      disabled={!editTitle.trim()}
+                    >
+                      <Text style={styles.editInfoSaveText}>Save</Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
+
+              {subjectSheetView === 'editTerm' && (
+                <>
+                  <Text style={styles.subjectSheetTitle}>Academic Period</Text>
+
+                  {['1st Semester', '2nd Semester', 'Summer / Midyear', '1st Quarter', '2nd Quarter', '3rd Quarter', '4th Quarter'].map((option) => (
+                    <Pressable
+                      key={option}
+                      style={[styles.termOption, editTerm === option && styles.termOptionSelected]}
+                      onPress={() => {
+                        setEditTerm(option);
+                        setSubjectSheetView('editInfo');
+                      }}
+                    >
+                      <Text style={[styles.termOptionText, editTerm === option && styles.termOptionTextSelected]}>
+                        {option}
+                      </Text>
+                      {editTerm === option && <Feather name="check" size={20} color="#0f2a24" />}
+                    </Pressable>
+                  ))}
+
+                  <Pressable style={styles.termBackButton} onPress={() => setSubjectSheetView('editInfo')}>
+                    <Text style={styles.termBackText}>Back</Text>
+                  </Pressable>
+                </>
+              )}
+
+              {subjectSheetView === 'editSchedule' && (
+                <>
+                  <Text style={styles.subjectSheetTitle}>Edit Schedule</Text>
+
+                  <View style={styles.editInfoCard}>
+                    <View style={styles.daysContainer}>
+                      <Text style={styles.rowLabel}>Days</Text>
+                      <View style={styles.daysRow}>
+                        {DAYS.map((day) => {
+                          const isSelected = editDays.has(day.value);
+                          return (
+                            <Pressable
+                              key={day.value}
+                              onPress={() => handleToggleEditDay(day.value)}
+                              style={[styles.dayCircle, isSelected && styles.dayCircleSelected]}
+                            >
+                              <Text style={[styles.dayCircleText, isSelected && styles.dayCircleTextSelected]}>
+                                {day.label}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+                    
+                    <View style={styles.editInfoSeparator} />
+                    
+                    <View style={styles.timeGroupRow}>
+                      <Pressable style={styles.timeAction} onPress={() => setShowStartPicker(true)}>
+                        <Text style={styles.timeActionLabel}>Start Time</Text>
+                        <View style={styles.timeBadge}>
+                          <Text style={styles.timeBadgeText}>{formatTimeDisplay(editStartDate)}</Text>
+                        </View>
+                      </Pressable>
+                      <View style={styles.verticalSeparator} />
+                      <Pressable style={styles.timeAction} onPress={() => setShowEndPicker(true)}>
+                        <Text style={styles.timeActionLabel}>End Time</Text>
+                        <View style={styles.timeBadge}>
+                          <Text style={styles.timeBadgeText}>{formatTimeDisplay(editEndDate)}</Text>
+                        </View>
+                      </Pressable>
+                    </View>
+
+                    {showStartPicker && (
+                      <DateTimePicker
+                        value={editStartDate}
+                        mode="time"
+                        is24Hour={false}
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        onChange={(event, selectedDate) => {
+                          setShowStartPicker(Platform.OS === 'ios');
+                          if (selectedDate) setEditStartDate(selectedDate);
+                        }}
+                      />
+                    )}
+
+                    {showEndPicker && (
+                      <DateTimePicker
+                        value={editEndDate}
+                        mode="time"
+                        is24Hour={false}
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        onChange={(event, selectedDate) => {
+                          setShowEndPicker(Platform.OS === 'ios');
+                          if (selectedDate) setEditEndDate(selectedDate);
+                        }}
+                      />
+                    )}
+                  </View>
+
+                  <View style={[styles.editInfoCard, { marginTop: 16 }]}>
+                    <View style={styles.editInfoRow}>
+                      <Feather name="map-pin" size={16} color="#1e2b26" style={{ marginRight: 10 }} />
+                      <TextInput
+                        value={editLocation}
+                        onChangeText={setEditLocation}
+                        placeholder="Room, Building, or Online"
+                        placeholderTextColor="#91948f"
+                        style={styles.editInfoInput}
+                      />
+                    </View>
+                  </View>
+
+                  {hasScheduleConflict ? (
+                    <View style={styles.conflictWarning}>
+                      <Feather name="alert-triangle" size={20} color="#991b1b" />
+                      <Text style={styles.conflictWarningBody}>
+                        Conflicts with <Text style={styles.conflictSubjectName}>{scheduleConflicts[0].title}</Text>
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  <View style={styles.editInfoActions}>
+                    <Pressable style={styles.editInfoCancelButton} onPress={() => setSubjectSheetView('main')}>
+                      <Text style={styles.editInfoCancelText}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.editInfoSaveButton}
+                      onPress={() => void handleSaveEditSchedule()}
+                    >
+                      <Text style={styles.editInfoSaveText}>Save</Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </Animated.View>
+      ) : null}
+
       {showSaveToast ? (
         <DynamicIslandToast
           visible={showSaveToast}
@@ -1202,6 +1701,14 @@ export default function SubjectDetailScreen({ subject, onBack }: SubjectDetailSc
           visible={showDeleteToast}
           message="Note deleted successfully"
           onHide={() => setShowDeleteToast(false)}
+        />
+      ) : null}
+
+      {showSubjectSavedToast ? (
+        <DynamicIslandToast
+          visible={showSubjectSavedToast}
+          message="Subject info updated"
+          onHide={() => setShowSubjectSavedToast(false)}
         />
       ) : null}
 
@@ -1255,6 +1762,7 @@ const styles = StyleSheet.create({
   scrollContainer: {
     paddingHorizontal: 28,
     paddingTop: 18,
+    paddingBottom: 120,
   },
   heroCard: {
     borderRadius: 24,
@@ -1505,21 +2013,42 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     ...shadowLg,
   },
-  noteHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
   recentNoteTitle: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
     color: '#1e2b26',
+    marginBottom: 6,
   },
   recentNoteBody: {
     fontFamily: 'Manrope_500Medium',
     fontSize: 13,
     color: '#6b746f',
     lineHeight: 18,
+    marginBottom: 10,
+  },
+  recentNoteEmpty: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 14,
+    color: '#8f968f',
+    textAlign: 'center',
+    paddingVertical: 24,
+  },
+  recentNoteMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  recentNoteMetaText: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 12,
+    color: '#8f968f',
+  },
+  recentNoteMetaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#8f968f',
+    marginHorizontal: 4,
   },
   fullWidthFolderCard: {
     backgroundColor: '#ffffff',
@@ -1928,5 +2457,251 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
     color: '#1e2b26',
+  },
+  subjectSheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(5, 8, 7, 0.3)',
+    zIndex: 99,
+  },
+  subjectSheetPanelWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+  },
+  subjectSheetPanel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#f8f7f2',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 40,
+    ...shadowLg,
+  },
+  subjectSheetHandle: {
+    width: 68,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#e3e0d8',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  subjectSheetTitle: {
+    fontFamily: 'Manrope_800ExtraBold',
+    fontSize: 24,
+    color: '#111111',
+    letterSpacing: -0.4,
+    marginBottom: 20,
+  },
+  subjectSheetActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 4,
+  },
+  subjectSheetActionIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f2f4f1',
+  },
+  subjectSheetActionLabel: {
+    flex: 1,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 15,
+    color: '#111111',
+  },
+  subjectSheetActionLabelDanger: {
+    color: '#b42318',
+  },
+  subjectSheetDivider: {
+    height: 1,
+    backgroundColor: '#e8e6de',
+    marginVertical: 4,
+  },
+  editInfoCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    overflow: 'hidden',
+    ...shadowLg,
+  },
+  editInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    minHeight: 60,
+  },
+  editInfoInput: {
+    flex: 1,
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 16,
+    color: '#1e2b26',
+    paddingVertical: 14,
+  },
+  editInfoSeparator: {
+    height: 1,
+    backgroundColor: '#f0f0ed',
+    marginLeft: 16,
+  },
+  editInfoActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 20,
+  },
+  editInfoCancelButton: {
+    flex: 1,
+    height: 58,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eef2ee',
+  },
+  editInfoCancelText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 16,
+    color: '#1f2b25',
+  },
+  editInfoSaveButton: {
+    flex: 1,
+    height: 58,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0f2a24',
+    ...shadowLg,
+  },
+  editInfoSaveButtonDisabled: {
+    backgroundColor: '#e4e1db',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  editInfoSaveText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 16,
+    color: '#ffffff',
+  },
+  conflictWarning: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#fff5f5',
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  conflictWarningBody: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 14,
+    color: '#991b1b',
+    flex: 1,
+  },
+  conflictSubjectName: {
+    fontFamily: 'Manrope_700Bold',
+  },
+  termOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    marginBottom: 10,
+    backgroundColor: '#f9f9f6',
+  },
+  termOptionSelected: {
+    backgroundColor: '#eef2ec',
+    borderWidth: 1,
+    borderColor: '#0f2a24',
+  },
+  termOptionText: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 16,
+    color: '#2a332e',
+  },
+  termOptionTextSelected: {
+    color: '#0f2a24',
+    fontFamily: 'Manrope_700Bold',
+  },
+  termBackButton: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    marginTop: 4,
+  },
+  termBackText: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 15,
+    color: '#66706b',
+  },
+  daysContainer: {
+    padding: 16,
+  },
+  rowLabel: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 15,
+    color: '#1e2b26',
+  },
+  daysRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  dayCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f9f9f6',
+  },
+  dayCircleSelected: {
+    backgroundColor: '#0f2a24',
+  },
+  dayCircleText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+    color: '#9aa09a',
+  },
+  dayCircleTextSelected: {
+    color: '#ffffff',
+  },
+  timeGroupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timeAction: {
+    flex: 1,
+    padding: 16,
+    flexDirection: 'column',
+    gap: 6,
+  },
+  timeActionLabel: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 14,
+    color: '#1e2b26',
+  },
+  verticalSeparator: {
+    width: 1,
+    height: 44,
+    backgroundColor: '#f0f0ed',
+  },
+  timeBadge: {
+    backgroundColor: '#f9f9f6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  timeBadgeText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 15,
+    color: '#0f2a24',
   },
 });

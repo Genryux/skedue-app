@@ -688,6 +688,12 @@ export default function MainScreen() {
           <SubjectDetailScreen 
             subject={selectedSubjectDetail} 
             onBack={handleCloseSubjectDetail} 
+            onUpdate={(updatedSubject) => {
+              loadData();
+              if (updatedSubject) {
+                setSelectedSubjectDetail((prev: any) => ({ ...prev, ...updatedSubject }));
+              }
+            }}
           />
         </Animated.View>
       )}

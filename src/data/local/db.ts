@@ -181,6 +181,55 @@ export const insertSubject = async (
   };
 };
 
+export const updateSubject = async (
+  subjectId: string,
+  subject: Partial<Omit<SubjectRecord, 'id' | 'createdAt'>>
+): Promise<void> => {
+  const db = await getDb();
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  if (subject.title !== undefined) {
+    fields.push('title = ?');
+    values.push(subject.title);
+  }
+  if (subject.code !== undefined) {
+    fields.push('code = ?');
+    values.push(subject.code ?? null);
+  }
+  if (subject.instructor !== undefined) {
+    fields.push('instructor = ?');
+    values.push(subject.instructor ?? null);
+  }
+  if (subject.term !== undefined) {
+    fields.push('term = ?');
+    values.push(subject.term ?? null);
+  }
+  if (subject.days !== undefined) {
+    fields.push('days = ?');
+    values.push(subject.days ? JSON.stringify(subject.days) : null);
+  }
+  if (subject.startTime !== undefined) {
+    fields.push('startTime = ?');
+    values.push(subject.startTime ?? null);
+  }
+  if (subject.endTime !== undefined) {
+    fields.push('endTime = ?');
+    values.push(subject.endTime ?? null);
+  }
+  if (subject.location !== undefined) {
+    fields.push('location = ?');
+    values.push(subject.location ?? null);
+  }
+
+  if (fields.length === 0) {
+    return;
+  }
+
+  values.push(subjectId);
+  await db.runAsync(`UPDATE subjects SET ${fields.join(', ')} WHERE id = ?`, values);
+};
+
 export const getFoldersBySubjectId = async (subjectId: string): Promise<FolderRecord[]> => {
   const db = await getDb();
   const rows = await db.getAllAsync<FolderRow>(
