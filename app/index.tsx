@@ -144,7 +144,7 @@ export default function IndexScreen() {
     location?: string;
   }) => {
     try {
-      const savedSubject = await insertSubject({ ...subjectData, isArchived: false });
+      const savedSubject = await insertSubject({ ...subjectData, isArchived: false, isPinned: false });
 
       setIsTransitioningToDashboard(true);
       

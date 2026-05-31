@@ -12,6 +12,7 @@ type SubjectRow = {
   endTime: string | null;
   location: string | null;
   isArchived: number;
+  isPinned: number;
   createdAt: number;
 };
 
@@ -47,6 +48,7 @@ export type SubjectRecord = {
   endTime?: string | null;
   location?: string | null;
   isArchived: boolean;
+  isPinned: boolean;
   createdAt: number;
 };
 
@@ -129,7 +131,7 @@ const parseDays = (value: string | null) => {
 
 export const getSubjects = async (): Promise<SubjectRecord[]> => {
   const db = await getDb();
-  const rows = await db.getAllAsync<SubjectRow>('SELECT * FROM subjects ORDER BY createdAt ASC');
+  const rows = await db.getAllAsync<SubjectRow>('SELECT * FROM subjects ORDER BY isPinned DESC, createdAt ASC');
 
     return rows.map((row) => ({
       id: row.id,
@@ -142,12 +144,13 @@ export const getSubjects = async (): Promise<SubjectRecord[]> => {
       endTime: row.endTime ?? undefined,
       location: row.location ?? undefined,
       isArchived: parseBoolean(row.isArchived),
+      isPinned: parseBoolean(row.isPinned),
       createdAt: row.createdAt,
     }));
 };
 
 export const insertSubject = async (
-  subject: Omit<SubjectRecord, 'id' | 'createdAt'> & { isArchived?: boolean }
+  subject: Omit<SubjectRecord, 'id' | 'createdAt'> & { isArchived?: boolean; isPinned?: boolean }
 ): Promise<SubjectRecord> => {
   const db = await getDb();
   const id = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
@@ -155,7 +158,7 @@ export const insertSubject = async (
   const days = subject.days ? JSON.stringify(subject.days) : null;
 
   await db.runAsync(
-    'INSERT INTO subjects (id, title, code, instructor, term, days, startTime, endTime, location, isArchived, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO subjects (id, title, code, instructor, term, days, startTime, endTime, location, isArchived, isPinned, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       subject.title,
@@ -167,6 +170,7 @@ export const insertSubject = async (
       subject.endTime ?? null,
       subject.location ?? null,
       subject.isArchived ? 1 : 0,
+      subject.isPinned ? 1 : 0,
       createdAt,
     ]
   );
@@ -181,7 +185,8 @@ export const insertSubject = async (
     startTime: subject.startTime ?? undefined,
     endTime: subject.endTime ?? undefined,
     location: subject.location ?? undefined,
-    isArchived: subject.isArchived,
+    isArchived: subject.isArchived ?? false,
+    isPinned: subject.isPinned ?? false,
     createdAt,
   };
 };
@@ -229,6 +234,10 @@ export const updateSubject = async (
   if (subject.isArchived !== undefined) {
     fields.push('isArchived = ?');
     values.push(subject.isArchived ? 1 : 0);
+  }
+  if (subject.isPinned !== undefined) {
+    fields.push('isPinned = ?');
+    values.push(subject.isPinned ? 1 : 0);
   }
 
   if (fields.length === 0) {
@@ -316,6 +325,7 @@ export const getSubjectById = async (subjectId: string): Promise<SubjectRecord |
     endTime: row.endTime ?? undefined,
     location: row.location ?? undefined,
     isArchived: parseBoolean(row.isArchived),
+    isPinned: parseBoolean(row.isPinned),
     createdAt: row.createdAt,
   };
 };

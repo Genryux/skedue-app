@@ -88,4 +88,12 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 7,
+    up: async (db) => {
+      await db.execAsync(`
+        ALTER TABLE subjects ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0;
+      `);
+    },
+  },
 ];

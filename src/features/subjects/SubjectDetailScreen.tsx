@@ -74,6 +74,7 @@ type SubjectDetailScreenProps = {
   onUpdate?: (updatedSubject?: any) => void;
   onDelete?: (deletedTitle?: string) => void;
   onArchive?: (archivedTitle?: string) => void;
+  onUnarchive?: (unarchivedTitle?: string) => void;
 };
 
 // Premium Touch Feedback - Scales down card on press and springs back on release
@@ -181,7 +182,7 @@ const DAYS = [
   { label: 'Sa', value: 'Sa' },
 ] as const;
 
-export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelete, onArchive }: SubjectDetailScreenProps) {
+export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelete, onArchive, onUnarchive }: SubjectDetailScreenProps) {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -600,6 +601,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     closeSubjectSheet();
     onArchive?.(subject.title ?? 'Subject');
   }, [subject?.id, subject?.title, closeSubjectSheet, onArchive]);
+
+  const handleUnarchiveSubject = useCallback(async () => {
+    if (!subject?.id) return;
+    await updateSubject(subject.id, { isArchived: false });
+    closeSubjectSheet();
+    onUnarchive?.(subject.title ?? 'Subject');
+  }, [subject?.id, subject?.title, closeSubjectSheet, onUnarchive]);
 
   if (isNoteEditorOpen) {
     return (
@@ -1582,11 +1590,11 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                     <Text style={styles.subjectSheetActionLabel}>Edit subject schedule</Text>
                   </Pressable>
 
-                  <Pressable style={styles.subjectSheetActionRow} onPress={() => void handleArchiveSubject()}>
+                  <Pressable style={styles.subjectSheetActionRow} onPress={() => void (subject?.isArchived ? handleUnarchiveSubject() : handleArchiveSubject())}>
                     <View style={styles.subjectSheetActionIcon}>
-                      <Feather name="archive" size={16} color="#4d5a54" />
+                      <Feather name={subject?.isArchived ? 'rotate-ccw' : 'archive'} size={16} color="#4d5a54" />
                     </View>
-                    <Text style={styles.subjectSheetActionLabel}>Archive</Text>
+                    <Text style={styles.subjectSheetActionLabel}>{subject?.isArchived ? 'Unarchive' : 'Archive'}</Text>
                   </Pressable>
 
                   <Pressable style={styles.subjectSheetActionRow} onPress={() => setSubjectSheetView('stats')}>

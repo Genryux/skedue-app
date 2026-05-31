@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Dimensions,
   Easing,
   Modal,
   Platform,
@@ -15,7 +16,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import { getSubjects, insertSubject, type SubjectRecord } from '../../data/local/db';
+import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
+import { getMetaValue, getNotesBySubjectId, getSubjects, insertSubject, setMetaValue, updateSubject, type SubjectRecord } from '../../data/local/db';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
 import ScheduleScreen from '../schedule/ScheduleScreen';
@@ -76,10 +78,13 @@ const formatMinutesDiff = (minutes: number) => {
 export default function MainScreen() {
   const [activeTab, setActiveTab] = useState<'home' | 'schedule' | 'subjects'>('home');
   const [dbSubjects, setDbSubjects] = useState<SubjectRecord[]>([]);
+  const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isAddSubjectOpen, setIsAddSubjectOpen] = useState(false);
   const [isSubjectDetailOpen, setIsSubjectDetailOpen] = useState(false);
   const [selectedSubjectDetail, setSelectedSubjectDetail] = useState<any>(null);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [subjectFilter, setSubjectFilter] = useState<{ type: 'active' | 'archived' | 'all'; term: string | null }>({ type: 'active', term: null });
 
   const sheetOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslate = useRef(new Animated.Value(18)).current;
@@ -89,6 +94,11 @@ export default function MainScreen() {
   // Transitions
   const subjectSlideAnim = useRef(new Animated.Value(0)).current; // 0: hidden, 1: visible
   const subjectDetailSlideAnim = useRef(new Animated.Value(0)).current; // 0: offscreen, 1: onscreen
+
+  // Filter modal
+  const filterSlide = useRef(new Animated.Value(0)).current;
+  const filterOpacity = useRef(new Animated.Value(0)).current;
+  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
   // Success Toast State
   const [toastVisible, setToastVisible] = useState(false);
@@ -127,6 +137,76 @@ export default function MainScreen() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    const loadNoteCounts = async () => {
+      const counts: Record<string, number> = {};
+      for (const s of activeSubjects) {
+        const notes = await getNotesBySubjectId(s.id);
+        counts[s.id] = notes.length;
+      }
+      setNoteCounts(counts);
+    };
+    loadNoteCounts();
+  }, [activeSubjects]);
+
+  // Load persisted filter
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await getMetaValue('subjectFilter');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setSubjectFilter(parsed);
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // Collect unique terms from subjects for filter options
+  const availableTerms = useMemo(() => {
+    const terms = new Set<string>();
+    dbSubjects.forEach((s) => { if (s.term) terms.add(s.term); });
+    return Array.from(terms).sort();
+  }, [dbSubjects]);
+
+  const handleOpenFilter = () => {
+    setIsFilterOpen(true);
+    Animated.parallel([
+      Animated.spring(filterSlide, { toValue: 1, ...springModalSlide }),
+      Animated.timing(filterOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const handleCloseFilter = () => {
+    Animated.parallel([
+      Animated.timing(filterSlide, { toValue: 0, duration: 280, useNativeDriver: true }),
+      Animated.timing(filterOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(({ finished }) => {
+      if (finished) setIsFilterOpen(false);
+    });
+  };
+
+  const handleSelectFilter = (newFilter: { type: 'active' | 'archived' | 'all'; term: string | null }) => {
+    setSubjectFilter(newFilter);
+    setMetaValue('subjectFilter', JSON.stringify(newFilter)).catch(() => {});
+    handleCloseFilter();
+  };
+
+  const { panResponder: filterPanResponder, scrollYRef: filterScrollYRef } = useDragToClose(
+    filterSlide,
+    () => Animated.spring(filterSlide, { toValue: 1, ...springModalSlide }).start(),
+    handleCloseFilter,
+  );
+
+  // Apply filter to subjects
+  const filteredDbSubjects = useMemo(() => {
+    let result = dbSubjects;
+    if (subjectFilter.type === 'active') result = result.filter((s) => !s.isArchived);
+    else if (subjectFilter.type === 'archived') result = result.filter((s) => s.isArchived);
+    if (subjectFilter.term) result = result.filter((s) => s.term === subjectFilter.term);
+    return result;
+  }, [dbSubjects, subjectFilter]);
 
   const dateLabel = now
     .toLocaleDateString('en-US', {
@@ -345,6 +425,11 @@ export default function MainScreen() {
     }).start();
   };
 
+  const handleTogglePin = async (subjectId: string, isPinned: boolean) => {
+    await updateSubject(subjectId, { isPinned });
+    await loadData();
+  };
+
   const handleCloseSubjectDetail = () => {
     Animated.timing(subjectDetailSlideAnim, {
       toValue: 0,
@@ -370,7 +455,7 @@ export default function MainScreen() {
     location?: string;
   }) => {
     try {
-      const savedSubject = await insertSubject({ ...subjectData, isArchived: false });
+      const savedSubject = await insertSubject({ ...subjectData, isArchived: false, isPinned: false });
       setDbSubjects((prev) => [...prev, savedSubject]);
       resetPlusButton();
       
@@ -395,7 +480,7 @@ export default function MainScreen() {
 
   // Format subjects for the All Subjects tab
   const subjects = useMemo(() => {
-    return activeSubjects.map((s) => ({
+    return filteredDbSubjects.map((s) => ({
       id: s.id,
       code: s.code ?? s.title.slice(0, 6).toUpperCase(),
       title: s.title,
@@ -409,10 +494,12 @@ export default function MainScreen() {
             : '',
       location: s.location ?? '',
       term: s.term ?? '',
+      isArchived: s.isArchived,
+      isPinned: s.isPinned,
       tasksCount: 0,
-      notesCount: 0,
+      notesCount: noteCounts[s.id] ?? 0,
     }));
-  }, [dbSubjects]);
+  }, [filteredDbSubjects, noteCounts]);
 
   return (
     <View style={styles.container}>
@@ -462,6 +549,8 @@ export default function MainScreen() {
           <SubjectsScreen 
             subjects={subjects} 
             onPressSubject={handlePressSubject}
+            onFilterPress={handleOpenFilter}
+            onTogglePin={handleTogglePin}
           />
         ) : activeTab === 'schedule' ? (
           <ScheduleScreen subjects={activeSubjects} />
@@ -717,9 +806,86 @@ export default function MainScreen() {
               setToastMessage(`${archivedTitle ?? 'Subject'} archived`);
               setToastVisible(true);
             }}
+            onUnarchive={(unarchivedTitle) => {
+              loadData();
+              handleCloseSubjectDetail();
+              setToastMessage(`${unarchivedTitle ?? 'Subject'} unarchived`);
+              setToastVisible(true);
+            }}
           />
         </Animated.View>
       )}
+
+      {/* Filter Modal */}
+      {isFilterOpen ? (
+        <Animated.View style={[styles.filterBackdrop, { opacity: filterOpacity }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseFilter} />
+        </Animated.View>
+      ) : null}
+
+      {isFilterOpen ? (
+        <Animated.View
+          style={[styles.filterPanelWrapper, {
+            bottom: 0,
+            transform: [{
+              translateY: filterSlide.interpolate({
+                inputRange: [0, 1],
+                outputRange: [screenHeight, 0],
+              }),
+            }],
+          }]}
+        >
+          <View style={[styles.filterPanel, { maxHeight: screenHeight * 0.8 }]} {...filterPanResponder.panHandlers}>
+            <View style={styles.filterHandle} />
+
+            <ScrollView
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              onScroll={(e) => { filterScrollYRef.current = e.nativeEvent.contentOffset.y; }}
+              scrollEventThrottle={16}
+            >
+              <Text style={styles.filterTitle}>Filter Subjects</Text>
+
+              <Text style={styles.filterSectionLabel}>Status</Text>
+              <View style={styles.filterOptionsRow}>
+                {(['active', 'archived', 'all'] as const).map((type) => {
+                  const label = { active: 'Active', archived: 'Archived', all: 'All' }[type];
+                  const isSelected = subjectFilter.type === type && subjectFilter.term === null;
+                  return (
+                    <Pressable
+                      key={type}
+                      style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+                      onPress={() => handleSelectFilter({ type, term: null })}
+                    >
+                      <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>{label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {availableTerms.length > 0 && (
+                <>
+                  <Text style={styles.filterSectionLabel}>Academic Term</Text>
+                  <View style={styles.filterOptionsRow}>
+                    {availableTerms.map((term) => {
+                      const isSelected = subjectFilter.term === term;
+                      return (
+                        <Pressable
+                          key={term}
+                          style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+                          onPress={() => handleSelectFilter({ type: subjectFilter.type, term })}
+                        >
+                          <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>{term}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </Animated.View>
+      ) : null}
 
       <DynamicIslandToast 
         visible={toastVisible} 
@@ -1082,5 +1248,75 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
     color: '#1e2b26',
+  },
+  filterBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(5, 8, 7, 0.3)',
+    zIndex: 99,
+  },
+  filterPanelWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+  },
+  filterPanel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#f8f7f2',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 40,
+    ...shadowLg,
+  },
+  filterHandle: {
+    width: 68,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#e3e0d8',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  filterTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 20,
+    color: '#1e2b26',
+    marginBottom: 20,
+  },
+  filterSectionLabel: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+    color: '#6b746f',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+    textTransform: 'uppercase',
+  },
+  filterOptionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 20,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#f0efea',
+  },
+  filterChipSelected: {
+    backgroundColor: '#1c2f2a',
+  },
+  filterChipText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+    color: '#2a332e',
+  },
+  filterChipTextSelected: {
+    color: '#ffffff',
   },
 });
