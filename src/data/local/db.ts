@@ -11,6 +11,7 @@ type SubjectRow = {
   startTime: string | null;
   endTime: string | null;
   location: string | null;
+  isArchived: number;
   createdAt: number;
 };
 
@@ -45,6 +46,7 @@ export type SubjectRecord = {
   startTime?: string | null;
   endTime?: string | null;
   location?: string | null;
+  isArchived: boolean;
   createdAt: number;
 };
 
@@ -129,22 +131,23 @@ export const getSubjects = async (): Promise<SubjectRecord[]> => {
   const db = await getDb();
   const rows = await db.getAllAsync<SubjectRow>('SELECT * FROM subjects ORDER BY createdAt ASC');
 
-  return rows.map((row) => ({
-    id: row.id,
-    title: row.title,
-    code: row.code ?? undefined,
-    instructor: row.instructor ?? undefined,
-    term: row.term ?? undefined,
-    days: parseDays(row.days),
-    startTime: row.startTime ?? undefined,
-    endTime: row.endTime ?? undefined,
-    location: row.location ?? undefined,
-    createdAt: row.createdAt,
-  }));
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      code: row.code ?? undefined,
+      instructor: row.instructor ?? undefined,
+      term: row.term ?? undefined,
+      days: parseDays(row.days),
+      startTime: row.startTime ?? undefined,
+      endTime: row.endTime ?? undefined,
+      location: row.location ?? undefined,
+      isArchived: parseBoolean(row.isArchived),
+      createdAt: row.createdAt,
+    }));
 };
 
 export const insertSubject = async (
-  subject: Omit<SubjectRecord, 'id' | 'createdAt'>
+  subject: Omit<SubjectRecord, 'id' | 'createdAt'> & { isArchived?: boolean }
 ): Promise<SubjectRecord> => {
   const db = await getDb();
   const id = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
@@ -152,7 +155,7 @@ export const insertSubject = async (
   const days = subject.days ? JSON.stringify(subject.days) : null;
 
   await db.runAsync(
-    'INSERT INTO subjects (id, title, code, instructor, term, days, startTime, endTime, location, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO subjects (id, title, code, instructor, term, days, startTime, endTime, location, isArchived, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       subject.title,
@@ -163,6 +166,7 @@ export const insertSubject = async (
       subject.startTime ?? null,
       subject.endTime ?? null,
       subject.location ?? null,
+      subject.isArchived ? 1 : 0,
       createdAt,
     ]
   );
@@ -177,6 +181,7 @@ export const insertSubject = async (
     startTime: subject.startTime ?? undefined,
     endTime: subject.endTime ?? undefined,
     location: subject.location ?? undefined,
+    isArchived: subject.isArchived,
     createdAt,
   };
 };
@@ -221,6 +226,10 @@ export const updateSubject = async (
     fields.push('location = ?');
     values.push(subject.location ?? null);
   }
+  if (subject.isArchived !== undefined) {
+    fields.push('isArchived = ?');
+    values.push(subject.isArchived ? 1 : 0);
+  }
 
   if (fields.length === 0) {
     return;
@@ -228,6 +237,13 @@ export const updateSubject = async (
 
   values.push(subjectId);
   await db.runAsync(`UPDATE subjects SET ${fields.join(', ')} WHERE id = ?`, values);
+};
+
+export const deleteSubject = async (subjectId: string): Promise<void> => {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM notes WHERE subjectId = ?', [subjectId]);
+  await db.runAsync('DELETE FROM folders WHERE subjectId = ?', [subjectId]);
+  await db.runAsync('DELETE FROM subjects WHERE id = ?', [subjectId]);
 };
 
 export const getFoldersBySubjectId = async (subjectId: string): Promise<FolderRecord[]> => {
@@ -299,6 +315,7 @@ export const getSubjectById = async (subjectId: string): Promise<SubjectRecord |
     startTime: row.startTime ?? undefined,
     endTime: row.endTime ?? undefined,
     location: row.location ?? undefined,
+    isArchived: parseBoolean(row.isArchived),
     createdAt: row.createdAt,
   };
 };

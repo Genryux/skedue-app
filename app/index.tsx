@@ -133,9 +133,18 @@ export default function IndexScreen() {
     }
   };
 
-  const handleSaveSubject = async (subjectData: Omit<SubjectRecord, 'id' | 'createdAt'>) => {
+  const handleSaveSubject = async (subjectData: {
+    title: string;
+    code?: string;
+    instructor?: string;
+    term?: string;
+    days: string[];
+    startTime: string;
+    endTime: string;
+    location?: string;
+  }) => {
     try {
-      const savedSubject = await insertSubject(subjectData);
+      const savedSubject = await insertSubject({ ...subjectData, isArchived: false });
 
       setIsTransitioningToDashboard(true);
       

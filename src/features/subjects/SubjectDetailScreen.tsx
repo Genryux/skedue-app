@@ -16,9 +16,10 @@ import {
   RefreshControl,
   Dimensions,
   Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -39,6 +40,7 @@ import {
   insertNote,
   updateNote,
   updateSubject,
+  deleteSubject,
   type FolderRecord,
   type NoteRecord,
   type SubjectRecord,
@@ -70,6 +72,8 @@ type SubjectDetailScreenProps = {
   subject: any;
   onBack: () => void;
   onUpdate?: (updatedSubject?: any) => void;
+  onDelete?: (deletedTitle?: string) => void;
+  onArchive?: (archivedTitle?: string) => void;
 };
 
 // Premium Touch Feedback - Scales down card on press and springs back on release
@@ -177,7 +181,7 @@ const DAYS = [
   { label: 'Sa', value: 'Sa' },
 ] as const;
 
-export default function SubjectDetailScreen({ subject, onBack, onUpdate }: SubjectDetailScreenProps) {
+export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelete, onArchive }: SubjectDetailScreenProps) {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -192,6 +196,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
   const [showSaveToast, setShowSaveToast] = useState(false);
   const [showDeleteToast, setShowDeleteToast] = useState(false);
   const [showSubjectSavedToast, setShowSubjectSavedToast] = useState(false);
+  const [showFolderCreatedToast, setShowFolderCreatedToast] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const saveInFlightRef = useRef<Promise<NoteRecord> | null>(null);
   const folderExpansionAnim = useRef(new Animated.Value(0)).current;
@@ -199,13 +204,15 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
   const sheetTranslate = useRef(new Animated.Value(18)).current;
   const buttonRotate = useRef(new Animated.Value(0)).current;
   const buttonScale = useRef(new Animated.Value(0)).current;
-  const folderSheetOpacity = useRef(new Animated.Value(0)).current;
-  const folderSheetTranslate = useRef(new Animated.Value(18)).current;
+  const buttonAnims = useRef(Array.from({ length: 3 }, () => new Animated.Value(0))).current;
+  const folderFormSlide = useRef(new Animated.Value(0)).current;
+  const folderFormOpacity = useRef(new Animated.Value(0)).current;
   const [isSubjectSheetOpen, setIsSubjectSheetOpen] = useState(false);
   const subjectSheetSlide = useRef(new Animated.Value(0)).current;
   const subjectSheetOpacity = useRef(new Animated.Value(0)).current;
-  const [subjectSheetView, setSubjectSheetView] = useState<'main' | 'editInfo' | 'editTerm' | 'editSchedule'>('main');
+  const [subjectSheetView, setSubjectSheetView] = useState<'main' | 'editInfo' | 'editTerm' | 'editSchedule' | 'delete' | 'stats'>('main');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
   const { height: screenHeight } = Dimensions.get('window');
   const [editTitle, setEditTitle] = useState('');
   const [editCode, setEditCode] = useState('');
@@ -230,6 +237,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
 
     return accumulator;
   }, {});
+  const pinnedNotes = notes.filter((n) => n.isPinned);
+  const totalNotes = notes.length;
+  const totalFolders = folders.length;
+  const subjectAgeDays = subject?.createdAt ? Math.max(1, Math.floor((Date.now() - subject.createdAt) / (1000 * 60 * 60 * 24))) : 0;
+  const lastActivity = notes.length > 0
+    ? new Date(Math.max(...notes.map((n) => n.updatedAt)))
+    : null;
 
   useEffect(() => {
     if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -268,6 +282,8 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
   }, [subject?.id, editDays, editStartDate, editEndDate, existingSubjects]);
 
   const hasScheduleConflict = scheduleConflicts.length > 0;
+
+  const isDeleteConfirmValid = deleteConfirmInput.trim() === 'DELETE THIS SUBJECT';
 
   const loadSubjectData = useCallback(async () => {
     if (!subject?.id) {
@@ -326,8 +342,8 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
     buttonRotate.setValue(0);
     buttonScale.setValue(0);
     setIsFolderFormOpen(false);
-    folderSheetOpacity.setValue(0);
-    folderSheetTranslate.setValue(18);
+    folderFormOpacity.setValue(0);
+    folderFormSlide.setValue(0);
     setIsNoteEditorOpen(false);
     setSelectedNote(null);
 
@@ -438,6 +454,153 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
     ]).start();
   }, []);
 
+  const closeSubjectSheet = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(subjectSheetOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.spring(subjectSheetSlide, {
+        toValue: 0,
+        friction: 9,
+        tension: 50,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setIsSubjectSheetOpen(false);
+        setSubjectSheetView('main');
+        setDeleteConfirmInput('');
+        Keyboard.dismiss();
+      }
+    });
+  }, [subjectSheetOpacity, subjectSheetSlide]);
+
+  const snapSubjectSheetOpen = useCallback(() => {
+    Animated.spring(subjectSheetSlide, { toValue: 1, ...springModalSlide }).start();
+  }, [subjectSheetSlide]);
+
+  const { panResponder: subjectSheetPanResponder, scrollYRef: subjectSheetScrollYRef } = useDragToClose(
+    subjectSheetSlide,
+    snapSubjectSheetOpen,
+    closeSubjectSheet,
+  );
+
+  const snapFolderFormOpen = useCallback(() => {
+    Animated.spring(folderFormSlide, { toValue: 1, ...springModalSlide }).start();
+  }, [folderFormSlide]);
+
+  const closeFolderFormViaDrag = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(folderFormOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(folderFormSlide, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setIsFolderFormOpen(false);
+      }
+    });
+  }, [folderFormOpacity, folderFormSlide]);
+
+  const { panResponder: folderFormPanResponder, scrollYRef: folderFormScrollYRef } = useDragToClose(
+    folderFormSlide,
+    snapFolderFormOpen,
+    closeFolderFormViaDrag,
+  );
+
+  const handleOpenFolderForm = () => {
+    handleCloseActions();
+    setTimeout(() => {
+      setIsFolderFormOpen(true);
+      folderFormSlide.setValue(0);
+      folderFormOpacity.setValue(0);
+      Animated.parallel([
+        Animated.timing(folderFormOpacity, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.spring(folderFormSlide, {
+          toValue: 1,
+          ...springModalSlide,
+        }),
+      ]).start();
+    }, 220);
+  };
+
+  const handleCloseFolderForm = () => {
+    Animated.parallel([
+      Animated.timing(folderFormOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(folderFormSlide, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setIsFolderFormOpen(false);
+      }
+    });
+  };
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (isFolderFormOpen) {
+        handleCloseFolderForm();
+        return true;
+      }
+      if (isSubjectSheetOpen) {
+        if (subjectSheetView === 'editTerm') {
+          setSubjectSheetView('editInfo');
+          return true;
+        }
+        if (subjectSheetView === 'editInfo' || subjectSheetView === 'editSchedule' || subjectSheetView === 'stats') {
+          Keyboard.dismiss();
+          setSubjectSheetView('main');
+          return true;
+        }
+        closeSubjectSheet();
+        return true;
+      }
+      if (pathname !== '/') {
+        return false;
+      }
+      if (isNoteEditorOpen) {
+        return false;
+      }
+      onBack();
+      return true;
+    });
+    return () => backHandler.remove();
+  }, [onBack, isNoteEditorOpen, pathname, isSubjectSheetOpen, subjectSheetView, closeSubjectSheet, isFolderFormOpen, handleCloseFolderForm]);
+
+  const handleDeleteSubject = useCallback(async () => {
+    if (!subject?.id || !isDeleteConfirmValid) return;
+    const deletedTitle = subject.title ?? 'Subject';
+    Keyboard.dismiss();
+    await deleteSubject(subject.id);
+    onDelete?.(deletedTitle);
+  }, [subject?.id, subject?.title, isDeleteConfirmValid, onDelete]);
+
+  const handleArchiveSubject = useCallback(async () => {
+    if (!subject?.id) return;
+    await updateSubject(subject.id, { isArchived: true });
+    closeSubjectSheet();
+    onArchive?.(subject.title ?? 'Subject');
+  }, [subject?.id, subject?.title, closeSubjectSheet, onArchive]);
+
   if (isNoteEditorOpen) {
     return (
       <NoteEditorScreen
@@ -458,6 +621,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
 
   const handleOpenActions = () => {
     setIsActionSheetOpen(true);
+    buttonAnims.forEach(a => a.setValue(0));
     Animated.parallel([
       Animated.timing(sheetOpacity, {
         toValue: 1,
@@ -488,6 +652,14 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
           useNativeDriver: true,
         }),
       ]),
+      Animated.stagger(80, [2, 1, 0].map(i =>
+        Animated.spring(buttonAnims[i], {
+          toValue: 1,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 40,
+        })
+      )),
     ]).start();
   };
 
@@ -509,73 +681,15 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
         friction: 7,
         tension: 40,
       }),
+      Animated.stagger(60, [0, 1, 2].map(i =>
+        Animated.spring(buttonAnims[i], { toValue: 0, useNativeDriver: true, friction: 8, tension: 40 })
+      )),
     ]).start(({ finished }) => {
       if (finished) {
         setIsActionSheetOpen(false);
       }
     });
   };
-
-  const handleOpenFolderForm = () => {
-    handleCloseActions();
-    setTimeout(() => {
-      setIsFolderFormOpen(true);
-      Animated.parallel([
-        Animated.timing(folderSheetOpacity, {
-          toValue: 1,
-          duration: 220,
-          useNativeDriver: true,
-        }),
-        Animated.spring(folderSheetTranslate, {
-          toValue: 0,
-          friction: 8,
-          tension: 42,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }, 220);
-  };
-
-  const handleCloseFolderForm = () => {
-    Animated.parallel([
-      Animated.timing(folderSheetOpacity, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      Animated.timing(folderSheetTranslate, {
-        toValue: 18,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        setIsFolderFormOpen(false);
-      }
-    });
-  };
-
-  const closeSubjectSheet = useCallback(() => {
-    Animated.parallel([
-      Animated.timing(subjectSheetOpacity, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      Animated.spring(subjectSheetSlide, {
-        toValue: 0,
-        friction: 9,
-        tension: 50,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        setIsSubjectSheetOpen(false);
-        setSubjectSheetView('main');
-        Keyboard.dismiss();
-      }
-    });
-  }, [subjectSheetOpacity, subjectSheetSlide]);
 
   const openSubjectSheet = () => {
     Keyboard.dismiss();
@@ -593,43 +707,6 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
       }),
     ]).start();
   };
-
-  const snapSubjectSheetOpen = useCallback(() => {
-    Animated.spring(subjectSheetSlide, { toValue: 1, ...springModalSlide }).start();
-  }, [subjectSheetSlide]);
-
-  const { panResponder: subjectSheetPanResponder, scrollYRef: subjectSheetScrollYRef } = useDragToClose(
-    subjectSheetSlide,
-    snapSubjectSheetOpen,
-    closeSubjectSheet,
-  );
-
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (isSubjectSheetOpen) {
-        if (subjectSheetView === 'editTerm') {
-          setSubjectSheetView('editInfo');
-          return true;
-        }
-        if (subjectSheetView === 'editInfo' || subjectSheetView === 'editSchedule') {
-          Keyboard.dismiss();
-          setSubjectSheetView('main');
-          return true;
-        }
-        closeSubjectSheet();
-        return true;
-      }
-      if (pathname !== '/') {
-        return false;
-      }
-      if (isNoteEditorOpen) {
-        return false;
-      }
-      onBack();
-      return true;
-    });
-    return () => backHandler.remove();
-  }, [onBack, isNoteEditorOpen, pathname, isSubjectSheetOpen, subjectSheetView, closeSubjectSheet]);
 
   const openEditInfo = () => {
     setEditTitle(subject?.title ?? '');
@@ -749,6 +826,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
       ]);
       setFolderName('');
       handleCloseFolderForm();
+      setShowFolderCreatedToast(true);
     } catch (error) {
       console.warn('Failed to save folder', error);
     }
@@ -937,7 +1015,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
               <Text style={styles.sectionHeaderTitle}>Recent Notes</Text>
 
               {recentNotes.length === 0 ? (
-                <Text style={styles.recentNoteEmpty}>No notes yet. Tap the + button to create one.</Text>
+                <View style={styles.recentNoteEmptyState}>
+                  <View style={styles.recentNoteEmptyIconWrapper}>
+                    <MaterialIcons name="note-alt" size={20} color="#8f968f" />
+                  </View>
+                  <Text style={styles.recentNoteEmptyTitle}>No recent notes</Text>
+                  <Text style={styles.recentNoteEmptyBody}>Notes you create or edit will show up here.</Text>
+                </View>
               ) : recentNotes.map((note) => {
                 const folderLabel = note.folderId ? folders.find((f) => f.id === note.folderId)?.title ?? 'Unknown' : 'Loose notes';
                 const date = new Date(note.updatedAt);
@@ -1017,11 +1101,6 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
                   </View>
                 </View>
               </View>
-              
-              {/* Embedded dark circular plus button */}
-              <Pressable style={styles.taskAddButton} onPress={handleOpenActions}>
-                <Feather name="plus" size={20} color="#ffffff" />
-              </Pressable>
             </CardScale>
           </View>
         )}
@@ -1225,8 +1304,184 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
         )}
       </Animated.ScrollView>
 
-      {/* Floating Bottom Tab Bar Navigation (Recreating Home Screen style exactly) */}
-      <View style={styles.navDock}>
+      {/* Interactive Action Sheet Modal - rendered before navDock/FAB so they stay tappable */}
+      {isActionSheetOpen ? (
+        <View style={styles.actionSheetOverlay}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: sheetOpacity }]}>
+            <BlurView 
+              intensity={80} 
+              tint="dark" 
+              style={StyleSheet.absoluteFill}
+              experimentalBlurMethod="none" 
+            />
+            <View style={styles.actionSheetBackdrop} />
+          </Animated.View>
+          
+          <Pressable style={styles.actionSheetPressTarget} onPress={handleCloseActions} />
+          
+          <Animated.View
+            style={[
+              styles.actionSheetPanel,
+              {
+                transform: [{ translateY: sheetTranslate }],
+              },
+            ]}
+          >
+            {/* Shortcut 1: Add Task */}
+            <Animated.View style={{
+              opacity: buttonAnims[0],
+              transform: [{
+                translateY: buttonAnims[0].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [30, 0],
+                }),
+              }],
+            }}>
+              <Pressable style={styles.actionButton} onPress={() => { handleCloseActions(); setActiveTab('tasks'); }}>
+                <View style={styles.actionIconCircle}>
+                  <Feather name="check-square" size={18} color="#1e2b26" />
+                </View>
+                <Text style={styles.actionText}>Add Task</Text>
+              </Pressable>
+            </Animated.View>
+
+            {/* Shortcut 2: New Note */}
+            <Animated.View style={{
+              opacity: buttonAnims[1],
+              transform: [{
+                translateY: buttonAnims[1].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [30, 0],
+                }),
+              }],
+            }}>
+              <Pressable
+                style={styles.actionButton}
+                onPress={() => {
+                  handleCloseActions();
+                  setActiveTab('notes');
+                  handleOpenNoteEditor();
+                }}
+              >
+                <View style={styles.actionIconCircle}>
+                  <Feather name="file-text" size={18} color="#1e2b26" />
+                </View>
+                <Text style={styles.actionText}>New Note</Text>
+              </Pressable>
+            </Animated.View>
+
+            {/* Shortcut 3: Create Folder */}
+            <Animated.View style={{
+              opacity: buttonAnims[2],
+              transform: [{
+                translateY: buttonAnims[2].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [30, 0],
+                }),
+              }],
+            }}>
+              <Pressable style={styles.actionButton} onPress={handleOpenFolderForm}>
+                <View style={styles.actionIconCircle}>
+                  <Feather name="folder" size={18} color="#1e2b26" />
+                </View>
+                <Text style={styles.actionText}>Create Folder</Text>
+              </Pressable>
+            </Animated.View>
+          </Animated.View>
+        </View>
+      ) : null}
+
+      {isFolderFormOpen ? (
+        <Animated.View style={[styles.folderFormBackdrop, { opacity: folderFormOpacity }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseFolderForm} />
+        </Animated.View>
+      ) : null}
+
+      {isFolderFormOpen ? (
+        <Animated.View
+          style={[
+            styles.folderFormPanelWrapper,
+            {
+              bottom: keyboardHeight > 0 ? keyboardHeight + 16 : 0,
+              transform: [{
+                translateY: folderFormSlide.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [screenHeight, 0],
+                }),
+              }],
+            },
+          ]}
+        >
+          <View style={[styles.folderFormPanel, { maxHeight: screenHeight * 0.8 }]} {...folderFormPanResponder.panHandlers}>
+            <View style={styles.folderFormHandle} />
+
+            <ScrollView
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="always"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={{ overflow: 'visible', paddingBottom: 16 }}
+              onScroll={(e) => { folderFormScrollYRef.current = e.nativeEvent.contentOffset.y; }}
+              scrollEventThrottle={16}
+            >
+              <View style={styles.folderFormHeader}>
+                <Text style={styles.folderFormTitle}>Create Folder</Text>
+              </View>
+
+              <View style={styles.folderFormSection}>
+                <Text style={styles.folderFormLabel}>Folder Name</Text>
+                <TextInput
+                  value={folderName}
+                  onChangeText={setFolderName}
+                  placeholder="e.g. midterm"
+                  placeholderTextColor="#c1c5c1"
+                  style={styles.folderFormInput}
+                  autoCapitalize="words"
+                  returnKeyType="done"
+                />
+              </View>
+
+              <View style={styles.folderFormSection}>
+                <Text style={styles.folderFormLabel}>Folder Color</Text>
+                <View style={styles.folderSwatchRow}>
+                  {FOLDER_COLORS.map((color) => {
+                    const isSelected = selectedFolderColor === color;
+                    return (
+                      <Pressable
+                        key={color}
+                        onPress={() => setSelectedFolderColor(color)}
+                        style={[
+                          styles.folderSwatch,
+                          { backgroundColor: color },
+                          isSelected && styles.folderSwatchSelected,
+                        ]}
+                      >
+                        {isSelected ? <Feather name="check" size={20} color="#ffffff" /> : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.folderFormFooter}>
+                <Pressable onPress={handleCloseFolderForm}>
+                  <Text style={styles.folderFormCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.folderFormSubmitButton, !folderName.trim() && styles.folderFormSubmitButtonDisabled]}
+                  onPress={handleSaveFolder}
+                  disabled={!folderName.trim()}
+                >
+                  <Text style={styles.folderFormSubmitText}>Create Folder</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </View>
+        </Animated.View>
+      ) : null}
+
+      {/* Floating Bottom Tab Bar Navigation */}
+      <View style={styles.navDock} pointerEvents={isSubjectSheetOpen ? 'none' : 'auto'}>
           <View style={styles.navPill}>
             <Pressable style={styles.navItem} onPress={() => setActiveTab('subject')}>
               <View style={[styles.navItemInner, activeTab === 'subject' ? styles.navItemActive : null]}>
@@ -1247,182 +1502,33 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
               </View>
             </Pressable>
           </View>
+        </View>
 
-          {/* Plus Button beside the navigation bar */}
-          <Animated.View style={[styles.floatingButtonContainer, {
+      {/* Plus Button - rendered after action sheet overlay to stay tappable */}
+      <Animated.View
+        style={[styles.floatingButtonContainer, {
+          transform: [{
+            scale: buttonScale.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 0.9],
+            })
+          }]
+        }]}
+        pointerEvents={isSubjectSheetOpen ? 'none' : 'auto'}
+      >
+        <Pressable style={styles.navAddButton} onPress={isActionSheetOpen ? handleCloseActions : handleOpenActions}>
+          <Animated.View style={{
             transform: [{
-              scale: buttonScale.interpolate({
+              rotate: buttonRotate.interpolate({
                 inputRange: [0, 1],
-                outputRange: [1, 0.9],
+                outputRange: ['0deg', '45deg'],
               })
             }]
-          }]}>
-            <Pressable style={styles.navAddButton} onPress={isActionSheetOpen ? handleCloseActions : handleOpenActions}>
-              <Animated.View style={{
-                transform: [{
-                  rotate: buttonRotate.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0deg', '45deg'],
-                  })
-                }]
-              }}>
-                <Feather name="plus" size={24} color="#f4f7f4" />
-              </Animated.View>
-            </Pressable>
+          }}>
+            <Feather name="plus" size={24} color="#f4f7f4" />
           </Animated.View>
-        </View>
-
-      {/* Interactive Action Sheet Modal */}
-      {isActionSheetOpen ? (
-        <View style={styles.actionSheetOverlay}>
-          <Animated.View style={[StyleSheet.absoluteFill, { opacity: sheetOpacity }]}>
-            <BlurView 
-              intensity={80} 
-              tint="dark" 
-              style={StyleSheet.absoluteFill}
-              experimentalBlurMethod="none" 
-            />
-            <View style={styles.actionSheetBackdrop} />
-          </Animated.View>
-          
-          <Pressable style={styles.actionSheetPressTarget} onPress={handleCloseActions} />
-          
-          <Animated.View
-            style={[
-              styles.actionSheetPanel,
-              {
-                opacity: sheetOpacity,
-                transform: [{ translateY: sheetTranslate }],
-              },
-            ]}
-          >
-            {/* Shortcut 1: Add Task */}
-            <Pressable style={styles.actionButton} onPress={() => { handleCloseActions(); setActiveTab('tasks'); }}>
-              <View style={styles.actionIconCircle}>
-                <Feather name="check-square" size={18} color="#1e2b26" />
-              </View>
-              <Text style={styles.actionText}>Add Task</Text>
-            </Pressable>
-
-            {/* Shortcut 2: New Note */}
-            <Pressable
-              style={styles.actionButton}
-              onPress={() => {
-                handleCloseActions();
-                setActiveTab('notes');
-                handleOpenNoteEditor();
-              }}
-            >
-              <View style={styles.actionIconCircle}>
-                <Feather name="file-text" size={18} color="#1e2b26" />
-              </View>
-              <Text style={styles.actionText}>New Note</Text>
-            </Pressable>
-
-            {/* Shortcut 3: Create Folder */}
-            <Pressable style={styles.actionButton} onPress={handleOpenFolderForm}>
-              <View style={styles.actionIconCircle}>
-                <Feather name="folder" size={18} color="#1e2b26" />
-              </View>
-              <Text style={styles.actionText}>Create Folder</Text>
-            </Pressable>
-          </Animated.View>
-        </View>
-      ) : null}
-
-      <Modal
-        visible={isFolderFormOpen}
-        transparent
-        animationType="none"
-        onRequestClose={handleCloseFolderForm}
-      >
-        <View style={styles.folderFormOverlay}>
-          <Animated.View style={[StyleSheet.absoluteFill, { opacity: folderSheetOpacity }]}> 
-            <BlurView
-              intensity={80}
-              tint="light"
-              style={StyleSheet.absoluteFill}
-              experimentalBlurMethod="none"
-            />
-            <View style={styles.folderFormBackdrop} />
-          </Animated.View>
-
-          <Pressable style={styles.folderFormPressTarget} onPress={handleCloseFolderForm} />
-
-          <Animated.View
-            style={[
-              styles.folderFormSheet,
-              {
-                opacity: folderSheetOpacity,
-                transform: [{ translateY: folderSheetTranslate }],
-              },
-            ]}
-          >
-            <View style={styles.folderFormHandle} />
-
-            <View style={styles.folderFormHeader}>
-              <Text style={styles.folderFormTitle}>Create Folder</Text>
-            </View>
-
-            <View style={styles.folderFormSection}>
-              <Text style={styles.folderFormLabel}>Folder Name</Text>
-              <View style={styles.folderFormInputShell}>
-                <Feather name="folder" size={18} color="#59625d" style={styles.folderFormInputIcon} />
-                <TextInput
-                  value={folderName}
-                  onChangeText={setFolderName}
-                  placeholder="e.g. Fall Semester 2024"
-                  placeholderTextColor="#c1c5c1"
-                  style={styles.folderFormInput}
-                  autoCapitalize="words"
-                  returnKeyType="done"
-                />
-              </View>
-            </View>
-
-            <View style={styles.folderFormSection}>
-              <Text style={styles.folderFormLabel}>Folder Color</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.folderSwatchRow}
-              >
-                {FOLDER_COLORS.map((color) => {
-                  const isSelected = selectedFolderColor === color;
-                  return (
-                    <Pressable
-                      key={color}
-                      onPress={() => setSelectedFolderColor(color)}
-                      style={[
-                        styles.folderSwatch,
-                        {
-                          backgroundColor: color,
-                        },
-                        isSelected && styles.folderSwatchSelected,
-                      ]}
-                    >
-                      {isSelected ? <Feather name="check" size={20} color="#ffffff" /> : null}
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
-
-            <View style={styles.folderFormFooter}>
-              <Pressable onPress={handleCloseFolderForm}>
-                <Text style={styles.folderFormCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.folderFormSubmitButton, !folderName.trim() && styles.folderFormSubmitButtonDisabled]}
-                onPress={handleSaveFolder}
-                disabled={!folderName.trim()}
-              >
-                <Text style={styles.folderFormSubmitText}>Create Folder</Text>
-              </Pressable>
-            </View>
-          </Animated.View>
-        </View>
-      </Modal>
+        </Pressable>
+      </Animated.View>
 
       {isSubjectSheetOpen ? (
         <Animated.View style={[styles.subjectSheetBackdrop, { opacity: subjectSheetOpacity }]}>
@@ -1446,8 +1552,15 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
             style={[styles.subjectSheetPanel, { maxHeight: screenHeight * 0.8 }]}
             {...subjectSheetPanResponder.panHandlers}
           >
-            <View style={styles.subjectSheetHandle} />
-            <ScrollView bounces={false} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
+            <View style={styles.subjectSheetHandleHitArea}>
+              <View style={styles.subjectSheetHandle} />
+            </View>
+            <ScrollView
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="always"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={keyboardHeight > 0 ? { paddingBottom: 24 } : undefined}
               onScroll={(e) => { subjectSheetScrollYRef.current = e.nativeEvent.contentOffset.y; }}
               scrollEventThrottle={16}
             >
@@ -1469,14 +1582,14 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
                     <Text style={styles.subjectSheetActionLabel}>Edit subject schedule</Text>
                   </Pressable>
 
-                  <Pressable style={styles.subjectSheetActionRow} onPress={() => {}}>
+                  <Pressable style={styles.subjectSheetActionRow} onPress={() => void handleArchiveSubject()}>
                     <View style={styles.subjectSheetActionIcon}>
                       <Feather name="archive" size={16} color="#4d5a54" />
                     </View>
                     <Text style={styles.subjectSheetActionLabel}>Archive</Text>
                   </Pressable>
 
-                  <Pressable style={styles.subjectSheetActionRow} onPress={() => {}}>
+                  <Pressable style={styles.subjectSheetActionRow} onPress={() => setSubjectSheetView('stats')}>
                     <View style={styles.subjectSheetActionIcon}>
                       <Feather name="bar-chart-2" size={16} color="#4d5a54" />
                     </View>
@@ -1485,7 +1598,10 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
 
                   <View style={styles.subjectSheetDivider} />
 
-                  <Pressable style={styles.subjectSheetActionRow} onPress={() => {}}>
+                  <Pressable
+                    style={styles.subjectSheetActionRow}
+                    onPress={() => { setDeleteConfirmInput(''); setSubjectSheetView('delete'); }}
+                  >
                     <View style={styles.subjectSheetActionIcon}>
                       <Feather name="trash-2" size={16} color="#b42318" />
                     </View>
@@ -1538,7 +1654,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
                   </View>
 
                   <View style={styles.editInfoActions}>
-                    <Pressable style={styles.editInfoCancelButton} onPress={() => setSubjectSheetView('main')}>
+                    <Pressable onPress={() => setSubjectSheetView('main')}>
                       <Text style={styles.editInfoCancelText}>Cancel</Text>
                     </Pressable>
                     <Pressable
@@ -1671,7 +1787,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
                   ) : null}
 
                   <View style={styles.editInfoActions}>
-                    <Pressable style={styles.editInfoCancelButton} onPress={() => setSubjectSheetView('main')}>
+                    <Pressable onPress={() => setSubjectSheetView('main')}>
                       <Text style={styles.editInfoCancelText}>Cancel</Text>
                     </Pressable>
                     <Pressable
@@ -1681,6 +1797,89 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
                       <Text style={styles.editInfoSaveText}>Save</Text>
                     </Pressable>
                   </View>
+                </>
+              )}
+
+              {subjectSheetView === 'stats' && (
+                <>
+                  <Text style={styles.subjectSheetTitle}>Statistics</Text>
+
+                  <View style={styles.statsGrid}>
+                    <View style={styles.statsCard}>
+                      <Text style={styles.statsNumber}>{totalNotes}</Text>
+                      <Text style={styles.statsLabel}>Total Notes</Text>
+                    </View>
+                    <View style={styles.statsCard}>
+                      <Text style={styles.statsNumber}>{totalFolders}</Text>
+                      <Text style={styles.statsLabel}>Folders</Text>
+                    </View>
+                    <View style={styles.statsCard}>
+                      <Text style={styles.statsNumber}>{looseNotes.length}</Text>
+                      <Text style={styles.statsLabel}>Loose Notes</Text>
+                    </View>
+                    <View style={styles.statsCard}>
+                      <Text style={styles.statsNumber}>{pinnedNotes.length}</Text>
+                      <Text style={styles.statsLabel}>Pinned</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.statsInfoCard}>
+                    <View style={styles.statsInfoRow}>
+                      <Feather name="calendar" size={16} color="#5c6762" />
+                      <Text style={styles.statsInfoLabel}>Subject age</Text>
+                      <Text style={styles.statsInfoValue}>{subjectAgeDays} day{subjectAgeDays !== 1 ? 's' : ''}</Text>
+                    </View>
+                    {lastActivity && (
+                      <View style={styles.statsInfoRow}>
+                        <Feather name="clock" size={16} color="#5c6762" />
+                        <Text style={styles.statsInfoLabel}>Last activity</Text>
+                        <Text style={styles.statsInfoValue}>
+                          {lastActivity.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </Text>
+                      </View>
+                    )}
+                    {subject?.term && (
+                      <View style={styles.statsInfoRow}>
+                        <Feather name="book" size={16} color="#5c6762" />
+                        <Text style={styles.statsInfoLabel}>Academic period</Text>
+                        <Text style={styles.statsInfoValue}>{subject.term}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <Pressable style={styles.statsBackButton} onPress={() => setSubjectSheetView('main')}>
+                    <Text style={styles.statsBackText}>Back</Text>
+                  </Pressable>
+                </>
+              )}
+
+              {subjectSheetView === 'delete' && (
+                <>
+                  <Text style={styles.subjectSheetTitle}>Delete subject?</Text>
+                  <Text style={styles.subjectSheetDeleteBody}>
+                    This action cannot be undone. The subject, all of its folders, and all of its notes will be permanently deleted.
+                  </Text>
+                  <TextInput
+                    style={styles.subjectSheetDeleteInput}
+                    placeholder='Type "DELETE THIS SUBJECT" to confirm'
+                    placeholderTextColor="#8f968f"
+                    value={deleteConfirmInput}
+                    onChangeText={setDeleteConfirmInput}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    spellCheck={false}
+                    autoFocus
+                  />
+                  <Pressable
+                    style={[
+                      styles.subjectSheetDeleteButton,
+                      !isDeleteConfirmValid && styles.subjectSheetDeleteButtonDisabled,
+                    ]}
+                    onPress={() => void handleDeleteSubject()}
+                    disabled={!isDeleteConfirmValid}
+                  >
+                    <Text style={styles.subjectSheetDeleteButtonText}>Delete</Text>
+                  </Pressable>
                 </>
               )}
             </ScrollView>
@@ -1709,6 +1908,14 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate }: Subje
           visible={showSubjectSavedToast}
           message="Subject info updated"
           onHide={() => setShowSubjectSavedToast(false)}
+        />
+      ) : null}
+
+      {showFolderCreatedToast ? (
+        <DynamicIslandToast
+          visible={showFolderCreatedToast}
+          message="Folder created successfully"
+          onHide={() => setShowFolderCreatedToast(false)}
         />
       ) : null}
 
@@ -2011,6 +2218,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 16,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#efede8',
     ...shadowLg,
   },
   recentNoteTitle: {
@@ -2026,12 +2235,37 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 10,
   },
-  recentNoteEmpty: {
+  recentNoteEmptyState: {
+    backgroundColor: '#f3f2ee',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 16,
+    alignItems: 'center',
+  },
+  recentNoteEmptyIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#efede8',
+  },
+  recentNoteEmptyTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 16,
+    color: '#1e2b26',
+    marginBottom: 6,
+  },
+  recentNoteEmptyBody: {
     fontFamily: 'Manrope_500Medium',
-    fontSize: 14,
-    color: '#8f968f',
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#6b746f',
     textAlign: 'center',
-    paddingVertical: 24,
   },
   recentNoteMetaRow: {
     flexDirection: 'row',
@@ -2184,23 +2418,28 @@ const styles = StyleSheet.create({
   },
   folderFormBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(10, 15, 14, 0.28)',
+    backgroundColor: 'rgba(5, 8, 7, 0.3)',
+    zIndex: 99,
   },
-  folderFormPressTarget: {
-    ...StyleSheet.absoluteFillObject,
+  folderFormPanelWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
   },
-  folderFormSheet: {
-    backgroundColor: '#F9F9F6',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+  folderFormPanel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#f8f7f2',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     paddingHorizontal: 24,
     paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 24,
-    shadowColor: '#000000',
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: -6 },
-    elevation: 14,
+    paddingBottom: 40,
+    ...shadowLg,
   },
   folderFormHandle: {
     width: 68,
@@ -2232,32 +2471,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
     color: '#39423e',
-    marginBottom: 8,
-  },
-  folderFormInputShell: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 60,
-    borderRadius: 20,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e6e2da',
-    paddingHorizontal: 16,
-    ...shadowLg,
-  },
-  folderFormInputIcon: {
-    marginRight: 10,
+    marginBottom: 14,
   },
   folderFormInput: {
-    flex: 1,
     fontFamily: 'Manrope_500Medium',
-    fontSize: 15,
-    color: '#1e2b26',
-    paddingVertical: 0,
+    fontSize: 17,
+    color: '#111111',
+    borderBottomWidth: 2,
+    borderBottomColor: '#2d4d43',
+    paddingVertical: 10,
+    marginBottom: 8,
   },
   folderSwatchRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
-    paddingRight: 8,
   },
   folderSwatch: {
     width: 50,
@@ -2277,10 +2505,6 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   folderFormFooter: {
-    marginTop: 4,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0ed',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
@@ -2295,10 +2519,9 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 58,
     borderRadius: 18,
-    backgroundColor: '#0f201b',
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadowLgDark,
+    backgroundColor: '#0f201b',
   },
   folderFormSubmitButtonDisabled: {
     opacity: 0.5,
@@ -2355,7 +2578,6 @@ const styles = StyleSheet.create({
     bottom: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     zIndex: 10,
   },
   navPill: {
@@ -2367,8 +2589,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginRight: 12,
+    marginRight: 76,
     ...shadowLgDark,
   },
   navItem: {
@@ -2414,6 +2635,10 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   floatingButtonContainer: {
+    position: 'absolute',
+    right: 24,
+    bottom: 20,
+    zIndex: 20,
     ...shadowLgDark,
   },
   actionSheetOverlay: {
@@ -2483,13 +2708,17 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     ...shadowLg,
   },
+  subjectSheetHandleHitArea: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginBottom: 4,
+  },
   subjectSheetHandle: {
     width: 68,
     height: 5,
     borderRadius: 999,
     backgroundColor: '#e3e0d8',
-    alignSelf: 'center',
-    marginBottom: 16,
   },
   subjectSheetTitle: {
     fontFamily: 'Manrope_800ExtraBold',
@@ -2553,35 +2782,26 @@ const styles = StyleSheet.create({
   },
   editInfoActions: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 20,
-  },
-  editInfoCancelButton: {
-    flex: 1,
-    height: 58,
-    borderRadius: 18,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#eef2ee',
+    gap: 16,
+    marginTop: 20,
   },
   editInfoCancelText: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
-    color: '#1f2b25',
+    color: '#9aa09a',
+    paddingHorizontal: 8,
   },
   editInfoSaveButton: {
     flex: 1,
-    height: 58,
+    minHeight: 58,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0f2a24',
-    ...shadowLg,
   },
   editInfoSaveButtonDisabled: {
-    backgroundColor: '#e4e1db',
-    shadowOpacity: 0,
-    elevation: 0,
+    opacity: 0.5,
   },
   editInfoSaveText: {
     fontFamily: 'Manrope_700Bold',
@@ -2703,5 +2923,99 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
     color: '#0f2a24',
+  },
+  subjectSheetDeleteBody: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#5f6661',
+    marginBottom: 24,
+  },
+  subjectSheetDeleteInput: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 14,
+    color: '#1e2b26',
+    backgroundColor: '#f5f5f0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 20,
+  },
+  subjectSheetDeleteButton: {
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#b42318',
+  },
+  subjectSheetDeleteButtonDisabled: {
+    opacity: 0.35,
+  },
+  subjectSheetDeleteButtonText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 15,
+    color: '#ffffff',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 16,
+  },
+  statsCard: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    ...shadowLg,
+  },
+  statsNumber: {
+    fontFamily: 'Manrope_800ExtraBold',
+    fontSize: 32,
+    color: '#0f2a24',
+    marginBottom: 4,
+  },
+  statsLabel: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 12,
+    color: '#6b746f',
+    letterSpacing: 0.3,
+  },
+  statsInfoCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    paddingVertical: 4,
+    paddingHorizontal: 16,
+    ...shadowLg,
+  },
+  statsInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+  },
+  statsInfoLabel: {
+    flex: 1,
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 14,
+    color: '#5c6762',
+  },
+  statsInfoValue: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+    color: '#1e2b26',
+  },
+  statsBackButton: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    marginTop: 8,
+  },
+  statsBackText: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 15,
+    color: '#66706b',
   },
 });

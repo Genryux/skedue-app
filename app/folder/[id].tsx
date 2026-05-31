@@ -647,7 +647,7 @@ export default function FolderScreen() {
                     placeholderTextColor="#a7a7a1"
                   />
                   <View style={styles.folderMenuActionRow}>
-                    <Pressable style={styles.folderMenuCancelButton} onPress={() => setFolderMenuView('main')}>
+                    <Pressable onPress={() => setFolderMenuView('main')}>
                       <Text style={styles.folderMenuCancelText}>Cancel</Text>
                     </Pressable>
                     <Pressable style={styles.folderMenuSaveButton} onPress={handleRenameFolder}>
@@ -1060,9 +1060,8 @@ const styles = StyleSheet.create({
   folderMenuActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 16,
-    paddingHorizontal: 4,
+    gap: 16,
+    marginTop: 20,
   },
   folderMenuActionText: {
     flex: 1,
@@ -1106,31 +1105,25 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 24,
   },
-  folderMenuCancelButton: {
-    flex: 1,
-    height: 48,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#eef2ee',
-  },
   folderMenuCancelText: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
-    color: '#1f2b25',
+    fontSize: 16,
+    color: '#9aa09a',
+    paddingHorizontal: 8,
   },
   folderMenuSaveButton: {
     flex: 1,
-    height: 48,
-    borderRadius: 16,
+    minHeight: 58,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#1c2f2a',
   },
   folderMenuSaveText: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
+    fontSize: 16,
     color: '#ffffff',
+    letterSpacing: 0.2,
   },
   folderMenuColorGrid: {
     flexDirection: 'row',

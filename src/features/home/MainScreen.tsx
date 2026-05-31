@@ -107,6 +107,8 @@ export default function MainScreen() {
     return () => clearInterval(timer);
   }, []);
 
+  const activeSubjects = useMemo(() => dbSubjects.filter((s) => !s.isArchived), [dbSubjects]);
+
   const loadData = async () => {
     try {
       const rows = await getSubjects();
@@ -138,7 +140,7 @@ export default function MainScreen() {
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const todayDay = now.getDay();
 
-    const classesToday = dbSubjects
+    const classesToday = activeSubjects
       .filter((subject) => (subject.days ?? []).some((day) => DAY_MAP[day] === todayDay))
       .map((subject) => {
         const startMinutes = parseTimeToMinutes(subject.startTime ?? null);
@@ -205,7 +207,7 @@ export default function MainScreen() {
     const todayDay = now.getDay();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     
-    const todaySubjects = dbSubjects.filter(s => (s.days ?? []).some(d => DAY_MAP[d] === todayDay));
+    const todaySubjects = activeSubjects.filter(s => (s.days ?? []).some(d => DAY_MAP[d] === todayDay));
     
     if (todaySubjects.length === 0) {
       return `${timeGreeting}! No classes today.`;
@@ -357,9 +359,18 @@ export default function MainScreen() {
     });
   };
 
-  const handleSaveSubject = async (subjectData: Omit<SubjectRecord, 'id' | 'createdAt'>) => {
+  const handleSaveSubject = async (subjectData: {
+    title: string;
+    code?: string;
+    instructor?: string;
+    term?: string;
+    days: string[];
+    startTime: string;
+    endTime: string;
+    location?: string;
+  }) => {
     try {
-      const savedSubject = await insertSubject(subjectData);
+      const savedSubject = await insertSubject({ ...subjectData, isArchived: false });
       setDbSubjects((prev) => [...prev, savedSubject]);
       resetPlusButton();
       
@@ -384,7 +395,7 @@ export default function MainScreen() {
 
   // Format subjects for the All Subjects tab
   const subjects = useMemo(() => {
-    return dbSubjects.map((s) => ({
+    return activeSubjects.map((s) => ({
       id: s.id,
       code: s.code ?? s.title.slice(0, 6).toUpperCase(),
       title: s.title,
@@ -453,7 +464,7 @@ export default function MainScreen() {
             onPressSubject={handlePressSubject}
           />
         ) : activeTab === 'schedule' ? (
-          <ScheduleScreen subjects={dbSubjects} />
+          <ScheduleScreen subjects={activeSubjects} />
         ) : (
           <>
             <View style={styles.titleBlock}>
@@ -502,10 +513,10 @@ export default function MainScreen() {
                   ) : (
                     <View style={styles.nextClassEmpty}>
                       <Text style={styles.nextClassEmptyTitle}>
-                        {dbSubjects.length > 0 ? 'No more classes today' : 'No upcoming classes'}
+                        {activeSubjects.length > 0 ? 'No more classes today' : 'No upcoming classes'}
                       </Text>
                       <Text style={styles.nextClassEmptyBody}>
-                        {dbSubjects.length > 0 
+                          {activeSubjects.length > 0
                           ? 'Check your schedule tab for the rest of the week.' 
                           : 'Add your first subject to see today\'s schedule.'}
                       </Text>
@@ -693,6 +704,18 @@ export default function MainScreen() {
               if (updatedSubject) {
                 setSelectedSubjectDetail((prev: any) => ({ ...prev, ...updatedSubject }));
               }
+            }}
+            onDelete={(deletedTitle) => {
+              loadData();
+              handleCloseSubjectDetail();
+              setToastMessage(`${deletedTitle ?? 'Subject'} deleted successfully`);
+              setToastVisible(true);
+            }}
+            onArchive={(archivedTitle) => {
+              loadData();
+              handleCloseSubjectDetail();
+              setToastMessage(`${archivedTitle ?? 'Subject'} archived`);
+              setToastVisible(true);
             }}
           />
         </Animated.View>
