@@ -27,6 +27,12 @@ type FolderOption = {
   color: string;
 };
 
+type SubjectOption = {
+  id: string;
+  title: string;
+  code: string;
+};
+
 type NoteEditorDraft = {
   subjectId: string;
   folderId: string | null;
@@ -42,6 +48,8 @@ type NoteEditorScreenProps = {
   note: NoteRecord | null;
   defaultFolderId?: string | null;
   folderOptions: FolderOption[];
+  subjectOptions?: SubjectOption[];
+  mode?: 'quick' | 'full';
   onClose: (options?: { saved?: boolean; deleted?: boolean }) => void;
   onSave: (noteId: string | null, draft: NoteEditorDraft) => Promise<NoteRecord | null | void> | NoteRecord | null | void;
   onDelete: (noteId: string) => Promise<void> | void;
@@ -150,7 +158,8 @@ const normalizeTextForCompare = (value: string) =>
     .replace(/[ \t]+\n/g, '\n')
     .trimEnd();
 
-export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaultFolderId, folderOptions, onClose, onSave, onDelete }: NoteEditorScreenProps) {
+export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaultFolderId, folderOptions, subjectOptions, mode = 'full', onClose, onSave, onDelete }: NoteEditorScreenProps) {
+  const isQuick = mode === 'quick';
   const insets = useSafeAreaInsets();
   const editorRef = useRef<EnrichedTextInputInstance>(null);
   const historyRef = useRef<{ entries: NoteSnapshot[]; index: number }>({
@@ -175,7 +184,10 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
   const [isBlockMenuOpen, setIsBlockMenuOpen] = useState(false);
   const [isNoteSheetOpen, setIsNoteSheetOpen] = useState(false);
   const isNoteSheetOpenRef = useRef(false);
-  const [noteSheetView, setNoteSheetView] = useState<'main' | 'delete' | 'folders'>('main');
+  const [noteSheetView, setNoteSheetView] = useState<'main' | 'delete' | 'folders' | 'subjects'>('main');
+  const [pendingSubjectId, setPendingSubjectId] = useState<string | null>(null);
+  const pendingSubjectIdRef = useRef(pendingSubjectId);
+  pendingSubjectIdRef.current = pendingSubjectId;
   const [showBackSaveToast, setShowBackSaveToast] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const noteSheetSlide = useRef(new Animated.Value(0)).current;
@@ -626,6 +638,16 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
     closeNoteSheet();
   };
 
+  const handleSubjectSelect = (selectedSubjectId: string) => {
+    setPendingSubjectId(selectedSubjectId);
+    pendingSubjectIdRef.current = selectedSubjectId;
+    setFolderId(null);
+    folderIdRef.current = null;
+    markDirty();
+    scheduleAutosave();
+    closeNoteSheet();
+  };
+
   const closeNoteSheet = () => {
     Animated.parallel([
       Animated.timing(noteSheetSlide, {
@@ -771,7 +793,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
       const contentHtml = applyChecklistStrikethrough(rawHtml.trim() || '<p></p>');
 
       const draft: NoteEditorDraft = {
-        subjectId: note?.subjectId ?? subjectId,
+        subjectId: pendingSubjectIdRef.current ?? note?.subjectId ?? subjectId,
         folderId: folderIdRef.current,
         title: titleTrim,
         contentHtml,
@@ -948,20 +970,20 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
   };
 
   return (
-    <View style={styles.rootWrapper}>
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
+    <View style={[styles.rootWrapper, isQuick && styles.rootQuick]}>
+    <SafeAreaView style={[styles.safeArea, isQuick && styles.safeQuick]} edges={['top', 'left', 'right', 'bottom']}>
       <StatusBar barStyle="dark-content" />
-      <View style={styles.screen}>
+      <View style={[styles.screen, isQuick && styles.screenQuick]}>
         <View style={styles.header}>
           <Pressable style={styles.headerIconButton} onPress={() => void requestClose()} hitSlop={8}>
             <Feather name="arrow-left" size={26} color="#111111" />
           </Pressable>
 
           <View style={styles.headerCenterControls}>
-            <Pressable style={[styles.historyButton, !canUndo && styles.historyButtonDisabled]} onPress={handleUndo} disabled={!canUndo} hitSlop={8}>
+            <Pressable style={[styles.historyButton, isQuick && styles.historyButtonQuick, !canUndo && styles.historyButtonDisabled]} onPress={handleUndo} disabled={!canUndo} hitSlop={8}>
               <Feather name="corner-down-left" size={18} color={canUndo ? '#111111' : '#b3b0a7'} />
             </Pressable>
-            <Pressable style={[styles.historyButton, !canRedo && styles.historyButtonDisabled]} onPress={handleRedo} disabled={!canRedo} hitSlop={8}>
+            <Pressable style={[styles.historyButton, isQuick && styles.historyButtonQuick, !canRedo && styles.historyButtonDisabled]} onPress={handleRedo} disabled={!canRedo} hitSlop={8}>
               <Feather name="corner-down-right" size={18} color={canRedo ? '#111111' : '#b3b0a7'} />
             </Pressable>
           </View>
@@ -976,9 +998,15 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
         <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: 180 + keyboardHeight + insets.bottom }]} keyboardShouldPersistTaps="handled">
           <View style={styles.breadcrumbRow}>
             <View style={styles.breadcrumbTextWrap}>
-              <Text style={styles.breadcrumbSubject} numberOfLines={1}>{subjectTitle}</Text>
-              <Feather name="chevron-right" size={15} color="#8a9088" />
-              <Text style={styles.breadcrumbFolder} numberOfLines={1}>{folderId ? folderLabel : 'Loose notes'}</Text>
+              {isQuick && !pendingSubjectId ? (
+                <Text style={styles.breadcrumbSubject} numberOfLines={1}>Quick note</Text>
+              ) : (
+                <>
+                  <Text style={styles.breadcrumbSubject} numberOfLines={1}>{pendingSubjectId ? (subjectOptions?.find((s) => s.id === pendingSubjectId)?.code ?? 'Subject') : subjectTitle}</Text>
+                  <Feather name="chevron-right" size={15} color="#8a9088" />
+                  <Text style={styles.breadcrumbFolder} numberOfLines={1}>{folderId ? folderLabel : 'Loose notes'}</Text>
+                </>
+              )}
             </View>
           </View>
 
@@ -1028,8 +1056,8 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
           </View>
         </ScrollView>
 
-        <View style={[styles.toolbarDock, { bottom: keyboardHeight > 0 ? keyboardHeight : 0 }]}>
-          {isBlockMenuOpen ? (
+        <View style={[styles.toolbarDock, isQuick && styles.toolbarDockQuick, { bottom: keyboardHeight > 0 ? keyboardHeight : 0 }]}>
+          {!isQuick && isBlockMenuOpen ? (
             <View style={styles.blockMenuCard}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.blockMenuRow}>
                 {BLOCK_ACTIONS.map((item) => {
@@ -1063,11 +1091,13 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
             </View>
           ) : null}
 
-          <View style={styles.toolbarDivider} />
+          <View style={[styles.toolbarDivider, isQuick && styles.toolbarDividerQuick]} />
           <View style={styles.toolbarRow}>
-            <Pressable style={styles.plusButton} onPress={() => setIsBlockMenuOpen((current) => !current)}>
-              <Feather name="plus" size={22} color="#111111" />
-            </Pressable>
+            {!isQuick && (
+              <Pressable style={styles.plusButton} onPress={() => setIsBlockMenuOpen((current) => !current)}>
+                <Feather name="plus" size={22} color="#111111" />
+              </Pressable>
+            )}
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.inlineActionRow}>
               {INLINE_ACTIONS.map((item) => {
@@ -1089,6 +1119,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
                     italic={item.key === 'italic'}
                     underline={item.key === 'underline'}
                     strike={item.key === 'strikethrough'}
+                    quick={isQuick}
                   />
                 );
               })}
@@ -1137,11 +1168,11 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
                       <Text style={styles.noteSheetActionLabel}>Export</Text>
                     </Pressable>
 
-                    <Pressable style={styles.noteSheetActionRow} onPress={() => setNoteSheetView('folders')}>
+                    <Pressable style={styles.noteSheetActionRow} onPress={() => setNoteSheetView(isQuick ? 'subjects' : 'folders')}>
                       <View style={styles.noteSheetActionIcon}>
-                        <Feather name="folder" size={16} color="#4d5a54" />
+                        <Feather name={isQuick ? 'book' : 'folder'} size={16} color="#4d5a54" />
                       </View>
-                      <Text style={styles.noteSheetActionLabel}>Move to folder...</Text>
+                      <Text style={styles.noteSheetActionLabel}>{isQuick ? 'Move to subject...' : 'Move to folder...'}</Text>
                     </Pressable>
 
                     <View style={styles.noteSheetDivider} />
@@ -1202,6 +1233,31 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
                     ))}
                   </>
                 )}
+
+                {noteSheetView === 'subjects' && (
+                  <>
+                    <View style={styles.noteSheetFolderHeader}>
+                      <Pressable onPress={() => setNoteSheetView('main')} hitSlop={8}>
+                        <Feather name="arrow-left" size={22} color="#111111" />
+                      </Pressable>
+                      <Text style={styles.noteSheetFolderTitle}>Move to subject</Text>
+                      <View style={{ width: 22 }} />
+                    </View>
+
+                    {(subjectOptions ?? []).map((subject) => {
+                      const isSelected = (pendingSubjectId ?? subjectId) === subject.id;
+                      return (
+                        <Pressable key={subject.id} style={styles.noteSheetActionRow} onPress={() => handleSubjectSelect(subject.id)}>
+                          <View style={styles.noteSheetActionIcon}>
+                            <Feather name="book" size={16} color="#4d5a54" />
+                          </View>
+                          <Text style={styles.noteSheetActionLabel}>{subject.code} — {subject.title}</Text>
+                          {isSelected ? <Feather name="check" size={16} color="#1f5f4d" /> : null}
+                        </Pressable>
+                      );
+                    })}
+                  </>
+                )}
               </ScrollView>
             </View>
           </Animated.View>
@@ -1229,6 +1285,7 @@ const ToolbarButton = ({
   italic,
   underline,
   strike,
+  quick,
 }: {
   label: string;
   active: boolean;
@@ -1236,8 +1293,9 @@ const ToolbarButton = ({
   italic?: boolean;
   underline?: boolean;
   strike?: boolean;
+  quick?: boolean;
 }) => (
-  <Pressable style={[styles.toolbarButton, active && styles.toolbarButtonActive]} onPress={onPress}>
+  <Pressable style={[styles.toolbarButton, active && (quick ? styles.toolbarButtonActiveQuick : styles.toolbarButtonActive)]} onPress={onPress}>
     <Text
       style={[
         styles.toolbarButtonLabel,
@@ -1257,13 +1315,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f7f2',
   },
+  rootQuick: {
+    backgroundColor: '#fef3c7',
+  },
   safeArea: {
     flex: 1,
     backgroundColor: '#f8f7f2',
   },
+  safeQuick: {
+    backgroundColor: '#fef3c7',
+  },
   screen: {
     flex: 1,
     backgroundColor: '#f8f7f2',
+  },
+  screenQuick: {
+    backgroundColor: '#fef3c7',
   },
   header: {
     minHeight: 62,
@@ -1294,6 +1361,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#f1efe8',
+  },
+  historyButtonQuick: {
+    backgroundColor: '#e8dba8',
   },
   historyButtonDisabled: {
     opacity: 0.45,
@@ -1446,10 +1516,16 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 10,
   },
+  toolbarDockQuick: {
+    backgroundColor: '#fef3c7',
+  },
   toolbarDivider: {
     height: 1,
     backgroundColor: '#ddd8cf',
     marginBottom: 10,
+  },
+  toolbarDividerQuick: {
+    backgroundColor: '#e8dba8',
   },
   toolbarRow: {
     paddingHorizontal: 12,
@@ -1480,6 +1556,9 @@ const styles = StyleSheet.create({
   },
   toolbarButtonActive: {
     backgroundColor: '#e8ebe5',
+  },
+  toolbarButtonActiveQuick: {
+    backgroundColor: '#e8dba8',
   },
   toolbarButtonLabel: {
     fontFamily: 'Manrope_700Bold',

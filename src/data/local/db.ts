@@ -394,6 +394,7 @@ export const updateFolder = async (
 
 export const deleteFolder = async (folderId: string): Promise<void> => {
   const db = await getDb();
+  await db.runAsync('DELETE FROM notes WHERE folderId = ?', [folderId]);
   await db.runAsync('DELETE FROM folders WHERE id = ?', [folderId]);
 };
 
@@ -403,6 +404,25 @@ export const moveNotesToFolder = async (sourceFolderId: string, targetFolderId: 
 };
 
 const parseBoolean = (value: number | null | undefined) => value === 1;
+
+export const getAllNotes = async (): Promise<NoteRecord[]> => {
+  const db = await getDb();
+  const rows = await db.getAllAsync<NoteRow>(
+    'SELECT * FROM notes ORDER BY isPinned DESC, updatedAt DESC, createdAt DESC'
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    subjectId: row.subjectId,
+    folderId: row.folderId,
+    title: row.title,
+    contentHtml: row.contentHtml,
+    contentText: row.contentText,
+    isPinned: parseBoolean(row.isPinned),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }));
+};
 
 export const getNotesBySubjectId = async (subjectId: string): Promise<NoteRecord[]> => {
   const db = await getDb();
@@ -537,10 +557,11 @@ export const updateNote = async (
   await db.runAsync(
     `
       UPDATE notes
-      SET folderId = ?, title = ?, contentHtml = ?, contentText = ?, isPinned = ?, updatedAt = ?
+      SET subjectId = ?, folderId = ?, title = ?, contentHtml = ?, contentText = ?, isPinned = ?, updatedAt = ?
       WHERE id = ?
     `,
     [
+      note.subjectId,
       note.folderId ?? null,
       note.title,
       note.contentHtml,

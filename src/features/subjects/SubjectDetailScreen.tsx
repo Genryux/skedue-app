@@ -53,6 +53,7 @@ const NoteEditorScreen = require('./NoteEditorScreen').default as React.Componen
   subjectTitle: string;
   note: NoteRecord | null;
   folderOptions: Array<{ id: string; title: string; color: string }>;
+  mode?: 'quick' | 'full';
   onClose: (options?: { saved?: boolean; deleted?: boolean }) => void;
   onSave: (
     noteId: string | null,

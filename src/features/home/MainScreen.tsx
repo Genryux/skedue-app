@@ -4,8 +4,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  BackHandler,
   Dimensions,
   Easing,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -14,10 +16,11 @@ import {
   StatusBar as RNStatusBar,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
-import { getMetaValue, getNotesBySubjectId, getSubjects, insertSubject, setMetaValue, updateSubject, type SubjectRecord } from '../../data/local/db';
+import { getAllNotes, getMetaValue, getNotesBySubjectId, getSubjects, insertSubject, insertNote, updateNote, deleteNote, findRecentMatchingNote, setMetaValue, updateSubject, type SubjectRecord, type NoteRecord } from '../../data/local/db';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
 import ScheduleScreen from '../schedule/ScheduleScreen';
@@ -25,6 +28,28 @@ import AddSubjectScreen from '../subjects/AddSubjectScreen';
 import SubjectsScreen from '../subjects/SubjectsScreen';
 import DynamicIslandToast from '../../ui/DynamicIslandToast';
 import SubjectDetailScreen from '../subjects/SubjectDetailScreen';
+
+const QuickNoteEditor = require('../subjects/NoteEditorScreen').default as React.ComponentType<{
+  subjectId: string;
+  subjectTitle: string;
+  note: NoteRecord | null;
+  folderOptions: Array<{ id: string; title: string; color: string }>;
+  subjectOptions?: Array<{ id: string; title: string; code: string }>;
+  mode?: 'quick' | 'full';
+  onClose: (options?: { saved?: boolean; deleted?: boolean }) => void;
+  onSave: (
+    noteId: string | null,
+    draft: {
+      subjectId: string;
+      folderId: string | null;
+      title: string;
+      contentHtml: string;
+      contentText: string;
+      isPinned: boolean;
+    }
+  ) => Promise<NoteRecord | null>;
+  onDelete: (noteId: string) => Promise<void> | void;
+}>;
 
 const formatTime = (time: string | null | undefined) => {
   if (!time) return '';
@@ -34,8 +59,18 @@ const formatTime = (time: string | null | undefined) => {
   const [h, m] = time.split(':').map(Number);
   if (isNaN(h) || isNaN(m)) return time;
   const period = h >= 12 ? 'PM' : 'AM';
-  const hour = h % 12 === 0 ? 12 : h % 12;
-  return `${hour}:${String(m).padStart(2, '0')} ${period}`;
+  const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${hour12}:${m.toString().padStart(2, '0')} ${period}`;
+};
+
+const formatNoteDate = (timestamp: number) => {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
 const DAY_MAP: Record<string, number> = {
@@ -85,6 +120,8 @@ export default function MainScreen() {
   const [selectedSubjectDetail, setSelectedSubjectDetail] = useState<any>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [subjectFilter, setSubjectFilter] = useState<{ type: 'active' | 'archived' | 'all'; term: string | null }>({ type: 'active', term: null });
+  const [isAllQuickNotesOpen, setIsAllQuickNotesOpen] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const sheetOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslate = useRef(new Animated.Value(18)).current;
@@ -94,6 +131,7 @@ export default function MainScreen() {
   // Transitions
   const subjectSlideAnim = useRef(new Animated.Value(0)).current; // 0: hidden, 1: visible
   const subjectDetailSlideAnim = useRef(new Animated.Value(0)).current; // 0: offscreen, 1: onscreen
+  const allQuickNotesSlideAnim = useRef(new Animated.Value(0)).current; // 0: offscreen, 1: onscreen
 
   // Filter modal
   const filterSlide = useRef(new Animated.Value(0)).current;
@@ -108,16 +146,55 @@ export default function MainScreen() {
   const [now, setNow] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
 
-  // Placeholder data for tasks and notes (not in DB yet)
+  // Recent notes state (quick notes + subject notes)
   const pendingTasks: Array<{ id: string; title: string; due: string }> = [];
-  const recentNotes: Array<{ id: string; title: string; preview: string }> = [];
+  const [recentNoteRecords, setRecentNoteRecords] = useState<NoteRecord[]>([]);
+  const [selectedQuickNote, setSelectedQuickNote] = useState<NoteRecord | null>(null);
+  const [noteEditorMode, setNoteEditorMode] = useState<'quick' | 'full'>('quick');
+  const [allNotesSearch, setAllNotesSearch] = useState('');
+  const [allNotesFilter, setAllNotesFilter] = useState<string | null>(null); // null = all, 'quick' = quick notes, subjectId = that subject
+  const [isNoteFilterOpen, setIsNoteFilterOpen] = useState(false);
+  const noteFilterSlide = useRef(new Animated.Value(0)).current;
+  const noteFilterOpacity = useRef(new Animated.Value(0)).current;
+
+  const loadRecentNotes = async () => {
+    try {
+      const notes = await getAllNotes();
+      const activeSubjectIds = new Set(dbSubjects.filter((s) => !s.isArchived).map((s) => s.id));
+      const filtered = notes.filter((n) => !n.subjectId || activeSubjectIds.has(n.subjectId));
+      setRecentNoteRecords(filtered);
+    } catch (err) {
+      console.warn('Failed to load notes', err);
+    }
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30000); // Update every 30s
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   const activeSubjects = useMemo(() => dbSubjects.filter((s) => !s.isArchived), [dbSubjects]);
+
+  const subjectLookup = useMemo(() => {
+    const map: Record<string, { code: string; title: string }> = {};
+    dbSubjects.forEach((s) => {
+      map[s.id] = { code: s.code ?? s.title.slice(0, 6).toUpperCase(), title: s.title };
+    });
+    return map;
+  }, [dbSubjects]);
 
   const loadData = async () => {
     try {
@@ -131,12 +208,26 @@ export default function MainScreen() {
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadData();
+    await loadRecentNotes();
     setRefreshing(false);
   };
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    loadRecentNotes();
+  }, [dbSubjects]);
+
+  // Reload notes when subject detail closes (notes may have changed)
+  const prevSubjectDetailOpen = useRef(isSubjectDetailOpen);
+  useEffect(() => {
+    if (prevSubjectDetailOpen.current && !isSubjectDetailOpen) {
+      loadRecentNotes();
+    }
+    prevSubjectDetailOpen.current = isSubjectDetailOpen;
+  }, [isSubjectDetailOpen]);
 
   useEffect(() => {
     const loadNoteCounts = async () => {
@@ -197,6 +288,34 @@ export default function MainScreen() {
     filterSlide,
     () => Animated.spring(filterSlide, { toValue: 1, ...springModalSlide }).start(),
     handleCloseFilter,
+  );
+
+  const handleOpenNoteFilter = () => {
+    setIsNoteFilterOpen(true);
+    Animated.parallel([
+      Animated.spring(noteFilterSlide, { toValue: 1, ...springModalSlide }),
+      Animated.timing(noteFilterOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const handleCloseNoteFilter = () => {
+    Animated.parallel([
+      Animated.timing(noteFilterSlide, { toValue: 0, duration: 280, useNativeDriver: true }),
+      Animated.timing(noteFilterOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(({ finished }) => {
+      if (finished) setIsNoteFilterOpen(false);
+    });
+  };
+
+  const handleSelectNoteFilter = (newFilter: string | null) => {
+    setAllNotesFilter(newFilter);
+    handleCloseNoteFilter();
+  };
+
+  const { panResponder: noteFilterPanResponder, scrollYRef: noteFilterScrollYRef } = useDragToClose(
+    noteFilterSlide,
+    () => Animated.spring(noteFilterSlide, { toValue: 1, ...springModalSlide }).start(),
+    handleCloseNoteFilter,
   );
 
   // Apply filter to subjects
@@ -390,22 +509,26 @@ export default function MainScreen() {
 
   const handleStartAddSubject = () => {
     resetPlusButton();
-    setIsActionSheetOpen(false);
     setIsAddSubjectOpen(true);
-    
-    Animated.timing(subjectSlideAnim, {
+
+    Animated.spring(subjectSlideAnim, {
       toValue: 1,
-      duration: 450,
-      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
-    }).start();
+      damping: 22,
+      stiffness: 200,
+      mass: 1,
+    }).start(({ finished }) => {
+      if (finished) {
+        setIsActionSheetOpen(false);
+      }
+    });
   };
 
   const handleCancelAddSubject = () => {
     Animated.timing(subjectSlideAnim, {
       toValue: 0,
-      duration: 350,
-      easing: Easing.inOut(Easing.cubic),
+      duration: 250,
+      easing: Easing.in(Easing.cubic),
       useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished) {
@@ -428,6 +551,30 @@ export default function MainScreen() {
   const handleTogglePin = async (subjectId: string, isPinned: boolean) => {
     await updateSubject(subjectId, { isPinned });
     await loadData();
+  };
+
+  const handleOpenAllQuickNotes = () => {
+    Keyboard.dismiss();
+    setIsAllQuickNotesOpen(true);
+    Animated.timing(allQuickNotesSlideAnim, {
+      toValue: 1,
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handleCloseAllQuickNotes = () => {
+    Animated.timing(allQuickNotesSlideAnim, {
+      toValue: 0,
+      duration: 350,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setIsAllQuickNotesOpen(false);
+      }
+    });
   };
 
   const handleCloseSubjectDetail = () => {
@@ -478,6 +625,79 @@ export default function MainScreen() {
     }
   };
 
+  const [isQuickNoteOpen, setIsQuickNoteOpen] = useState(false);
+
+  const handleStartQuickNote = () => {
+    resetPlusButton();
+    setIsActionSheetOpen(false);
+    setSelectedQuickNote(null);
+    setNoteEditorMode('quick');
+    setIsQuickNoteOpen(true);
+  };
+
+  const handlePressQuickNote = (note: NoteRecord) => {
+    resetPlusButton();
+    setSelectedQuickNote(note);
+    setNoteEditorMode(note.subjectId ? 'full' : 'quick');
+    setIsQuickNoteOpen(true);
+  };
+
+  const handleQuickNoteClose = () => {
+    setIsQuickNoteOpen(false);
+    setSelectedQuickNote(null);
+  };
+
+  const handleQuickNoteSave = async (
+    noteId: string | null,
+    draft: {
+      subjectId: string;
+      folderId: string | null;
+      title: string;
+      contentHtml: string;
+      contentText: string;
+      isPinned: boolean;
+    }
+  ): Promise<NoteRecord | null> => {
+    let savedNote: NoteRecord;
+    if (noteId) {
+      savedNote = await updateNote(noteId, draft);
+    } else {
+      const recentMatch = await findRecentMatchingNote(draft);
+      if (recentMatch) {
+        savedNote = recentMatch;
+      } else {
+        savedNote = await insertNote(draft);
+      }
+    }
+    await loadRecentNotes();
+    return savedNote;
+  };
+
+  const handleQuickNoteDelete = async (noteId: string) => {
+    await deleteNote(noteId);
+    await loadRecentNotes();
+  };
+
+  // Intercept hardware back to close overlays
+  useEffect(() => {
+    const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (isAllQuickNotesOpen) {
+        handleCloseAllQuickNotes();
+        return true;
+      }
+      if (isQuickNoteOpen) {
+        handleQuickNoteClose();
+        return true;
+      }
+      if (isAddSubjectOpen) {
+        handleCancelAddSubject();
+        return true;
+      }
+      return false;
+    });
+    return () => handler.remove();
+  }, [isAllQuickNotesOpen, isQuickNoteOpen, isAddSubjectOpen, handleCloseAllQuickNotes, handleQuickNoteClose, handleCancelAddSubject]);
+
   // Format subjects for the All Subjects tab
   const subjects = useMemo(() => {
     return filteredDbSubjects.map((s) => ({
@@ -503,22 +723,7 @@ export default function MainScreen() {
 
   return (
     <View style={styles.container}>
-      <Animated.View 
-        style={[
-          styles.mainContent,
-          {
-            opacity: subjectSlideAnim.interpolate({
-              inputRange: [0, 0.5],
-              outputRange: [1, 0],
-            }),
-            transform: [{
-              scale: subjectSlideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [1, 0.94],
-              })
-            }]
-          }
-        ]}
+      <View style={styles.mainContent}
       >
         <View style={styles.headerRow}>
           <View style={styles.headerSpacer} />
@@ -613,21 +818,18 @@ export default function MainScreen() {
                   )}
                 </LinearGradient>
 
-                <View style={styles.card}>
-                  <View style={styles.cardHeaderRow}>
-                    <View style={styles.cardHeaderLeft}>
-                      <View style={styles.cardIconCircle}>
-                        <Feather name="check-circle" size={18} color="#1e2b26" />
-                      </View>
-                      <Text style={styles.cardTitle}>Pending Tasks</Text>
-                    </View>
+                <View style={styles.pendingTasksSection}>
+                  <View style={styles.pendingTasksHeaderRow}>
+                    <Text style={styles.pendingTasksTitle}>Pending Tasks</Text>
                     <Feather name="more-horizontal" size={18} color="#6d756f" />
                   </View>
 
                   {pendingTasks.length === 0 ? (
-                    <View style={styles.emptyState}>
-                      <Text style={styles.emptyTitle}>No pending tasks</Text>
-                      <Text style={styles.emptyBody}>Add a task to keep track of upcoming work.</Text>
+                    <View style={styles.sectionEmptyState}>
+                      <View style={styles.sectionEmptyIconWrapper}>
+                        <Feather name="check-circle" size={18} color="#8f968f" />
+                      </View>
+                      <Text style={styles.sectionEmptyTitle}>No pending tasks</Text>
                     </View>
                   ) : (
                     pendingTasks.map((task) => (
@@ -642,29 +844,40 @@ export default function MainScreen() {
                   )}
                 </View>
 
-                <View style={styles.card}>
-                  <View style={styles.cardHeaderRow}>
-                    <View style={styles.cardHeaderLeft}>
-                      <View style={styles.cardIconCircle}>
-                        <Feather name="edit-3" size={18} color="#1e2b26" />
-                      </View>
-                      <Text style={styles.cardTitle}>Recent Notes</Text>
-                    </View>
-                    <Feather name="external-link" size={18} color="#6d756f" />
+                <View style={styles.recentNotesSection}>
+                  <View style={styles.recentNotesHeaderRow}>
+                    <Text style={styles.recentNotesTitle}>Recent Notes</Text>
+                    <Pressable onPress={handleOpenAllQuickNotes} hitSlop={8}>
+                      <Feather name="inbox" size={20} color="#6d756f" />
+                    </Pressable>
                   </View>
 
-                  {recentNotes.length === 0 ? (
-                    <View style={styles.emptyCard}>
-                      <Text style={styles.emptyTitle}>No notes yet</Text>
-                      <Text style={styles.emptyBody}>Create a note to capture your first class insights.</Text>
+                  {recentNoteRecords.length === 0 ? (
+                    <View style={styles.sectionEmptyState}>
+                      <View style={styles.sectionEmptyIconWrapper}>
+                        <Feather name="file-text" size={18} color="#8f968f" />
+                      </View>
+                      <Text style={styles.sectionEmptyTitle}>No notes yet</Text>
                     </View>
                   ) : (
-                    recentNotes.map((note) => (
-                      <View key={note.id} style={styles.noteCard}>
-                        <Text style={styles.noteTitle}>{note.title}</Text>
-                        <Text style={styles.noteBody}>{note.preview}</Text>
-                      </View>
-                    ))
+                    recentNoteRecords.slice(0, 4).map((note) => {
+                      const isQuick = !note.subjectId;
+                      const subject = subjectLookup[note.subjectId];
+                      return (
+                        <Pressable
+                          key={note.id}
+                          style={[styles.noteCard, isQuick && styles.noteCardQuick]}
+                          onPress={() => handlePressQuickNote(note)}
+                        >
+                          <Text style={styles.noteTitle}>{note.title || 'Untitled note'}</Text>
+                          <Text style={styles.noteBody} numberOfLines={1}>{note.contentText}</Text>
+                          <View style={styles.noteMetaRow}>
+                            <Text style={styles.noteDate}>{formatNoteDate(note.updatedAt)}</Text>
+                            <Text style={styles.noteOrigin}>{isQuick ? 'Quick note' : subject ? subject.code : 'Subject'}</Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })
                   )}
                 </View>
             </>
@@ -723,6 +936,12 @@ export default function MainScreen() {
               </View>
               <Text style={styles.actionText}>Add subject</Text>
             </Pressable>
+            <Pressable style={styles.actionButton} onPress={handleStartQuickNote}>
+              <View style={styles.actionIconCircle}>
+                <Feather name="edit-3" size={18} color="#1e2b26" />
+              </View>
+              <Text style={styles.actionText}>Create quick note</Text>
+            </Pressable>
           </Animated.View>
         </View>
       ) : null}
@@ -749,25 +968,22 @@ export default function MainScreen() {
         </Pressable>
       </Animated.View>
 
-      </Animated.View>
+      </View>
 
       {isAddSubjectOpen && (
-        <Animated.View 
-          style={[
-            StyleSheet.absoluteFill,
-            {
-              backgroundColor: '#f8f7f2',
-              transform: [{
-                translateY: subjectSlideAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [1000, 0],
-                })
-              }]
-            }
-          ]}
-        >
-          <AddSubjectScreen onBack={handleCancelAddSubject} onSave={handleSaveSubject} />
-        </Animated.View>
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#f8f7f2', zIndex: 20 }]}>
+          <Animated.View style={{
+            flex: 1,
+            transform: [{
+              translateY: subjectSlideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [screenHeight, 0],
+              })
+            }]
+          }}>
+            <AddSubjectScreen onBack={handleCancelAddSubject} onSave={handleSaveSubject} />
+          </Animated.View>
+        </View>
       )}
 
       {isSubjectDetailOpen && (
@@ -776,6 +992,7 @@ export default function MainScreen() {
             StyleSheet.absoluteFill,
             {
               backgroundColor: '#f8f7f2',
+              zIndex: 20,
               transform: [{
                 translateX: subjectDetailSlideAnim.interpolate({
                   inputRange: [0, 1],
@@ -887,6 +1104,188 @@ export default function MainScreen() {
         </Animated.View>
       ) : null}
 
+      {isQuickNoteOpen && (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 30 }]}>
+          <QuickNoteEditor
+            subjectId={selectedQuickNote?.subjectId ?? ''}
+            subjectTitle={selectedQuickNote?.subjectId ? (subjectLookup[selectedQuickNote.subjectId]?.code ?? 'Subject') : 'Quick Note'}
+            note={selectedQuickNote}
+            folderOptions={[]}
+            subjectOptions={activeSubjects.map((s) => ({ id: s.id, title: s.title, code: s.code ?? s.title.slice(0, 6).toUpperCase() }))}
+            mode={noteEditorMode}
+            onClose={handleQuickNoteClose}
+            onSave={handleQuickNoteSave}
+            onDelete={handleQuickNoteDelete}
+          />
+        </View>
+      )}
+
+      {isAllQuickNotesOpen && (
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: '#f8f7f2',
+              zIndex: 25,
+              transform: [{
+                translateX: allQuickNotesSlideAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [500, 0],
+                })
+              }]
+            }
+          ]}
+        >
+          <View style={styles.allQuickNotesHeader}>
+            <Pressable onPress={handleCloseAllQuickNotes} hitSlop={8}>
+              <Feather name="arrow-left" size={26} color="#111111" />
+            </Pressable>
+            <Text style={styles.allQuickNotesTitle}>All Notes</Text>
+            <View style={{ width: 26 }} />
+          </View>
+
+          <ScrollView contentContainerStyle={styles.allQuickNotesList}>
+            {(() => {
+              const filtered = recentNoteRecords.filter((note) => {
+                if (allNotesFilter === 'quick' && note.subjectId) return false;
+                if (allNotesFilter && allNotesFilter !== 'quick' && note.subjectId !== allNotesFilter) return false;
+                if (allNotesSearch.trim()) {
+                  const q = allNotesSearch.toLowerCase();
+                  const matchTitle = note.title.toLowerCase().includes(q);
+                  const matchBody = note.contentText.toLowerCase().includes(q);
+                  if (!matchTitle && !matchBody) return false;
+                }
+                return true;
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <View style={styles.allQuickNotesEmpty}>
+                    <Text style={styles.emptyTitle}>No notes found</Text>
+                    <Text style={styles.emptyBody}>Try adjusting your search or filter.</Text>
+                  </View>
+                );
+              }
+
+              return filtered.map((note) => {
+                const isQuick = !note.subjectId;
+                const subject = subjectLookup[note.subjectId];
+                return (
+                  <Pressable key={note.id} style={[styles.allQuickNoteCard, isQuick && styles.noteCardQuick]} onPress={() => { handleCloseAllQuickNotes(); handlePressQuickNote(note); }}>
+                    <Text style={styles.noteTitle}>{note.title || 'Untitled note'}</Text>
+                    <Text style={styles.noteBody} numberOfLines={1}>{note.contentText}</Text>
+                    <View style={styles.noteMetaRow}>
+                      <Text style={styles.noteDate}>{formatNoteDate(note.updatedAt)}</Text>
+                      <Text style={styles.noteOrigin}>{isQuick ? 'Quick note' : subject ? subject.code : 'Subject'}</Text>
+                    </View>
+                  </Pressable>
+                );
+              });
+            })()}
+          </ScrollView>
+
+          <View style={[styles.allNotesSearchDock, { bottom: keyboardHeight > 0 ? keyboardHeight + 32 : (Platform.OS === 'ios' ? 34 : 20) }]}>
+            <View style={styles.allNotesSearchPill}>
+              <Feather name="search" size={16} color="#eef6f1" />
+              <TextInput
+                value={allNotesSearch}
+                onChangeText={setAllNotesSearch}
+                placeholder="Search notes..."
+                placeholderTextColor="rgba(238,246,241,0.5)"
+                style={styles.allNotesSearchInput}
+                returnKeyType="search"
+              />
+              {allNotesSearch.length > 0 && (
+                <Pressable onPress={() => setAllNotesSearch('')} hitSlop={8}>
+                  <Feather name="x" size={16} color="#eef6f1" />
+                </Pressable>
+              )}
+            </View>
+            <Pressable
+              style={styles.allNotesFilterButton}
+              onPress={handleOpenNoteFilter}
+            >
+              <Feather name="sliders" size={18} color={allNotesFilter !== null ? '#FFD666' : '#eef6f1'} />
+            </Pressable>
+          </View>
+        </Animated.View>
+      )}
+
+      {isNoteFilterOpen ? (
+        <Animated.View style={[styles.filterBackdrop, { opacity: noteFilterOpacity }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseNoteFilter} />
+        </Animated.View>
+      ) : null}
+
+      {isNoteFilterOpen ? (
+        <Animated.View
+          style={[styles.filterPanelWrapper, {
+            bottom: 0,
+            transform: [{
+              translateY: noteFilterSlide.interpolate({
+                inputRange: [0, 1],
+                outputRange: [screenHeight, 0],
+              }),
+            }],
+          }]}
+        >
+          <View style={[styles.filterPanel, { maxHeight: screenHeight * 0.6 }]} {...noteFilterPanResponder.panHandlers}>
+            <View style={styles.filterHandle} />
+
+            <ScrollView
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              onScroll={(e) => { noteFilterScrollYRef.current = e.nativeEvent.contentOffset.y; }}
+              scrollEventThrottle={16}
+            >
+              <Text style={styles.filterTitle}>Filter Notes</Text>
+
+              <Text style={styles.filterSectionLabel}>Type</Text>
+              <View style={styles.filterOptionsRow}>
+                {(['all', 'quick'] as const).map((type) => {
+                  const label = { all: 'All Notes', quick: 'Quick notes' }[type];
+                  const isSelected = (type === 'all' && allNotesFilter === null) || allNotesFilter === type;
+                  return (
+                    <Pressable
+                      key={type}
+                      style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+                      onPress={() => handleSelectNoteFilter(type === 'all' ? null : type)}
+                    >
+                      <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>{label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {(() => {
+                const subjectIds = [...new Set(recentNoteRecords.filter((n) => n.subjectId).map((n) => n.subjectId))];
+                const subjects = subjectIds.map((id) => ({ id, info: subjectLookup[id] })).filter((s) => s.info);
+                if (subjects.length === 0) return null;
+                return (
+                  <>
+                    <Text style={styles.filterSectionLabel}>Subject</Text>
+                    <View style={styles.filterOptionsRow}>
+                      {subjects.map(({ id, info }) => {
+                        const isSelected = allNotesFilter === id;
+                        return (
+                          <Pressable
+                            key={id}
+                            style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+                            onPress={() => handleSelectNoteFilter(isSelected ? null : id)}
+                          >
+                            <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>{info.code}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </>
+                );
+              })()}
+            </ScrollView>
+          </View>
+        </Animated.View>
+      ) : null}
+
       <DynamicIslandToast 
         visible={toastVisible} 
         message={toastMessage} 
@@ -966,7 +1365,8 @@ const styles = StyleSheet.create({
   },
   nextClassCard: {
     borderRadius: 26,
-    padding: 20,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
     marginBottom: 18,
     ...shadowLg,
   },
@@ -1047,42 +1447,148 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#a7b7af',
   },
+  recentNotesSection: {
+    marginBottom: 26,
+  },
+  recentNotesHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  recentNotesTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 18,
+    color: '#1e2b26',
+  },
+  pendingTasksSection: {
+    marginBottom: 26,
+  },
+  pendingTasksHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  pendingTasksHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  pendingTasksTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 18,
+    color: '#1e2b26',
+  },
   card: {
     backgroundColor: '#ffffff',
     borderRadius: 24,
     padding: 18,
     marginBottom: 18,
   },
-  cardHeaderRow: {
+  sectionEmptyState: {
+    backgroundColor: '#f3f2ee',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 12,
+    alignItems: 'center',
+  },
+  sectionEmptyIconWrapper: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.04)',
+  },
+  sectionEmptyTitle: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 14,
+    color: '#9aa09a',
+    marginBottom: 0,
+  },
+  sectionEmptyBody: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#6b746f',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  allQuickNotesHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    paddingHorizontal: 18,
+    paddingTop: Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) + 8 : 8,
+    paddingBottom: 8,
+    minHeight: 62,
   },
-  cardHeaderLeft: {
+  allQuickNotesTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 20,
+    color: '#111111',
+  },
+  allQuickNotesDivider: {
+    height: 1,
+    backgroundColor: '#d9d6ce',
+  },
+  allQuickNotesList: {
+    padding: 16,
+    paddingBottom: 100,
+    gap: 8,
+  },
+  allQuickNotesEmpty: {
+    paddingTop: 40,
+    alignItems: 'center',
+  },
+  allQuickNoteCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#efede8',
+    ...shadowLg,
+  },
+  allNotesSearchDock: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    bottom: Platform.OS === 'ios' ? 34 : 20,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
-  cardIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  allNotesSearchPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1c2f2a',
+    borderRadius: 26,
+    height: 64,
+    paddingHorizontal: 20,
+    gap: 12,
+    ...shadowLgDark,
+  },
+  allNotesSearchInput: {
+    flex: 1,
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 16,
+    color: '#eef6f1',
+    paddingVertical: 0,
+  },
+  allNotesFilterButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 26,
+    backgroundColor: '#1c2f2a',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  cardTitle: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 18,
-    color: '#1e2b26',
-  },
-  emptyState: {
-    paddingVertical: 14,
-  },
-  emptyCard: {
-    backgroundColor: '#f9f6f1',
-    borderRadius: 18,
-    padding: 16,
+    ...shadowLgDark,
   },
   emptyTitle: {
     fontFamily: 'Manrope_700Bold',
@@ -1094,6 +1600,21 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     fontSize: 13,
     color: '#6b746f',
+  },
+  quickNoteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    marginTop: 12,
+    borderRadius: 16,
+    backgroundColor: '#f3f2ee',
+  },
+  quickNoteButtonText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+    color: '#2b4a3f',
   },
   taskRow: {
     flexDirection: 'row',
@@ -1120,21 +1641,45 @@ const styles = StyleSheet.create({
     color: '#6b746f',
   },
   noteCard: {
-    backgroundColor: '#f9f6f1',
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#efede8',
+    ...shadowLg,
+  },
+  noteCardQuick: {
+    backgroundColor: '#fef3c7',
+    borderColor: 'rgba(0,0,0,0.04)',
   },
   noteTitle: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
     color: '#2a332e',
-    marginBottom: 6,
+    marginBottom: 2,
   },
   noteBody: {
     fontFamily: 'Manrope_400Regular',
-    fontSize: 13,
+    fontSize: 12,
     color: '#6b746f',
+    marginBottom: 4,
+  },
+  noteDate: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 11,
+    color: '#9aa09a',
+  },
+  noteMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  noteOrigin: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 11,
+    color: '#9aa09a',
   },
   navDock: {
     position: 'absolute',
