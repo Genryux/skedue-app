@@ -1,8 +1,9 @@
 import { Feather } from '@expo/vector-icons';
-import { useMemo, useRef, useState, useEffect } from 'react';
-import { Animated, Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import { Animated, Dimensions, Modal, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { SubjectRecord } from '../../data/local/db';
 import { shadowLg } from '../../ui/tokens/shadows';
+import { springModalSlide } from '../../ui/tokens/animations';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
 
 const DAY_MAP: Record<string, number> = {
@@ -21,6 +22,7 @@ const DESIRED_GAP = 4;
 const DAY_CHIP_SIZE = Math.max(34, Math.min(44, Math.floor((SCREEN_WIDTH - CARD_H_PADDING * 2 - DESIRED_GAP * (DAYS_IN_WEEK - 1)) / DAYS_IN_WEEK)));
 const MONTH_CELL_HEIGHT = 44;
 const IS_SMALL_SCREEN = SCREEN_WIDTH < 360;
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const formatTime = (time: string | null | undefined) => {
   if (!time) return '';
@@ -39,6 +41,7 @@ type ScheduleEntry = {
   title: string;
   instructor?: string;
   location?: string;
+  kind: 'subject' | 'task';
 };
 
 type ScheduleScreenProps = {
@@ -90,6 +93,64 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
   const [currentMinutes, setCurrentMinutes] = useState(today.getHours() * 60 + today.getMinutes());
   const [isMonthView, setIsMonthView] = useState(false);
   const [monthDate, setMonthDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [detailEntry, setDetailEntry] = useState<ScheduleEntry | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const detailSlide = useRef(new Animated.Value(0)).current;
+  const detailOpacity = useRef(new Animated.Value(0)).current;
+
+  const closeDetail = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(detailOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(detailSlide, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setIsDetailOpen(false);
+        setDetailEntry(null);
+      }
+    });
+  }, [detailOpacity, detailSlide]);
+
+  const handlePanResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onPanResponderMove: (_, g) => {
+      if (g.dy > 0) {
+        detailSlide.setValue(Math.max(0, 1 - g.dy / SCREEN_HEIGHT));
+      }
+    },
+    onPanResponderRelease: (_, g) => {
+      if (g.dy > SCREEN_HEIGHT * 0.15 || g.vy > 0.5) {
+        closeDetail();
+      } else {
+        Animated.spring(detailSlide, { toValue: 1, ...springModalSlide }).start();
+      }
+    },
+  }), [detailSlide, closeDetail]);
+
+  const openDetail = useCallback((entry: ScheduleEntry) => {
+    setDetailEntry(entry);
+    setIsDetailOpen(true);
+    detailSlide.setValue(0);
+    detailOpacity.setValue(0);
+    Animated.parallel([
+      Animated.timing(detailOpacity, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.spring(detailSlide, {
+        toValue: 1,
+        ...springModalSlide,
+      }),
+    ]).start();
+  }, [detailOpacity, detailSlide]);
 
   const contentOpacity = useRef(new Animated.Value(1)).current;
   const calendarAnim = useRef(new Animated.Value(0)).current;
@@ -171,6 +232,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
           title: subject.title,
           instructor: subject.instructor ?? undefined,
           location: subject.location ?? undefined,
+          kind: 'subject',
         });
         map.set(matchingWeekDay.key, list);
       }
@@ -210,6 +272,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
             title: subject.title,
             instructor: subject.instructor ?? undefined,
             location: subject.location ?? undefined,
+            kind: 'subject',
           });
           map.set(key, list);
         }
@@ -226,7 +289,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
     return map;
   }, [subjects, monthGrid, monthDate]);
 
-  const selectedEntries = entriesByDay.get(selectedDayKey) ?? [];
+  const selectedEntries = entriesByDay.get(selectedDayKey) ?? entriesByDayAll.get(selectedDayKey) ?? [];
   const selectedDayIndex = weekDays.findIndex((day) => day.key === selectedDayKey);
 
   const handleShiftWeek = (direction: 'prev' | 'next') => {
@@ -251,10 +314,10 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
     setSelectedDayKey(firstDayKey);
   };
 
-  const renderDots = (count: number) => {
-    if (count <= 0) return <View style={[styles.dot, styles.dotMuted]} />;
+  const renderDots = (count: number, isToday?: boolean) => {
+    if (count <= 0) return <View style={[styles.dot, isToday ? styles.dotToday : styles.dotMuted]} />;
     return Array.from({ length: Math.min(count, 3) }).map((_, index) => (
-      <View key={index} style={styles.dot} />
+      <View key={index} style={[styles.dot, isToday && styles.dotToday]} />
     ));
   };
 
@@ -263,6 +326,12 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
     const m = monthDate.getMonth();
     const key = getLocalDateKey(new Date(year, m, day));
     return (entriesByDayAll.get(key)?.length ?? 0) > 0;
+  };
+
+  const formatHourLabel = (minutes: number) => {
+    const h = Math.floor(minutes / 60);
+    const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${hour12} ${h < 12 ? 'AM' : 'PM'}`;
   };
 
   return (
@@ -359,7 +428,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
               {weekDays.map((day) => {
                 const isSelected = day.key === selectedDayKey;
                 const isToday = day.key === todayKey;
-                const dotCount = entriesByDay.get(day.key)?.length ?? 0;
+                const dotCount = (entriesByDay.get(day.key) ?? entriesByDayAll.get(day.key) ?? []).length;
 
                 const chipStyle = isToday
                   ? styles.dayChipToday
@@ -387,7 +456,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
                   >
                     <Text style={letterStyle}>{day.short.charAt(0)}</Text>
                     <Text style={numberStyle}>{day.dayNumber}</Text>
-                    <View style={styles.dotRow}>{renderDots(dotCount)}</View>
+                    <View style={styles.dotRow}>{renderDots(dotCount, isToday)}</View>
                   </Pressable>
                 );
               })}
@@ -407,49 +476,95 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
             <Text style={styles.sectionEmptyTitle}>Nothing scheduled</Text>
           </View>
         ) : (
-          selectedEntries.map((entry) => {
+          selectedEntries.map((entry, ei) => {
             const isToday = selectedDayKey === todayKey;
             const startMins = parseTimeToMinutes(entry.startTime) ?? 0;
             const endMins = parseTimeToMinutes(entry.endTime) ?? 0;
             const isActive = isToday && currentMinutes >= startMins && currentMinutes <= endMins;
+            const isPast = selectedDayKey < todayKey || (isToday && currentMinutes > endMins);
+            const prevStartMins = ei > 0 ? (parseTimeToMinutes(selectedEntries[ei - 1].startTime) ?? 0) : -1;
+            const sameHourAsPrev = ei > 0 && Math.floor(startMins / 60) === Math.floor(prevStartMins / 60);
+            const nextStartMins = ei < selectedEntries.length - 1 ? (parseTimeToMinutes(selectedEntries[ei + 1].startTime) ?? 0) : -1;
+            const sameHourAsNext = ei < selectedEntries.length - 1 && Math.floor(startMins / 60) === Math.floor(nextStartMins / 60);
 
             return (
-              <View key={entry.id} style={styles.timelineRow}>
-                <View style={styles.timeWrapper}>
-                  <Text style={styles.timeText}>{entry.startTime}</Text>
-                  <View style={[styles.timeDot, isActive && styles.timeDotActive]} />
-                </View>
-                <View style={[styles.eventCard, isActive && styles.eventCardPrimary]}>
-                  <Text style={styles.eventTitle}>{entry.title}</Text>
-
-                  {entry.instructor ? (
-                    <View style={styles.metaRow}>
-                      <Feather name="user" size={14} color="#2a332e" />
-                      <Text style={styles.metaText}>{entry.instructor}</Text>
-                    </View>
-                  ) : null}
-
-                  <View style={[styles.metaDivider, isActive && styles.metaDividerActive]} />
-
-                  <View style={styles.metaRow}>
-                    <Feather name="clock" size={14} color="#2a332e" />
-                    <Text style={styles.metaText}>
-                      {entry.startTime}{entry.endTime ? ` - ${entry.endTime}` : ''}
-                    </Text>
+              <View key={entry.id} style={[styles.timelineRow, sameHourAsNext && styles.timelineRowCompact]}>
+                {sameHourAsPrev ? (
+                  <View style={styles.timeWrapperSpacer} />
+                ) : (
+                  <View style={styles.timeWrapper}>
+                    <Text style={styles.timeText}>{formatHourLabel(startMins)}</Text>
+                    <View style={[styles.timeDot, isActive && styles.timeDotActive]} />
                   </View>
-
-                  {entry.location ? (
-                    <View style={styles.metaRow}>
-                      <Feather name="map-pin" size={14} color="#2a332e" />
-                      <Text style={styles.metaText}>{entry.location}</Text>
+                )}
+                <Pressable style={[styles.eventCard, isActive && styles.eventCardPrimary, isPast && styles.eventCardPast]} onPress={() => openDetail(entry)}>
+                  <View style={[styles.eventAccent, isActive && styles.eventAccentActive, isPast && styles.eventAccentPast]} />
+                  <View style={styles.eventContent}>
+                    <View style={styles.eventTitleRow}>
+                      <Text style={styles.eventTitle} numberOfLines={1}>{entry.title}</Text>
                     </View>
-                  ) : null}
-                </View>
+                    <View style={styles.eventTimeRow}>
+                      <Text style={styles.eventTimeText}>
+                        {entry.startTime}{entry.endTime ? ` - ${entry.endTime}` : ''}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.eventIconWrapper}>
+                    <Feather name={entry.kind === 'task' ? 'check-square' : 'book-open'} size={16} color={isActive ? '#8fbaa4' : isPast ? '#c9cdc9' : '#c5c9c5'} />
+                  </View>
+                </Pressable>
               </View>
             );
           })
         )}
       </Animated.View>
+
+      <Modal visible={isDetailOpen} transparent animationType="none" onRequestClose={closeDetail}>
+        <View style={styles.detailRoot}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: detailOpacity, backgroundColor: 'rgba(5, 8, 7, 0.3)' }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeDetail} />
+          </Animated.View>
+
+          <Animated.View
+            style={[styles.detailPanelWrapper, {
+              transform: [{
+                translateY: detailSlide.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [SCREEN_HEIGHT, 0],
+                }),
+              }],
+            }]}
+          >
+            <View style={styles.detailPanel} {...handlePanResponder.panHandlers}>
+              <View style={styles.detailHandle} />
+              {detailEntry && (
+                <>
+                  <Text style={styles.detailTitle}>{detailEntry.title}</Text>
+                  <View style={styles.detailDivider} />
+                  <View style={styles.detailRow}>
+                    <Feather name="clock" size={16} color="#6b746f" />
+                    <Text style={styles.detailText}>
+                      {detailEntry.startTime}{detailEntry.endTime ? ` - ${detailEntry.endTime}` : ''}
+                    </Text>
+                  </View>
+                  {detailEntry.location ? (
+                    <View style={styles.detailRow}>
+                      <Feather name="map-pin" size={16} color="#6b746f" />
+                      <Text style={styles.detailText}>{detailEntry.location}</Text>
+                    </View>
+                  ) : null}
+                  {detailEntry.instructor ? (
+                    <View style={styles.detailRow}>
+                      <Feather name="user" size={16} color="#6b746f" />
+                      <Text style={styles.detailText}>{detailEntry.instructor}</Text>
+                    </View>
+                  ) : null}
+                </>
+              )}
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -584,6 +699,9 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: '#1e2b26',
   },
+  dotToday: {
+    backgroundColor: '#d7e4dd',
+  },
   dotMuted: {
     backgroundColor: '#c9cdc9',
   },
@@ -681,40 +799,46 @@ const styles = StyleSheet.create({
   },
   timeLine: {
     position: 'absolute',
-    left: 68,
+    left: 39,
     top: 10,
     bottom: 40,
     width: 1.5,
-    backgroundColor: '#eeeae1',
+    backgroundColor: '#efede8',
     zIndex: -1,
   },
   timelineRow: {
     flexDirection: 'row',
-    marginBottom: 20,
+    gap: 10,
+    marginBottom: 14,
+  },
+  timelineRowCompact: {
+    marginBottom: 6,
   },
   timeWrapper: {
-    width: 80,
+    width: 44,
     position: 'relative',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     paddingTop: 0,
-    paddingRight: 24,
+    paddingRight: 0,
+  },
+  timeWrapperSpacer: {
+    width: 44,
   },
   timeText: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 12,
+    fontSize: 11,
     color: '#6b746f',
-    marginTop: 2,
   },
   timeDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: '#ffffff',
-    borderWidth: 2.5,
-    borderColor: '#eeeae1',
+    borderWidth: 2,
+    borderColor: '#efede8',
     position: 'absolute',
-    right: 5,
-    top: 4,
+    right: 0,
+    top: 0,
     zIndex: 1,
   },
   timeDotActive: {
@@ -723,47 +847,58 @@ const styles = StyleSheet.create({
   },
   eventCard: {
     flex: 1,
+    flexDirection: 'row',
     backgroundColor: '#ffffff',
-    borderRadius: 22,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#eeeae1',
+    borderRadius: 4.5,
+    overflow: 'hidden',
     ...shadowLg,
   },
   eventCardPrimary: {
     backgroundColor: '#f1f8f4',
-    borderColor: '#c9ded1',
+  },
+  eventCardPast: {
+    backgroundColor: '#f7f7f7',
+  },
+  eventAccent: {
+    width: 6,
+    backgroundColor: '#efefef',
+    borderRadius: 4,
+  },
+  eventAccentActive: {
+    backgroundColor: '#4d7e6a',
+  },
+  eventAccentPast: {
+    backgroundColor: '#d8dbd8',
+  },
+  eventContent: {
+    flex: 1,
+    padding: 12,
+    gap: 6,
+  },
+  eventTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   eventTitle: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 18,
+    fontSize: 15,
     color: '#1e2b26',
-    marginBottom: 10,
   },
-  metaRow: {
+  eventTimeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 8,
   },
-  bottomRow: {
-    flexDirection: 'row',
+  eventTimeText: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 12,
+    color: '#6b746f',
+  },
+  eventIconWrapper: {
+    width: 40,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  metaDivider: {
-    height: 1,
-    backgroundColor: '#e2ded7',
-    marginVertical: 8,
-  },
-  metaDividerActive: {
-    backgroundColor: '#c9ded1',
-  },
-  metaText: {
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 13,
-    color: '#4d5852',
+    justifyContent: 'center',
   },
   sectionEmptyState: {
     backgroundColor: '#f3f2ee',
@@ -789,5 +924,55 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9aa09a',
     marginBottom: 0,
+  },
+  detailRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  detailHandle: {
+    width: 68,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#e3e0d8',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  detailPanelWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  detailPanel: {
+    backgroundColor: '#f8f7f2',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 40,
+    maxHeight: SCREEN_HEIGHT * 0.8,
+    ...shadowLg,
+  },
+  detailTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 18,
+    color: '#1e2b26',
+    marginBottom: 4,
+  },
+  detailDivider: {
+    height: 1,
+    backgroundColor: '#efefe8',
+    marginVertical: 14,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  detailText: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 14,
+    color: '#4d5852',
   },
 });
