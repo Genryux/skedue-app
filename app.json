@@ -23,7 +23,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.kenzakigenryu.skedue"
+      "package": "com.kenzakigenryu.skedue",
+      "permissions": ["SCHEDULE_EXACT_ALARM"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -39,7 +40,13 @@
         }
       ],
       "expo-font",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-notifications",
+        {
+          "color": "#1c2f2a"
+        }
+      ]
     ],
     "extra": {
       "router": {},

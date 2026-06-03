@@ -93,7 +93,7 @@ export default function FolderScreen() {
   const folderMenuOpacity = useRef(new Animated.Value(0)).current;
   const viewTransition = useRef(new Animated.Value(1)).current;
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-  const gridColumnWidth = (screenWidth - 28 * 2 - 12) / 2;
+  const gridColumnWidth = (screenWidth - 16 * 2 - 12) / 2;
   const searchInputRef = useRef<TextInput>(null);
 
   const saveInFlightRef = useRef<Promise<NoteRecord> | null>(null);
@@ -803,7 +803,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 12,
   },
   backButton: {
@@ -816,7 +816,7 @@ const styles = StyleSheet.create({
   headerCenter: {
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
   },
   headerLabel: {
     fontFamily: 'Manrope_800ExtraBold',
@@ -833,8 +833,8 @@ const styles = StyleSheet.create({
   },
   searchDock: {
     position: 'absolute',
-    left: 24,
-    right: 24,
+    left: 18,
+    right: 18,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -864,7 +864,7 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   scrollContent: {
-    paddingHorizontal: 28,
+    paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 20,
   },

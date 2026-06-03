@@ -1,4 +1,4 @@
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { shadowLg } from '../../ui/tokens/shadows';
 
@@ -23,15 +23,20 @@ type SubjectsScreenProps = {
   onPressSubject: (subject: FormattedSubject) => void;
   onFilterPress?: () => void;
   onTogglePin?: (subjectId: string, isPinned: boolean) => void;
+  hasActiveFilter?: boolean;
 };
 
-export default function SubjectsScreen({ subjects, onPressSubject, onFilterPress, onTogglePin }: SubjectsScreenProps) {
+export default function SubjectsScreen({ subjects, onPressSubject, onFilterPress, onTogglePin, hasActiveFilter }: SubjectsScreenProps) {
   return (
     <>
       <View style={styles.titleBlockSubjects}>
-        <Text style={styles.title}>Your Subjects</Text>
+        <Text style={styles.title}>My Subjects</Text>
         <Pressable style={styles.filterButton} onPress={onFilterPress}>
-          <Feather name="sliders" size={18} color="#1e2b26" />
+          {hasActiveFilter ? (
+            <MaterialCommunityIcons name="filter-variant" size={16} color="#4d7e6a" />
+          ) : (
+            <Feather name="filter" size={16} color="#1e2b26" />
+          )}
         </Pressable>
       </View>
       <View style={styles.subjectsSection}>
@@ -106,17 +111,17 @@ const styles = StyleSheet.create({
   title: {
     color: '#1e2b26',
     fontFamily: 'Manrope_700Bold',
-    fontSize: 30,
+    fontSize: 22,
   },
   filterButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fcfbfa',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#efede8',
+    borderColor: '#f2f1ee',
   },
   subjectsSection: {
     gap: 18,

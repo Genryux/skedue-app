@@ -756,6 +756,7 @@ export default function MainScreen() {
             onPressSubject={handlePressSubject}
             onFilterPress={handleOpenFilter}
             onTogglePin={handleTogglePin}
+            hasActiveFilter={subjectFilter.type !== 'active' || subjectFilter.term !== null}
           />
         ) : activeTab === 'schedule' ? (
           <ScheduleScreen subjects={activeSubjects} />
@@ -821,7 +822,9 @@ export default function MainScreen() {
                 <View style={styles.pendingTasksSection}>
                   <View style={styles.pendingTasksHeaderRow}>
                     <Text style={styles.pendingTasksTitle}>Pending Tasks</Text>
-                    <Feather name="more-horizontal" size={18} color="#6d756f" />
+                    <Pressable style={styles.headerIconButton}>
+                      <Feather name="more-horizontal" size={16} color="#6d756f" />
+                    </Pressable>
                   </View>
 
                   {pendingTasks.length === 0 ? (
@@ -847,8 +850,8 @@ export default function MainScreen() {
                 <View style={styles.recentNotesSection}>
                   <View style={styles.recentNotesHeaderRow}>
                     <Text style={styles.recentNotesTitle}>Recent Notes</Text>
-                    <Pressable onPress={handleOpenAllQuickNotes} hitSlop={8}>
-                      <Feather name="inbox" size={20} color="#6d756f" />
+                    <Pressable style={styles.headerIconButton} onPress={handleOpenAllQuickNotes} hitSlop={8}>
+                      <Feather name="inbox" size={16} color="#6d756f" />
                     </Pressable>
                   </View>
 
@@ -1303,7 +1306,7 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 18,
     paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 0 : 0,
     backgroundColor: '#f8f7f2', // The original app background
   },
@@ -1328,11 +1331,11 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fcfbfa',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#e6e2dc',
+    borderColor: '#f2f1ee',
   },
   scrollContent: {
     paddingTop: 16,
@@ -1367,7 +1370,7 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     paddingVertical: 28,
     paddingHorizontal: 24,
-    marginBottom: 18,
+    marginBottom: 28,
     ...shadowLg,
   },
   nextClassHeader: {
@@ -1683,8 +1686,8 @@ const styles = StyleSheet.create({
   },
   navDock: {
     position: 'absolute',
-    left: 24,
-    right: 24,
+    left: 18,
+    right: 18,
     bottom: 20,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1747,7 +1750,7 @@ const styles = StyleSheet.create({
   },
   floatingButtonContainer: {
     position: 'absolute',
-    right: 24,
+    right: 18,
     bottom: 20,
     zIndex: 20,
     ...shadowLgDark,
@@ -1765,7 +1768,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   actionSheetPanel: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 18,
     paddingBottom: 110, // Just above the FAB
     gap: 12,
     alignItems: 'flex-end', // Aligns to the right side above FAB

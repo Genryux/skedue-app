@@ -1334,7 +1334,7 @@ const styles = StyleSheet.create({
   },
   header: {
     minHeight: 62,
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',

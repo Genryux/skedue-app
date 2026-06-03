@@ -1,7 +1,8 @@
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import { Animated, Dimensions, Modal, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { SubjectRecord } from '../../data/local/db';
+import { getMetaValue, setMetaValue } from '../../data/local/db';
 import { shadowLg } from '../../ui/tokens/shadows';
 import { springModalSlide } from '../../ui/tokens/animations';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
@@ -15,14 +16,13 @@ const DAY_MAP: Record<string, number> = {
 const DAY_HEADERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_H_PADDING = 18;
 const DAYS_IN_WEEK = 7;
 const DESIRED_GAP = 4;
 const DAY_CHIP_SIZE = Math.max(34, Math.min(44, Math.floor((SCREEN_WIDTH - CARD_H_PADDING * 2 - DESIRED_GAP * (DAYS_IN_WEEK - 1)) / DAYS_IN_WEEK)));
 const MONTH_CELL_HEIGHT = 44;
 const IS_SMALL_SCREEN = SCREEN_WIDTH < 360;
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const formatTime = (time: string | null | undefined) => {
   if (!time) return '';
@@ -97,6 +97,11 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const detailSlide = useRef(new Animated.Value(0)).current;
   const detailOpacity = useRef(new Animated.Value(0)).current;
+
+  const [scheduleFilter, setScheduleFilter] = useState<{ subjects: boolean; tasks: boolean }>({ subjects: true, tasks: true });
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const filterSlide = useRef(new Animated.Value(0)).current;
+  const filterOpacity = useRef(new Animated.Value(0)).current;
 
   const closeDetail = useCallback(() => {
     Animated.parallel([
@@ -314,6 +319,66 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
     setSelectedDayKey(firstDayKey);
   };
 
+  // Load persisted filter
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await getMetaValue('scheduleFilter');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setScheduleFilter(parsed);
+        }
+      } catch {}
+    })();
+  }, []);
+
+  const handleOpenFilter = () => {
+    setIsFilterOpen(true);
+    Animated.parallel([
+      Animated.spring(filterSlide, { toValue: 1, ...springModalSlide }),
+      Animated.timing(filterOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const handleCloseFilter = () => {
+    Animated.parallel([
+      Animated.timing(filterSlide, { toValue: 0, duration: 280, useNativeDriver: true }),
+      Animated.timing(filterOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(({ finished }) => {
+      if (finished) setIsFilterOpen(false);
+    });
+  };
+
+  const handleToggleFilter = (kind: 'subjects' | 'tasks') => {
+    const next = { ...scheduleFilter, [kind]: !scheduleFilter[kind] };
+    setScheduleFilter(next);
+    setMetaValue('scheduleFilter', JSON.stringify(next)).catch(() => {});
+  };
+
+  const filterPanResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onPanResponderMove: (_, g) => {
+      if (g.dy > 0) {
+        filterSlide.setValue(Math.max(0, 1 - g.dy / SCREEN_HEIGHT));
+      }
+    },
+    onPanResponderRelease: (_, g) => {
+      if (g.dy > SCREEN_HEIGHT * 0.15 || g.vy > 0.5) {
+        handleCloseFilter();
+      } else {
+        Animated.spring(filterSlide, { toValue: 1, ...springModalSlide }).start();
+      }
+    },
+  }), [filterSlide]);
+
+  const filteredSelectedEntries = useMemo(() => {
+    return selectedEntries.filter((entry) => {
+      if (!scheduleFilter.subjects && entry.kind === 'subject') return false;
+      if (!scheduleFilter.tasks && entry.kind === 'task') return false;
+      return true;
+    });
+  }, [selectedEntries, scheduleFilter]);
+
   const renderDots = (count: number, isToday?: boolean) => {
     if (count <= 0) return <View style={[styles.dot, isToday ? styles.dotToday : styles.dotMuted]} />;
     return Array.from({ length: Math.min(count, 3) }).map((_, index) => (
@@ -338,6 +403,13 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
     <View style={styles.container}>
       <View style={styles.titleBlock}>
         <Text style={styles.headerTitle}>My Schedule</Text>
+        <Pressable style={styles.filterButton} onPress={handleOpenFilter} hitSlop={8}>
+          {scheduleFilter.subjects !== scheduleFilter.tasks ? (
+            <MaterialCommunityIcons name="filter-variant" size={16} color="#4d7e6a" />
+          ) : (
+            <Feather name="filter" size={16} color="#1e2b26" />
+          )}
+        </Pressable>
       </View>
 
       <View style={styles.weekCard}>
@@ -466,9 +538,9 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
       </View>
 
       <Animated.View style={[styles.timeline, { opacity: contentOpacity }]}>
-        {selectedEntries.length > 0 && <View style={styles.timeLine} />}
+        {filteredSelectedEntries.length > 0 && <View style={styles.timeLine} />}
 
-        {selectedEntries.length === 0 ? (
+        {filteredSelectedEntries.length === 0 ? (
           <View style={styles.sectionEmptyState}>
             <View style={styles.sectionEmptyIconWrapper}>
               <Feather name="calendar" size={18} color="#8f968f" />
@@ -476,7 +548,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
             <Text style={styles.sectionEmptyTitle}>Nothing scheduled</Text>
           </View>
         ) : (
-          selectedEntries.map((entry, ei) => {
+          filteredSelectedEntries.map((entry, ei) => {
             const isToday = selectedDayKey === todayKey;
             const startMins = parseTimeToMinutes(entry.startTime) ?? 0;
             const endMins = parseTimeToMinutes(entry.endTime) ?? 0;
@@ -518,6 +590,51 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
           })
         )}
       </Animated.View>
+
+      {/* Filter Sheet */}
+      <Modal visible={isFilterOpen} transparent animationType="none" onRequestClose={handleCloseFilter}>
+        <View style={styles.filterRoot}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: filterOpacity, backgroundColor: 'rgba(5, 8, 7, 0.3)' }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseFilter} />
+          </Animated.View>
+
+          <Animated.View
+            style={[styles.filterPanelWrapper, {
+              bottom: 0,
+              transform: [{
+                translateY: filterSlide.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [SCREEN_HEIGHT, 0],
+                }),
+              }],
+            }]}
+          >
+            <View style={[styles.filterPanel, { maxHeight: SCREEN_HEIGHT * 0.6 }]} {...filterPanResponder.panHandlers}>
+              <View style={styles.filterHandle} />
+              <ScrollView
+                bounces={false}
+                showsVerticalScrollIndicator={false}
+              >
+                <Text style={styles.filterTitle}>Show</Text>
+
+                <Pressable style={styles.filterCheckRow} onPress={() => handleToggleFilter('subjects')}>
+                  <View style={[styles.filterCheckbox, scheduleFilter.subjects && styles.filterCheckboxChecked]}>
+                    {scheduleFilter.subjects ? <Feather name="check" size={12} color="#ffffff" /> : null}
+                  </View>
+                  <Text style={styles.filterCheckLabel}>Subjects</Text>
+                </Pressable>
+
+                <Pressable style={styles.filterCheckRow} onPress={() => handleToggleFilter('tasks')}>
+                  <View style={[styles.filterCheckbox, scheduleFilter.tasks && styles.filterCheckboxChecked]}>
+                    {scheduleFilter.tasks ? <Feather name="check" size={12} color="#ffffff" /> : null}
+                  </View>
+                  <Text style={styles.filterCheckLabel}>Tasks</Text>
+                </Pressable>
+              </ScrollView>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
 
       <Modal visible={isDetailOpen} transparent animationType="none" onRequestClose={closeDetail}>
         <View style={styles.detailRoot}>
@@ -593,6 +710,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#e6e2dc',
+  },
+  filterButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fcfbfa',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#f2f1ee',
   },
   weekCard: {
     backgroundColor: '#ffffff',
@@ -924,6 +1051,68 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9aa09a',
     marginBottom: 0,
+  },
+  filterRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  filterPanelWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 100,
+  },
+  filterPanel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#f8f7f2',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 40,
+    ...shadowLg,
+  },
+  filterHandle: {
+    width: 68,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#e3e0d8',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  filterTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 20,
+    color: '#1e2b26',
+    marginBottom: 20,
+  },
+  filterCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  filterCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#d4d4cf',
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterCheckboxChecked: {
+    backgroundColor: '#1c2f2a',
+    borderColor: '#1c2f2a',
+  },
+  filterCheckLabel: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 16,
+    color: '#2a332e',
   },
   detailRoot: {
     flex: 1,

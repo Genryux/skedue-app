@@ -270,7 +270,13 @@ export default function AddSubjectScreen({ onBack, onSave }: AddSubjectScreenPro
           <View style={styles.conflictWarning}>
             <Feather name="alert-triangle" size={20} color="#991b1b" />
             <Text style={styles.conflictWarningBody}>
-              Conflicts with <Text style={styles.conflictSubjectName}>{conflicts[0].title}</Text>
+              Conflicts with{' '}
+              <Text style={styles.conflictSubjectName}>
+                {conflicts[0].subject.title}
+              </Text>
+              {conflicts[0].subjectStartTime && conflicts[0].subjectEndTime
+                ? ` (${conflicts[0].subjectStartTime} - ${conflicts[0].subjectEndTime})`
+                : ''}
             </Text>
           </View>
         )}

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Animated, Easing, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import OnboardingScreen from '../src/features/onboarding/OnboardingScreen';
+import NotificationPermissionModal from '../src/features/onboarding/NotificationPermissionModal';
 import MainScreen from '../src/features/home/MainScreen';
 import AddSubjectScreen from '../src/features/subjects/AddSubjectScreen';
 import {
@@ -14,9 +15,11 @@ import {
   type SubjectRecord,
 } from '../src/data/local/db';
 import { useRef } from 'react';
+import { configureTaskReminderNotifications } from '../src/services/taskReminders';
 
 const META_KEYS = {
   hasOnboarded: 'hasOnboarded',
+  notificationPromptShown: 'notification_prompt_shown',
 } as const;
 
 export default function IndexScreen() {
@@ -27,14 +30,17 @@ export default function IndexScreen() {
   const slideAnim = useRef(new Animated.Value(0)).current; // 0 is onboarding, 1 is add subject
   const dashboardFadeAnim = useRef(new Animated.Value(0)).current; // 0 is onboarding, 1 is dashboard
   const [isTransitioningToDashboard, setIsTransitioningToDashboard] = useState(false);
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
 
   const showOnboarding = !hasOnboarded;
+  const hasCheckedPrompt = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
 
     const loadState = async () => {
       try {
+        configureTaskReminderNotifications();
         await initDb();
 
         const [onboardedValue, storedSubjects] = await Promise.all([
@@ -75,6 +81,19 @@ export default function IndexScreen() {
       setOnboardingStep('home');
     }
   }, [onboardingStep, showOnboarding]);
+
+  useEffect(() => {
+    if (hasOnboarded && !isTransitioningToDashboard && !hasCheckedPrompt.current) {
+      hasCheckedPrompt.current = true;
+      const checkPrompt = async () => {
+        const shown = await getMetaValue(META_KEYS.notificationPromptShown);
+        if (shown !== 'true') {
+          setTimeout(() => setShowNotificationPrompt(true), 600);
+        }
+      };
+      checkPrompt();
+    }
+  }, [hasOnboarded, isTransitioningToDashboard]);
 
   if (isLoading) {
     return (
@@ -168,6 +187,11 @@ export default function IndexScreen() {
     }
   };
 
+  const handleDismissNotificationPrompt = async () => {
+    setShowNotificationPrompt(false);
+    await setMetaValue(META_KEYS.notificationPromptShown, 'true');
+  };
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
@@ -255,6 +279,9 @@ export default function IndexScreen() {
           >
             <MainScreen />
           </Animated.View>
+        ) : null}
+        {showNotificationPrompt ? (
+          <NotificationPermissionModal onDismiss={handleDismissNotificationPrompt} />
         ) : null}
         <StatusBar style="dark" />
       </SafeAreaView>

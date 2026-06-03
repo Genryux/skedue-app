@@ -1,3 +1,4 @@
+import { ensureTaskReminderPermissions, openExactAlarmSettings, scheduleTaskReminder } from '../../services/taskReminders';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -34,15 +35,21 @@ import {
   getFoldersBySubjectId,
   findRecentMatchingNote,
   getNotesBySubjectId,
+  getSubjectById,
   getSubjects,
+  getTasksBySubjectId,
+  getMetaValue,
   deleteNote,
   insertFolder,
+  insertTask,
   insertNote,
+  setMetaValue,
   updateNote,
   updateSubject,
   deleteSubject,
   type FolderRecord,
   type NoteRecord,
+  type TaskRecord,
   type SubjectRecord,
 } from '../../data/local/db';
 
@@ -183,12 +190,15 @@ const DAYS = [
   { label: 'Sa', value: 'Sa' },
 ] as const;
 
+const EXACT_ALARM_PROMPT_KEY = 'exact_alarm_prompted';
+
 export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelete, onArchive, onUnarchive }: SubjectDetailScreenProps) {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const [folders, setFolders] = useState<FolderRecord[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
+  const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [isFolderFormOpen, setIsFolderFormOpen] = useState(false);
   const [folderName, setFolderName] = useState('');
   const [selectedFolderColor, setSelectedFolderColor] = useState<(typeof FOLDER_COLORS)[number]>(FOLDER_COLORS[0]);
@@ -198,7 +208,10 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
   const [showSaveToast, setShowSaveToast] = useState(false);
   const [showDeleteToast, setShowDeleteToast] = useState(false);
   const [showSubjectSavedToast, setShowSubjectSavedToast] = useState(false);
+  const [subjectSavedToastMessage, setSubjectSavedToastMessage] = useState('Subject info updated');
   const [showFolderCreatedToast, setShowFolderCreatedToast] = useState(false);
+  const [showTaskReminderToast, setShowTaskReminderToast] = useState(false);
+  const [taskReminderToastMessage, setTaskReminderToastMessage] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const saveInFlightRef = useRef<Promise<NoteRecord> | null>(null);
   const folderExpansionAnim = useRef(new Animated.Value(0)).current;
@@ -228,6 +241,21 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [editLocation, setEditLocation] = useState('');
   const [existingSubjects, setExistingSubjects] = useState<SubjectRecord[]>([]);
+
+  // Task form state
+  const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDescription, setTaskDescription] = useState('');
+  const [taskDueDate, setTaskDueDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+    return d;
+  });
+  const [showTaskDueDatePicker, setShowTaskDueDatePicker] = useState(false);
+  const [showTaskDueTimePicker, setShowTaskDueTimePicker] = useState(false);
+  const [taskRepeat, setTaskRepeat] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none');
+  const [taskReminderMinutes, setTaskReminderMinutes] = useState<number | null>(null);
+  const canRequestExactAlarm = Platform.OS === 'android' && Number(Platform.Version) >= 31;
   const featuredFolders = folders.slice(0, 3);
   const remainingFolders = folders.slice(3);
   const looseNotes = notes.filter((note) => !note.folderId);
@@ -240,6 +268,11 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     return accumulator;
   }, {});
   const pinnedNotes = notes.filter((n) => n.isPinned);
+  const pendingTasks = useMemo(
+    () => tasks.filter((t) => !t.isCompleted).sort((a, b) => a.dueAt - b.dueAt),
+    [tasks]
+  );
+  const pendingTasksPreview = useMemo(() => pendingTasks.slice(0, 3), [pendingTasks]);
   const totalNotes = notes.length;
   const totalFolders = folders.length;
   const subjectAgeDays = subject?.createdAt ? Math.max(1, Math.floor((Date.now() - subject.createdAt) / (1000 * 60 * 60 * 24))) : 0;
@@ -291,21 +324,25 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     if (!subject?.id) {
       setFolders([]);
       setNotes([]);
+      setTasks([]);
       return;
     }
 
     try {
-      const [storedFolders, storedNotes] = await Promise.all([
+      const [storedFolders, storedNotes, storedTasks] = await Promise.all([
         getFoldersBySubjectId(subject.id),
         getNotesBySubjectId(subject.id),
+        getTasksBySubjectId(subject.id),
       ]);
 
       setFolders(storedFolders);
       setNotes(storedNotes);
+      setTasks(storedTasks);
     } catch (error) {
       console.warn('Failed to load subject detail data', error);
       setFolders([]);
       setNotes([]);
+      setTasks([]);
     }
   }, [subject?.id]);
 
@@ -328,6 +365,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
   const handleOpenNoteEditor = (note: NoteRecord | null = null) => {
     setShowSaveToast(false);
     setShowDeleteToast(false);
+    setShowFolderCreatedToast(false);
     setIsActionSheetOpen(false);
     sheetOpacity.setValue(0);
     sheetTranslate.setValue(18);
@@ -419,6 +457,86 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     if (subject?.id) {
       const refreshedNotes = await getNotesBySubjectId(subject.id);
       setNotes(refreshedNotes);
+    }
+  };
+
+  const openTaskForm = () => {
+    Keyboard.dismiss();
+    setIsActionSheetOpen(false);
+    sheetOpacity.setValue(0);
+    sheetTranslate.setValue(18);
+    buttonRotate.setValue(0);
+    buttonScale.setValue(0);
+    setTaskTitle('');
+    setTaskDescription('');
+    const d = new Date();
+    d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+    setTaskDueDate(d);
+    setTaskRepeat('none');
+    setTaskReminderMinutes(null);
+    setIsTaskFormOpen(true);
+  };
+
+  const closeTaskForm = () => {
+    setIsTaskFormOpen(false);
+    setShowTaskDueDatePicker(false);
+    setShowTaskDueTimePicker(false);
+  };
+
+  const handleSaveTask = async () => {
+    const name = taskTitle.trim();
+    if (!name || !subject?.id) return;
+
+    try {
+      const saved = await insertTask({
+        subjectId: subject.id,
+        title: name,
+        description: taskDescription.trim() || undefined,
+        dueAt: taskDueDate.getTime(),
+        repeat: taskRepeat,
+        reminderMinutes: taskReminderMinutes ?? undefined,
+      });
+      setTasks((current) => [...current, saved].sort((a, b) => a.dueAt - b.dueAt));
+      closeTaskForm();
+
+      if (taskReminderMinutes !== null) {
+        if (canRequestExactAlarm) {
+          const prompted = await getMetaValue(EXACT_ALARM_PROMPT_KEY);
+          if (prompted !== '1') {
+            const granted = await ensureTaskReminderPermissions();
+            if (!granted) {
+              setTaskReminderToastMessage('Allow notifications to receive reminders');
+              setShowTaskReminderToast(true);
+              return;
+            }
+
+            const opened = await openExactAlarmSettings();
+            if (opened) {
+              void setMetaValue(EXACT_ALARM_PROMPT_KEY, '1').catch(console.warn);
+            }
+          }
+        }
+
+        const reminderResult = await scheduleTaskReminder(saved, subject?.title ?? subject?.code ?? undefined);
+        if (reminderResult.scheduled) {
+          const fireLabel = new Date(reminderResult.fireAt).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          });
+          setTaskReminderToastMessage(`Reminder set for ${fireLabel}`);
+          setShowTaskReminderToast(true);
+        } else if (reminderResult.reason === 'permission_denied') {
+          setTaskReminderToastMessage('Allow notifications to receive reminders');
+          setShowTaskReminderToast(true);
+        } else if (reminderResult.reason === 'past') {
+          setTaskReminderToastMessage('Reminder time is in the past');
+          setShowTaskReminderToast(true);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to save task', error);
     }
   };
 
@@ -739,6 +857,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     });
 
     setSubjectSheetView('main');
+    setSubjectSavedToastMessage('Subject info updated');
     setShowSubjectSavedToast(true);
     onUpdate?.({
       title: trimmedTitle,
@@ -748,10 +867,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     });
   };
 
-  const openEditSchedule = () => {
-    setEditDays(new Set(subject?.days ?? []));
-    const startMins = parseTimeToMinutes(subject?.startTime);
-    const endMins = parseTimeToMinutes(subject?.endTime);
+  const openEditSchedule = async () => {
+    const fresh = subject?.id ? await getSubjectById(subject.id) : null;
+    const base = fresh ?? subject;
+
+    setEditDays(new Set(base?.days ?? []));
+    const startMins = parseTimeToMinutes(base?.startTime);
+    const endMins = parseTimeToMinutes(base?.endTime);
     
     const dStart = new Date();
     if (startMins !== null) {
@@ -769,7 +891,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     }
     setEditEndDate(dEnd);
     
-    setEditLocation(subject?.location ?? '');
+    setEditLocation(base?.location ?? '');
     getSubjects().then(setExistingSubjects).catch(console.warn);
     setSubjectSheetView('editSchedule');
   };
@@ -802,6 +924,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     });
 
     setSubjectSheetView('main');
+    setSubjectSavedToastMessage('Subject schedule updated');
     setShowSubjectSavedToast(true);
     onUpdate?.({
       days: newDays,
@@ -973,50 +1096,47 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
             <View style={styles.section}>
               <Text style={styles.sectionHeaderTitle}>Pending Tasks</Text>
 
-              {/* Task 1: Urgent (Top Priority) */}
-              <CardScale onPress={() => setActiveTab('tasks')} style={[styles.taskCard, styles.urgentTaskCard]}>
-                <View style={styles.taskCheckbox}>
-                  <Feather name="square" size={20} color="#BA1A1A" />
-                </View>
-                <View style={styles.taskTextWrapper}>
-                  <Text style={[styles.taskTitle, { color: '#BA1A1A' }]}>Math Assignment 3 - Fourier Series</Text>
-                  <View style={styles.taskDueDateRow}>
-                    <Feather name="clock" size={13} color="#BA1A1A" style={styles.dueIcon} />
-                    <Text style={[styles.taskDueDateText, { color: '#BA1A1A', fontFamily: 'Manrope_700Bold' }]}>Due in 2 hours</Text>
+              {pendingTasksPreview.length === 0 ? (
+                <View style={styles.sectionEmptyState}>
+                  <View style={styles.sectionEmptyIconWrapper}>
+                    <Feather name="check-circle" size={18} color="#8f968f" />
                   </View>
+                  <Text style={styles.sectionEmptyTitle}>No pending tasks</Text>
                 </View>
-                <View style={styles.urgentTaskBadge}>
-                  <Text style={styles.urgentTaskBadgeText}>URGENT</Text>
-                </View>
-              </CardScale>
-
-              {/* Task 2: Regular */}
-              <CardScale onPress={() => setActiveTab('tasks')} style={styles.taskCard}>
-                <View style={styles.taskCheckbox}>
-                  <Feather name="square" size={20} color="#a0aba5" />
-                </View>
-                <View style={styles.taskTextWrapper}>
-                  <Text style={styles.taskTitle}>Problem Set 4</Text>
-                  <View style={styles.taskDueDateRow}>
-                    <Feather name="calendar" size={13} color="#6b746f" style={styles.dueIcon} />
-                    <Text style={styles.taskDueDateText}>Due Tomorrow</Text>
-                  </View>
-                </View>
-              </CardScale>
-
-              {/* Task 3: Regular */}
-              <CardScale onPress={() => setActiveTab('tasks')} style={styles.taskCard}>
-                <View style={styles.taskCheckbox}>
-                  <Feather name="square" size={20} color="#a0aba5" />
-                </View>
-                <View style={styles.taskTextWrapper}>
-                  <Text style={styles.taskTitle}>Read Chapter 7: Integration</Text>
-                  <View style={styles.taskDueDateRow}>
-                    <Feather name="calendar" size={13} color="#6b746f" style={styles.dueIcon} />
-                    <Text style={styles.taskDueDateText}>Due Thursday</Text>
-                  </View>
-                </View>
-              </CardScale>
+              ) : (
+                pendingTasksPreview.map((task, index) => {
+                  const due = new Date(task.dueAt);
+                  const dueLabel = due.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                  const isUrgent = index === 0 && task.dueAt - Date.now() < 1000 * 60 * 60 * 6;
+                  return (
+                    <CardScale
+                      key={task.id}
+                      onPress={() => setActiveTab('tasks')}
+                      style={[styles.taskCard, isUrgent && styles.urgentTaskCard]}
+                    >
+                      <View style={styles.taskCheckbox}>
+                        <Feather name="square" size={20} color={isUrgent ? '#BA1A1A' : '#a0aba5'} />
+                      </View>
+                      <View style={styles.taskTextWrapper}>
+                        <Text style={[styles.taskTitle, isUrgent && { color: '#BA1A1A' }]} numberOfLines={1}>
+                          {task.title}
+                        </Text>
+                        <View style={styles.taskDueDateRow}>
+                          <Feather name="calendar" size={13} color={isUrgent ? '#BA1A1A' : '#6b746f'} style={styles.dueIcon} />
+                          <Text style={[styles.taskDueDateText, isUrgent && { color: '#BA1A1A', fontFamily: 'Manrope_700Bold' }]} numberOfLines={1}>
+                            Due {dueLabel}
+                          </Text>
+                        </View>
+                      </View>
+                      {isUrgent ? (
+                        <View style={styles.urgentTaskBadge}>
+                          <Text style={styles.urgentTaskBadgeText}>SOON</Text>
+                        </View>
+                      ) : null}
+                    </CardScale>
+                  );
+                })
+              )}
             </View>
 
             {/* Recent Notes Section */}
@@ -1065,52 +1185,48 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
           <View style={styles.section}>
             <Text style={styles.sectionHeaderTitle}>Pending Tasks</Text>
 
-            {/* Task 1: Urgent (Top Priority) */}
-            <CardScale style={[styles.taskCard, styles.urgentTaskCard]}>
-              <View style={styles.taskCheckbox}>
-                <Feather name="square" size={20} color="#BA1A1A" />
-              </View>
-              <View style={styles.taskTextWrapper}>
-                <Text style={[styles.taskTitle, { color: '#BA1A1A' }]}>Math Assignment 3 - Fourier Series</Text>
-                <View style={styles.taskDueDateRow}>
-                  <Feather name="clock" size={13} color="#BA1A1A" style={styles.dueIcon} />
-                  <Text style={[styles.taskDueDateText, { color: '#BA1A1A', fontFamily: 'Manrope_700Bold' }]}>Due in 2 hours</Text>
+            {pendingTasks.length === 0 ? (
+              <View style={styles.sectionEmptyState}>
+                <View style={styles.sectionEmptyIconWrapper}>
+                  <Feather name="check-circle" size={18} color="#8f968f" />
                 </View>
+                <Text style={styles.sectionEmptyTitle}>No pending tasks</Text>
               </View>
-              <View style={styles.urgentTaskBadge}>
-                <Text style={styles.urgentTaskBadgeText}>URGENT</Text>
-              </View>
-            </CardScale>
-
-            {/* Task 2 */}
-            <CardScale style={styles.taskCard}>
-              <View style={styles.taskCheckbox}>
-                <Feather name="square" size={20} color="#a0aba5" />
-              </View>
-              <View style={styles.taskTextWrapper}>
-                <Text style={styles.taskTitle}>Problem Set 4</Text>
-                <View style={styles.taskDueDateRow}>
-                  <Feather name="calendar" size={13} color="#6b746f" style={styles.dueIcon} />
-                  <Text style={styles.taskDueDateText}>Due Tomorrow</Text>
-                </View>
-              </View>
-            </CardScale>
-
-            {/* Task 3 */}
-            <CardScale style={styles.taskCardWithButton}>
-              <View style={styles.taskCardMainContent}>
-                <View style={styles.taskCheckbox}>
-                  <Feather name="square" size={20} color="#a0aba5" />
-                </View>
-                <View style={styles.taskTextWrapper}>
-                  <Text style={styles.taskTitle}>Read Chapter 7: Integration</Text>
-                  <View style={styles.taskDueDateRow}>
-                    <Feather name="calendar" size={13} color="#6b746f" style={styles.dueIcon} />
-                    <Text style={styles.taskDueDateText}>Due Thursday</Text>
-                  </View>
-                </View>
-              </View>
-            </CardScale>
+            ) : (
+              pendingTasks.map((task) => {
+                const due = new Date(task.dueAt);
+                const dueLabel = due.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                const isOverdue = task.dueAt < Date.now();
+                return (
+                  <CardScale key={task.id} style={[styles.taskCard, isOverdue && styles.urgentTaskCard]}>
+                    <View style={styles.taskCheckbox}>
+                      <Feather name="square" size={20} color={isOverdue ? '#BA1A1A' : '#a0aba5'} />
+                    </View>
+                    <View style={styles.taskTextWrapper}>
+                      <Text style={[styles.taskTitle, isOverdue && { color: '#BA1A1A' }]} numberOfLines={1}>
+                        {task.title}
+                      </Text>
+                      <View style={styles.taskDueDateRow}>
+                        <Feather name="calendar" size={13} color={isOverdue ? '#BA1A1A' : '#6b746f'} style={styles.dueIcon} />
+                        <Text style={[styles.taskDueDateText, isOverdue && { color: '#BA1A1A', fontFamily: 'Manrope_700Bold' }]} numberOfLines={1}>
+                          {isOverdue ? `Overdue ${dueLabel}` : `Due ${dueLabel}`}
+                        </Text>
+                      </View>
+                      {task.description ? (
+                        <Text style={styles.taskDueDateText} numberOfLines={2}>
+                          {task.description}
+                        </Text>
+                      ) : null}
+                    </View>
+                    {isOverdue ? (
+                      <View style={styles.urgentTaskBadge}>
+                        <Text style={styles.urgentTaskBadgeText}>OVERDUE</Text>
+                      </View>
+                    ) : null}
+                  </CardScale>
+                );
+              })
+            )}
           </View>
         )}
 
@@ -1346,7 +1462,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                 }),
               }],
             }}>
-              <Pressable style={styles.actionButton} onPress={() => { handleCloseActions(); setActiveTab('tasks'); }}>
+              <Pressable style={styles.actionButton} onPress={openTaskForm}>
                 <View style={styles.actionIconCircle}>
                   <Feather name="check-square" size={18} color="#1e2b26" />
                 </View>
@@ -1487,6 +1603,178 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
             </ScrollView>
           </View>
         </Animated.View>
+      ) : null}
+
+      {isTaskFormOpen ? (
+        <View style={styles.taskFormBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeTaskForm} />
+        </View>
+      ) : null}
+
+      {isTaskFormOpen ? (
+        <View style={styles.taskFormPanelWrapper}>
+          <View style={styles.taskFormPanel}>
+            <View style={styles.taskFormHandle} />
+            <ScrollView
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="always"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={{ paddingBottom: 24 + keyboardHeight + insets.bottom }}
+            >
+              <View style={styles.taskFormHeader}>
+                <Text style={styles.taskFormTitle}>Add Task</Text>
+              </View>
+
+              <View style={styles.taskFormSection}>
+                <Text style={styles.taskFormLabel}>Task Name</Text>
+                <TextInput
+                  value={taskTitle}
+                  onChangeText={setTaskTitle}
+                  placeholder="e.g. Homework 2"
+                  placeholderTextColor="#c1c5c1"
+                  style={styles.taskFormInput}
+                  returnKeyType="done"
+                />
+              </View>
+
+              <View style={styles.taskFormSection}>
+                <Text style={styles.taskFormLabel}>Description</Text>
+                <TextInput
+                  value={taskDescription}
+                  onChangeText={setTaskDescription}
+                  placeholder="Optional details..."
+                  placeholderTextColor="#c1c5c1"
+                  style={[styles.taskFormInput, styles.taskFormInputMultiline]}
+                  multiline
+                />
+              </View>
+
+              <View style={styles.taskFormSection}>
+                <Text style={styles.taskFormLabel}>Subject</Text>
+                <View style={styles.taskFormLockedRow}>
+                  <Feather name="lock" size={14} color="#8f968f" />
+                  <Text style={styles.taskFormLockedText} numberOfLines={1}>
+                    {subject?.code?.trim() || subject?.title || 'Subject'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.taskFormSection}>
+                <Text style={styles.taskFormLabel}>Due Date & Time</Text>
+                <View style={styles.taskFormDueRow}>
+                  <Pressable style={styles.taskFormChip} onPress={() => setShowTaskDueDatePicker(true)}>
+                    <Feather name="calendar" size={14} color="#1e2b26" />
+                    <Text style={styles.taskFormChipText}>
+                      {taskDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                  </Pressable>
+                  <Pressable style={styles.taskFormChip} onPress={() => setShowTaskDueTimePicker(true)}>
+                    <Feather name="clock" size={14} color="#1e2b26" />
+                    <Text style={styles.taskFormChipText}>
+                      {taskDueDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {showTaskDueDatePicker ? (
+                  <DateTimePicker
+                    value={taskDueDate}
+                    mode="date"
+                    onChange={(event: DateTimePickerEvent, selected) => {
+                      setShowTaskDueDatePicker(Platform.OS === 'ios');
+                      if (!selected) return;
+                      const next = new Date(taskDueDate);
+                      next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+                      setTaskDueDate(next);
+                    }}
+                  />
+                ) : null}
+
+                {showTaskDueTimePicker ? (
+                  <DateTimePicker
+                    value={taskDueDate}
+                    mode="time"
+                    is24Hour={false}
+                    onChange={(event: DateTimePickerEvent, selected) => {
+                      setShowTaskDueTimePicker(Platform.OS === 'ios');
+                      if (!selected) return;
+                      const next = new Date(taskDueDate);
+                      next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+                      setTaskDueDate(next);
+                    }}
+                  />
+                ) : null}
+              </View>
+
+              <View style={styles.taskFormSection}>
+                <Text style={styles.taskFormLabel}>Repeat</Text>
+                <View style={styles.taskFormChipRow}>
+                  {([
+                    { key: 'none', label: 'None' },
+                    { key: 'daily', label: 'Daily' },
+                    { key: 'weekly', label: 'Weekly' },
+                    { key: 'monthly', label: 'Monthly' },
+                  ] as const).map((opt) => {
+                    const selected = taskRepeat === opt.key;
+                    return (
+                      <Pressable
+                        key={opt.key}
+                        style={[styles.taskFormChoiceChip, selected && styles.taskFormChoiceChipSelected]}
+                        onPress={() => setTaskRepeat(opt.key)}
+                      >
+                        <Text style={[styles.taskFormChoiceChipText, selected && styles.taskFormChoiceChipTextSelected]}>
+                          {opt.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.taskFormSection}>
+                <Text style={styles.taskFormLabel}>Reminder</Text>
+                <View style={styles.taskFormChipRow}>
+                  {([
+                    { mins: null, label: 'None' },
+                    { mins: 0, label: 'At due time' },
+                    { mins: 5, label: '5 mins before' },
+                    { mins: 15, label: '15 mins before' },
+                    { mins: 30, label: '30 mins before' },
+                    { mins: 60, label: '1 hour before' },
+                    { mins: 1440, label: '1 day before' },
+                  ] as const).map((opt) => {
+                    const selected = taskReminderMinutes === opt.mins;
+                    return (
+                      <Pressable
+                        key={String(opt.mins)}
+                        style={[styles.taskFormChoiceChip, selected && styles.taskFormChoiceChipSelected]}
+                        onPress={() => setTaskReminderMinutes(opt.mins)}
+                      >
+                        <Text style={[styles.taskFormChoiceChipText, selected && styles.taskFormChoiceChipTextSelected]}>
+                          {opt.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.taskFormFooter}>
+                <Pressable onPress={closeTaskForm}>
+                  <Text style={styles.taskFormCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.taskFormSubmitButton, !taskTitle.trim() && styles.taskFormSubmitButtonDisabled]}
+                  onPress={() => void handleSaveTask()}
+                  disabled={!taskTitle.trim()}
+                >
+                  <Text style={styles.taskFormSubmitText}>Create Task</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
       ) : null}
 
       {/* Floating Bottom Tab Bar Navigation */}
@@ -1790,7 +2078,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                     <View style={styles.conflictWarning}>
                       <Feather name="alert-triangle" size={20} color="#991b1b" />
                       <Text style={styles.conflictWarningBody}>
-                        Conflicts with <Text style={styles.conflictSubjectName}>{scheduleConflicts[0].title}</Text>
+                        Conflicts with{' '}
+                        <Text style={styles.conflictSubjectName}>
+                          {scheduleConflicts[0].subject.title}
+                        </Text>
+                        {scheduleConflicts[0].subjectStartTime && scheduleConflicts[0].subjectEndTime
+                          ? ` (${scheduleConflicts[0].subjectStartTime} - ${scheduleConflicts[0].subjectEndTime})`
+                          : ''}
                       </Text>
                     </View>
                   ) : null}
@@ -1915,7 +2209,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       {showSubjectSavedToast ? (
         <DynamicIslandToast
           visible={showSubjectSavedToast}
-          message="Subject info updated"
+          message={subjectSavedToastMessage}
           onHide={() => setShowSubjectSavedToast(false)}
         />
       ) : null}
@@ -1925,6 +2219,14 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
           visible={showFolderCreatedToast}
           message="Folder created successfully"
           onHide={() => setShowFolderCreatedToast(false)}
+        />
+      ) : null}
+
+      {showTaskReminderToast ? (
+        <DynamicIslandToast
+          visible={showTaskReminderToast}
+          message={taskReminderToastMessage}
+          onHide={() => setShowTaskReminderToast(false)}
         />
       ) : null}
 
@@ -1941,7 +2243,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 16,
     backgroundColor: '#f8f7f2', // Clean solid top bar matches background
   },
@@ -1957,7 +2259,7 @@ const styles = StyleSheet.create({
   headerTitleContainer: {
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
   },
   headerSubjectCode: {
     fontFamily: 'Manrope_700Bold',
@@ -1976,7 +2278,7 @@ const styles = StyleSheet.create({
     ...shadowLg,
   },
   scrollContainer: {
-    paddingHorizontal: 28,
+    paddingHorizontal: 18,
     paddingTop: 18,
     paddingBottom: 120,
   },
@@ -2541,6 +2843,164 @@ const styles = StyleSheet.create({
     color: '#F9F9F6',
     letterSpacing: 0.2,
   },
+  taskFormBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(5, 8, 7, 0.3)',
+    zIndex: 101,
+  },
+  taskFormPanelWrapper: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 102,
+  },
+  taskFormPanel: {
+    flex: 1,
+    backgroundColor: '#f8f7f2',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 40,
+    ...shadowLg,
+  },
+  taskFormHandle: {
+    width: 68,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#e3e0d8',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  taskFormHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  taskFormTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 26,
+    lineHeight: 32,
+    color: '#101413',
+    letterSpacing: -0.3,
+  },
+  taskFormSection: {
+    marginBottom: 16,
+  },
+  taskFormLabel: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: '#39423e',
+    marginBottom: 14,
+  },
+  taskFormInput: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 16,
+    color: '#111111',
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#efede8',
+  },
+  taskFormInputMultiline: {
+    minHeight: 88,
+    textAlignVertical: 'top',
+  },
+  taskFormLockedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#efede8',
+  },
+  taskFormLockedText: {
+    flex: 1,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 15,
+    color: '#1e2b26',
+  },
+  taskFormDueRow: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  taskFormChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ffffff',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#efede8',
+  },
+  taskFormChipText: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 14,
+    color: '#1e2b26',
+  },
+  taskFormChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  taskFormChoiceChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#efede8',
+  },
+  taskFormChoiceChipSelected: {
+    backgroundColor: '#0f2a24',
+    borderColor: '#0f2a24',
+  },
+  taskFormChoiceChipText: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 13,
+    color: '#2a332e',
+  },
+  taskFormChoiceChipTextSelected: {
+    color: '#ffffff',
+  },
+  taskFormFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 4,
+  },
+  taskFormCancelText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 16,
+    color: '#9aa09a',
+    paddingHorizontal: 8,
+  },
+  taskFormSubmitButton: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0f201b',
+  },
+  taskFormSubmitButtonDisabled: {
+    opacity: 0.5,
+  },
+  taskFormSubmitText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 16,
+    color: '#F9F9F6',
+    letterSpacing: 0.2,
+  },
   noteCard: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
@@ -2582,8 +3042,8 @@ const styles = StyleSheet.create({
   },
   navDock: {
     position: 'absolute',
-    left: 24,
-    right: 24,
+    left: 18,
+    right: 18,
     bottom: 20,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2645,7 +3105,7 @@ const styles = StyleSheet.create({
   },
   floatingButtonContainer: {
     position: 'absolute',
-    right: 24,
+    right: 18,
     bottom: 20,
     zIndex: 20,
     ...shadowLgDark,

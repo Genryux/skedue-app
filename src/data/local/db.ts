@@ -37,6 +37,19 @@ type NoteRow = {
   updatedAt: number;
 };
 
+type TaskRow = {
+  id: string;
+  subjectId: string;
+  title: string;
+  description: string | null;
+  dueAt: number;
+  repeat: string;
+  reminderMinutes: number | null;
+  isCompleted: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type SubjectRecord = {
   id: string;
   title: string;
@@ -69,6 +82,19 @@ export type NoteRecord = {
   contentHtml: string;
   contentText: string;
   isPinned: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type TaskRecord = {
+  id: string;
+  subjectId: string;
+  title: string;
+  description?: string | null;
+  dueAt: number;
+  repeat: string;
+  reminderMinutes?: number | null;
+  isCompleted: boolean;
   createdAt: number;
   updatedAt: number;
 };
@@ -404,6 +430,130 @@ export const moveNotesToFolder = async (sourceFolderId: string, targetFolderId: 
 };
 
 const parseBoolean = (value: number | null | undefined) => value === 1;
+
+export const getTasksBySubjectId = async (subjectId: string): Promise<TaskRecord[]> => {
+  const db = await getDb();
+  const rows = await db.getAllAsync<TaskRow>(
+    `
+      SELECT *
+      FROM tasks
+      WHERE subjectId = ?
+      ORDER BY isCompleted ASC, dueAt ASC, createdAt ASC
+    `,
+    [subjectId]
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    subjectId: row.subjectId,
+    title: row.title,
+    description: row.description ?? undefined,
+    dueAt: row.dueAt,
+    repeat: row.repeat,
+    reminderMinutes: row.reminderMinutes ?? undefined,
+    isCompleted: parseBoolean(row.isCompleted),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }));
+};
+
+export const insertTask = async (
+  task: Omit<TaskRecord, 'id' | 'createdAt' | 'updatedAt' | 'isCompleted'> & { isCompleted?: boolean }
+): Promise<TaskRecord> => {
+  const db = await getDb();
+  const id = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+  const createdAt = Date.now();
+  const updatedAt = createdAt;
+
+  await db.runAsync(
+    `
+      INSERT INTO tasks (
+        id,
+        subjectId,
+        title,
+        description,
+        dueAt,
+        repeat,
+        reminderMinutes,
+        isCompleted,
+        createdAt,
+        updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      id,
+      task.subjectId,
+      task.title,
+      task.description ?? null,
+      task.dueAt,
+      task.repeat ?? 'none',
+      task.reminderMinutes ?? null,
+      task.isCompleted ? 1 : 0,
+      createdAt,
+      updatedAt,
+    ]
+  );
+
+  return {
+    id,
+    subjectId: task.subjectId,
+    title: task.title,
+    description: task.description ?? null,
+    dueAt: task.dueAt,
+    repeat: task.repeat ?? 'none',
+    reminderMinutes: task.reminderMinutes ?? null,
+    isCompleted: Boolean(task.isCompleted),
+    createdAt,
+    updatedAt,
+  };
+};
+
+export const updateTask = async (
+  taskId: string,
+  updates: Partial<Pick<TaskRecord, 'title' | 'description' | 'dueAt' | 'repeat' | 'reminderMinutes' | 'isCompleted'>>
+): Promise<void> => {
+  const db = await getDb();
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  if (updates.title !== undefined) {
+    fields.push('title = ?');
+    values.push(updates.title);
+  }
+  if (updates.description !== undefined) {
+    fields.push('description = ?');
+    values.push(updates.description ?? null);
+  }
+  if (updates.dueAt !== undefined) {
+    fields.push('dueAt = ?');
+    values.push(updates.dueAt);
+  }
+  if (updates.repeat !== undefined) {
+    fields.push('repeat = ?');
+    values.push(updates.repeat);
+  }
+  if (updates.reminderMinutes !== undefined) {
+    fields.push('reminderMinutes = ?');
+    values.push(updates.reminderMinutes ?? null);
+  }
+  if (updates.isCompleted !== undefined) {
+    fields.push('isCompleted = ?');
+    values.push(updates.isCompleted ? 1 : 0);
+  }
+
+  if (fields.length === 0) return;
+
+  fields.push('updatedAt = ?');
+  values.push(Date.now());
+
+  values.push(taskId);
+  await db.runAsync(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`, values);
+};
+
+export const deleteTask = async (taskId: string): Promise<void> => {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM tasks WHERE id = ?', [taskId]);
+};
 
 export const getAllNotes = async (): Promise<NoteRecord[]> => {
   const db = await getDb();

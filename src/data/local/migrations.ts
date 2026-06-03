@@ -96,4 +96,24 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 8,
+    up: async (db) => {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS tasks (
+          id TEXT PRIMARY KEY,
+          subjectId TEXT NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT,
+          dueAt INTEGER NOT NULL,
+          repeat TEXT NOT NULL DEFAULT 'none',
+          reminderMinutes INTEGER,
+          isCompleted INTEGER NOT NULL DEFAULT 0,
+          createdAt INTEGER NOT NULL,
+          updatedAt INTEGER NOT NULL,
+          FOREIGN KEY(subjectId) REFERENCES subjects(id) ON DELETE CASCADE
+        );
+      `);
+    },
+  },
 ];
