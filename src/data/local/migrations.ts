@@ -116,4 +116,62 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 9,
+    up: async (db) => {
+      // 1. Create task_completions
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS task_completions (
+          id TEXT PRIMARY KEY,
+          taskId TEXT NOT NULL,
+          occurrenceDate INTEGER NOT NULL,
+          completedAt INTEGER NOT NULL,
+          FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+      `);
+
+      // 2. Add new columns to tasks
+      await db.execAsync(`
+        ALTER TABLE tasks ADD COLUMN repeatType TEXT NOT NULL DEFAULT 'none';
+        ALTER TABLE tasks ADD COLUMN repeatInterval INTEGER;
+        ALTER TABLE tasks ADD COLUMN repeatDays TEXT;
+        ALTER TABLE tasks ADD COLUMN startDate INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE tasks ADD COLUMN endDate INTEGER;
+        ALTER TABLE tasks ADD COLUMN nextOccurrenceDate INTEGER NOT NULL DEFAULT 0;
+      `);
+
+      // 3. Migrate data from old columns to new columns
+      await db.execAsync(`
+        UPDATE tasks SET 
+          repeatType = repeat,
+          startDate = dueAt,
+          nextOccurrenceDate = dueAt;
+      `);
+
+      // 4. Mark existing completed tasks as completed by inserting into task_completions and setting nextOccurrenceDate to far future 
+      // (or let's just let them be, their nextOccurrenceDate is already in the past, but we should create a completion record)
+      await db.execAsync(`
+        INSERT INTO task_completions (id, taskId, occurrenceDate, completedAt)
+        SELECT id || '-migration', id, dueAt, updatedAt
+        FROM tasks
+        WHERE isCompleted = 1;
+      `);
+      
+      // Update nextOccurrenceDate for completed non-repeating tasks so they don't show up as pending
+      await db.execAsync(`
+        UPDATE tasks 
+        SET nextOccurrenceDate = 4102444800000 -- Year 2100, effectively "done" for non-repeating
+        WHERE isCompleted = 1 AND repeatType = 'none';
+      `);
+    },
+  },
+  {
+    version: 10,
+    up: async (db) => {
+      await db.execAsync(`
+        ALTER TABLE tasks ADD COLUMN priority TEXT;
+        ALTER TABLE tasks ADD COLUMN category TEXT;
+      `);
+    },
+  },
 ];

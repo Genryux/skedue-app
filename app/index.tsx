@@ -15,6 +15,7 @@ import {
   type SubjectRecord,
 } from '../src/data/local/db';
 import { useRef } from 'react';
+import * as Notifications from 'expo-notifications';
 import { configureTaskReminderNotifications } from '../src/services/taskReminders';
 
 const META_KEYS = {
@@ -94,6 +95,18 @@ export default function IndexScreen() {
       checkPrompt();
     }
   }, [hasOnboarded, isTransitioningToDashboard]);
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
+      if (data?.type === 'task_reminder' && data?.taskId) {
+        // Notification tapped — just log for now.
+        // Navigation to the specific subject/task can be added later.
+        console.log('Notification tapped for task:', data.taskId);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   if (isLoading) {
     return (

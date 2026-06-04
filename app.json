@@ -24,7 +24,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.kenzakigenryu.skedue",
-      "permissions": ["SCHEDULE_EXACT_ALARM"]
+      "permissions": ["SCHEDULE_EXACT_ALARM", "POST_NOTIFICATIONS"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -41,6 +41,7 @@
       ],
       "expo-font",
       "expo-sqlite",
+      "./plugins/withAndroidBootCompletedPermission",
       [
         "expo-notifications",
         {

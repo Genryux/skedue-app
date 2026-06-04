@@ -115,14 +115,14 @@ export const cancelTaskReminder = async (taskId: string) => {
 };
 
 export const scheduleTaskReminder = async (
-  task: Pick<TaskRecord, 'id' | 'title' | 'description' | 'dueAt' | 'reminderMinutes'>,
+  task: Pick<TaskRecord, 'id' | 'title' | 'description' | 'nextOccurrenceDate' | 'reminderMinutes'>,
   subjectLabel?: string
 ): Promise<ScheduleTaskReminderResult> => {
   if (Platform.OS === 'web') {
     return { scheduled: false, reason: 'unsupported' };
   }
 
-  const fireAt = getTaskReminderFireAt(task.dueAt, task.reminderMinutes);
+  const fireAt = getTaskReminderFireAt(task.nextOccurrenceDate, task.reminderMinutes);
   if (fireAt === null) {
     return { scheduled: false, reason: 'none' };
   }
@@ -140,7 +140,7 @@ export const scheduleTaskReminder = async (
     await ensureAndroidChannel();
     await cancelTaskReminder(task.id);
 
-    const dueLabel = new Date(task.dueAt).toLocaleString('en-US', {
+    const dueLabel = new Date(task.nextOccurrenceDate).toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
       hour: 'numeric',
@@ -171,5 +171,21 @@ export const scheduleTaskReminder = async (
   } catch (error) {
     console.warn('Failed to schedule task reminder', error);
     return { scheduled: false, reason: 'error' };
+  }
+};
+
+export const reconcileTaskReminders = async (
+  tasks: Array<Pick<TaskRecord, 'id' | 'title' | 'description' | 'nextOccurrenceDate' | 'reminderMinutes'>>,
+  subjectLabel?: string,
+) => {
+  for (const task of tasks) {
+    if (task.reminderMinutes === null || task.reminderMinutes === undefined) {
+      continue;
+    }
+    try {
+      await scheduleTaskReminder(task, subjectLabel);
+    } catch {
+      // Silently skip — individual failures shouldn't block the rest
+    }
   }
 };

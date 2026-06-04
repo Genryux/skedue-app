@@ -24,8 +24,10 @@ export default function NotificationPermissionModal({ onDismiss }: Props) {
   }, []);
 
   const handleAllowNotifications = async () => {
-    await ensureTaskReminderPermissions();
-    setNotificationAllowed(true);
+    const granted = await ensureTaskReminderPermissions();
+    if (granted) {
+      setNotificationAllowed(true);
+    }
   };
 
   const handleOpenAlarms = async () => {

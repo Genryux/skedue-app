@@ -43,11 +43,26 @@ type TaskRow = {
   title: string;
   description: string | null;
   dueAt: number;
-  repeat: string;
+  repeat: string; // DEPRECATED
   reminderMinutes: number | null;
-  isCompleted: number;
+  isCompleted: number; // DEPRECATED
   createdAt: number;
   updatedAt: number;
+  repeatType: string;
+  repeatInterval: number | null;
+  repeatDays: string | null;
+  startDate: number;
+  endDate: number | null;
+  nextOccurrenceDate: number;
+  priority: string | null;
+  category: string | null;
+};
+
+type TaskCompletionRow = {
+  id: string;
+  taskId: string;
+  occurrenceDate: number;
+  completedAt: number;
 };
 
 export type SubjectRecord = {
@@ -92,11 +107,24 @@ export type TaskRecord = {
   title: string;
   description?: string | null;
   dueAt: number;
-  repeat: string;
   reminderMinutes?: number | null;
-  isCompleted: boolean;
+  repeatType: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+  repeatInterval?: number | null;
+  repeatDays?: string[] | null;
+  startDate: number;
+  endDate?: number | null;
+  nextOccurrenceDate: number;
+  priority?: string | null;
+  category?: string | null;
   createdAt: number;
   updatedAt: number;
+};
+
+export type TaskCompletionRecord = {
+  id: string;
+  taskId: string;
+  occurrenceDate: number;
+  completedAt: number;
 };
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -438,7 +466,7 @@ export const getTasksBySubjectId = async (subjectId: string): Promise<TaskRecord
       SELECT *
       FROM tasks
       WHERE subjectId = ?
-      ORDER BY isCompleted ASC, dueAt ASC, createdAt ASC
+      ORDER BY nextOccurrenceDate ASC, createdAt ASC
     `,
     [subjectId]
   );
@@ -449,16 +477,52 @@ export const getTasksBySubjectId = async (subjectId: string): Promise<TaskRecord
     title: row.title,
     description: row.description ?? undefined,
     dueAt: row.dueAt,
-    repeat: row.repeat,
     reminderMinutes: row.reminderMinutes ?? undefined,
-    isCompleted: parseBoolean(row.isCompleted),
+    repeatType: row.repeatType as any,
+    repeatInterval: row.repeatInterval ?? undefined,
+    repeatDays: row.repeatDays ? JSON.parse(row.repeatDays) : undefined,
+    startDate: row.startDate,
+    endDate: row.endDate ?? undefined,
+    nextOccurrenceDate: row.nextOccurrenceDate,
+    priority: row.priority ?? undefined,
+    category: row.category ?? undefined,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }));
+};
+
+export const getAllTasks = async (): Promise<TaskRecord[]> => {
+  const db = await getDb();
+  const rows = await db.getAllAsync<TaskRow>(
+    `
+      SELECT *
+      FROM tasks
+      ORDER BY nextOccurrenceDate ASC, createdAt ASC
+    `
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    subjectId: row.subjectId,
+    title: row.title,
+    description: row.description ?? undefined,
+    dueAt: row.dueAt,
+    reminderMinutes: row.reminderMinutes ?? undefined,
+    repeatType: row.repeatType as any,
+    repeatInterval: row.repeatInterval ?? undefined,
+    repeatDays: row.repeatDays ? JSON.parse(row.repeatDays) : undefined,
+    startDate: row.startDate,
+    endDate: row.endDate ?? undefined,
+    nextOccurrenceDate: row.nextOccurrenceDate,
+    priority: row.priority ?? undefined,
+    category: row.category ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }));
 };
 
 export const insertTask = async (
-  task: Omit<TaskRecord, 'id' | 'createdAt' | 'updatedAt' | 'isCompleted'> & { isCompleted?: boolean }
+  task: Omit<TaskRecord, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<TaskRecord> => {
   const db = await getDb();
   const id = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
@@ -473,12 +537,18 @@ export const insertTask = async (
         title,
         description,
         dueAt,
-        repeat,
         reminderMinutes,
-        isCompleted,
+        repeatType,
+        repeatInterval,
+        repeatDays,
+        startDate,
+        endDate,
+        nextOccurrenceDate,
+        priority,
+        category,
         createdAt,
         updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       id,
@@ -486,9 +556,15 @@ export const insertTask = async (
       task.title,
       task.description ?? null,
       task.dueAt,
-      task.repeat ?? 'none',
       task.reminderMinutes ?? null,
-      task.isCompleted ? 1 : 0,
+      task.repeatType,
+      task.repeatInterval ?? null,
+      task.repeatDays ? JSON.stringify(task.repeatDays) : null,
+      task.startDate,
+      task.endDate ?? null,
+      task.nextOccurrenceDate,
+      task.priority ?? null,
+      task.category ?? null,
       createdAt,
       updatedAt,
     ]
@@ -496,13 +572,7 @@ export const insertTask = async (
 
   return {
     id,
-    subjectId: task.subjectId,
-    title: task.title,
-    description: task.description ?? null,
-    dueAt: task.dueAt,
-    repeat: task.repeat ?? 'none',
-    reminderMinutes: task.reminderMinutes ?? null,
-    isCompleted: Boolean(task.isCompleted),
+    ...task,
     createdAt,
     updatedAt,
   };
@@ -510,7 +580,7 @@ export const insertTask = async (
 
 export const updateTask = async (
   taskId: string,
-  updates: Partial<Pick<TaskRecord, 'title' | 'description' | 'dueAt' | 'repeat' | 'reminderMinutes' | 'isCompleted'>>
+  updates: Partial<Omit<TaskRecord, 'id' | 'subjectId' | 'createdAt' | 'updatedAt'>>
 ): Promise<void> => {
   const db = await getDb();
   const fields: string[] = [];
@@ -528,17 +598,41 @@ export const updateTask = async (
     fields.push('dueAt = ?');
     values.push(updates.dueAt);
   }
-  if (updates.repeat !== undefined) {
-    fields.push('repeat = ?');
-    values.push(updates.repeat);
-  }
   if (updates.reminderMinutes !== undefined) {
     fields.push('reminderMinutes = ?');
     values.push(updates.reminderMinutes ?? null);
   }
-  if (updates.isCompleted !== undefined) {
-    fields.push('isCompleted = ?');
-    values.push(updates.isCompleted ? 1 : 0);
+  if (updates.repeatType !== undefined) {
+    fields.push('repeatType = ?');
+    values.push(updates.repeatType);
+  }
+  if (updates.repeatInterval !== undefined) {
+    fields.push('repeatInterval = ?');
+    values.push(updates.repeatInterval ?? null);
+  }
+  if (updates.repeatDays !== undefined) {
+    fields.push('repeatDays = ?');
+    values.push(updates.repeatDays ? JSON.stringify(updates.repeatDays) : null);
+  }
+  if (updates.startDate !== undefined) {
+    fields.push('startDate = ?');
+    values.push(updates.startDate);
+  }
+  if (updates.endDate !== undefined) {
+    fields.push('endDate = ?');
+    values.push(updates.endDate ?? null);
+  }
+  if (updates.nextOccurrenceDate !== undefined) {
+    fields.push('nextOccurrenceDate = ?');
+    values.push(updates.nextOccurrenceDate);
+  }
+  if (updates.priority !== undefined) {
+    fields.push('priority = ?');
+    values.push(updates.priority ?? null);
+  }
+  if (updates.category !== undefined) {
+    fields.push('category = ?');
+    values.push(updates.category ?? null);
   }
 
   if (fields.length === 0) return;
@@ -553,6 +647,79 @@ export const updateTask = async (
 export const deleteTask = async (taskId: string): Promise<void> => {
   const db = await getDb();
   await db.runAsync('DELETE FROM tasks WHERE id = ?', [taskId]);
+};
+
+export const completeTaskOccurrence = async (taskId: string, occurrenceDate: number, nextOccurrenceDate: number): Promise<void> => {
+  const db = await getDb();
+  const completionId = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+  
+  await db.runAsync(
+    `INSERT INTO task_completions (id, taskId, occurrenceDate, completedAt) VALUES (?, ?, ?, ?)`,
+    [completionId, taskId, occurrenceDate, Date.now()]
+  );
+
+  await db.runAsync(
+    `UPDATE tasks SET nextOccurrenceDate = ?, updatedAt = ? WHERE id = ?`,
+    [nextOccurrenceDate, Date.now(), taskId]
+  );
+};
+
+export const getTaskCompletions = async (taskIds: string[]): Promise<TaskCompletionRecord[]> => {
+  if (taskIds.length === 0) return [];
+  const db = await getDb();
+  
+  // Create placeholders for the IN clause
+  const placeholders = taskIds.map(() => '?').join(',');
+  const rows = await db.getAllAsync<TaskCompletionRow>(
+    `SELECT * FROM task_completions WHERE taskId IN (${placeholders})`,
+    taskIds
+  );
+
+  return rows.map(r => ({
+    id: r.id,
+    taskId: r.taskId,
+    occurrenceDate: r.occurrenceDate,
+    completedAt: r.completedAt
+  }));
+};
+
+export const uncompleteTaskOccurrence = async (taskId: string): Promise<number> => {
+  const db = await getDb();
+
+  const lastCompletion = await db.getFirstAsync<TaskCompletionRow>(
+    'SELECT * FROM task_completions WHERE taskId = ? ORDER BY completedAt DESC LIMIT 1',
+    [taskId]
+  );
+
+  if (!lastCompletion) return 0;
+
+  const task = await db.getFirstAsync<TaskRow>(
+    'SELECT * FROM tasks WHERE id = ?',
+    [taskId]
+  );
+
+  if (!task) return 0;
+
+  await db.runAsync('DELETE FROM task_completions WHERE id = ?', [lastCompletion.id]);
+
+  const remainingCount = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM task_completions WHERE taskId = ?',
+    [taskId]
+  );
+
+  let restoredDate: number;
+  if (remainingCount && remainingCount.count === 0 && task.repeatType === 'none') {
+    restoredDate = task.startDate;
+  } else {
+    restoredDate = lastCompletion.occurrenceDate;
+  }
+
+  await db.runAsync(
+    'UPDATE tasks SET nextOccurrenceDate = ?, updatedAt = ? WHERE id = ?',
+    [restoredDate, Date.now(), taskId]
+  );
+
+  return restoredDate;
 };
 
 export const getAllNotes = async (): Promise<NoteRecord[]> => {

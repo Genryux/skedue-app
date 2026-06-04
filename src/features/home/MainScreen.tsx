@@ -20,9 +20,10 @@ import {
   View,
 } from 'react-native';
 import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
-import { getAllNotes, getMetaValue, getNotesBySubjectId, getSubjects, insertSubject, insertNote, updateNote, deleteNote, findRecentMatchingNote, setMetaValue, updateSubject, type SubjectRecord, type NoteRecord } from '../../data/local/db';
+import { getAllNotes, getAllTasks, getMetaValue, getNotesBySubjectId, getSubjects, insertSubject, insertNote, updateNote, deleteNote, findRecentMatchingNote, setMetaValue, updateSubject, completeTaskOccurrence, type SubjectRecord, type NoteRecord, type TaskRecord } from '../../data/local/db';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
+import { calculateNextOccurrenceDate, isSameCalendarDay } from '../../utils/recurrenceUtils';
 import ScheduleScreen from '../schedule/ScheduleScreen';
 import AddSubjectScreen from '../subjects/AddSubjectScreen';
 import SubjectsScreen from '../subjects/SubjectsScreen';
@@ -147,7 +148,7 @@ export default function MainScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   // Recent notes state (quick notes + subject notes)
-  const pendingTasks: Array<{ id: string; title: string; due: string }> = [];
+  const [pendingTasks, setPendingTasks] = useState<TaskRecord[]>([]);
   const [recentNoteRecords, setRecentNoteRecords] = useState<NoteRecord[]>([]);
   const [selectedQuickNote, setSelectedQuickNote] = useState<NoteRecord | null>(null);
   const [noteEditorMode, setNoteEditorMode] = useState<'quick' | 'full'>('quick');
@@ -165,6 +166,39 @@ export default function MainScreen() {
       setRecentNoteRecords(filtered);
     } catch (err) {
       console.warn('Failed to load notes', err);
+    }
+  };
+
+  const loadPendingTasks = async () => {
+    try {
+      const tasks = await getAllTasks();
+      const activeSubjectIds = new Set(dbSubjects.filter((s) => !s.isArchived).map((s) => s.id));
+      const pending = tasks.filter(
+        (t) => t.nextOccurrenceDate < 4102444800000 && activeSubjectIds.has(t.subjectId)
+      ).sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate);
+      setPendingTasks(pending);
+    } catch (err) {
+      console.warn('Failed to load pending tasks', err);
+    }
+  };
+
+  const handleCompleteTask = async (task: TaskRecord) => {
+    try {
+      const isRecurring = task.repeatType && task.repeatType !== 'none';
+      if (isRecurring && task.nextOccurrenceDate > Date.now() && !isSameCalendarDay(task.nextOccurrenceDate, Date.now())) {
+        return;
+      }
+      const occurrenceDate = task.nextOccurrenceDate;
+      const next = calculateNextOccurrenceDate(task, occurrenceDate);
+      await completeTaskOccurrence(task.id, occurrenceDate, next);
+      setPendingTasks((current) =>
+        current
+          .map((t) => (t.id === task.id ? { ...t, nextOccurrenceDate: next } : t))
+          .filter((t) => t.nextOccurrenceDate < 4102444800000)
+          .sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate)
+      );
+    } catch (error) {
+      console.warn('Failed to complete task', error);
     }
   };
 
@@ -209,6 +243,7 @@ export default function MainScreen() {
     setRefreshing(true);
     await loadData();
     await loadRecentNotes();
+    await loadPendingTasks();
     setRefreshing(false);
   };
 
@@ -218,6 +253,7 @@ export default function MainScreen() {
 
   useEffect(() => {
     loadRecentNotes();
+    loadPendingTasks();
   }, [dbSubjects]);
 
   // Reload notes when subject detail closes (notes may have changed)
@@ -225,6 +261,7 @@ export default function MainScreen() {
   useEffect(() => {
     if (prevSubjectDetailOpen.current && !isSubjectDetailOpen) {
       loadRecentNotes();
+      loadPendingTasks();
     }
     prevSubjectDetailOpen.current = isSubjectDetailOpen;
   }, [isSubjectDetailOpen]);
@@ -670,12 +707,14 @@ export default function MainScreen() {
       }
     }
     await loadRecentNotes();
+    await loadPendingTasks();
     return savedNote;
   };
 
   const handleQuickNoteDelete = async (noteId: string) => {
     await deleteNote(noteId);
     await loadRecentNotes();
+    await loadPendingTasks();
   };
 
   // Intercept hardware back to close overlays
@@ -835,15 +874,36 @@ export default function MainScreen() {
                       <Text style={styles.sectionEmptyTitle}>No pending tasks</Text>
                     </View>
                   ) : (
-                    pendingTasks.map((task) => (
-                      <View key={task.id} style={styles.taskRow}>
-                        <View style={styles.taskCheckbox} />
-                        <View>
-                          <Text style={styles.taskTitle}>{task.title}</Text>
-                          <Text style={styles.taskMeta}>{task.due}</Text>
+                    pendingTasks.map((task) => {
+                      const due = new Date(task.nextOccurrenceDate);
+                      const dueLabel = due.toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      });
+                      return (
+                        <View key={task.id} style={styles.taskRow}>
+                          {(!task.repeatType || task.repeatType === 'none' || isSameCalendarDay(task.nextOccurrenceDate, Date.now()) || task.nextOccurrenceDate < Date.now()) ? (
+                            <Pressable
+                              style={styles.taskCheckbox}
+                              onPress={() => void handleCompleteTask(task)}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <Feather name="square" size={18} color="#a0aba5" />
+                            </Pressable>
+                          ) : (
+                            <View style={styles.taskCheckbox}>
+                              <Feather name="lock" size={14} color="#c9cdc9" />
+                            </View>
+                          )}
+                          <View>
+                            <Text style={styles.taskTitle}>{task.title}</Text>
+                            <Text style={styles.taskMeta}>{dueLabel}</Text>
+                          </View>
                         </View>
-                      </View>
-                    ))
+                      );
+                    })
                   )}
                 </View>
 

@@ -31,6 +31,7 @@ import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
 import { formatTimeDisplay, parseTimeToMinutes } from '../../utils/timeUtils';
 import { findTimeConflicts } from './conflictUtils';
+import { calculateNextOccurrenceDate, isSameCalendarDay } from '../../utils/recurrenceUtils';
 import {
   getFoldersBySubjectId,
   findRecentMatchingNote,
@@ -38,18 +39,24 @@ import {
   getSubjectById,
   getSubjects,
   getTasksBySubjectId,
+  getTaskCompletions,
   getMetaValue,
   deleteNote,
+  deleteTask,
   insertFolder,
   insertTask,
   insertNote,
   setMetaValue,
   updateNote,
   updateSubject,
+  updateTask,
   deleteSubject,
+  completeTaskOccurrence,
+  uncompleteTaskOccurrence,
   type FolderRecord,
   type NoteRecord,
   type TaskRecord,
+  type TaskCompletionRecord,
   type SubjectRecord,
 } from '../../data/local/db';
 
@@ -243,7 +250,9 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
   const [existingSubjects, setExistingSubjects] = useState<SubjectRecord[]>([]);
 
   // Task form state
+  const [editingTask, setEditingTask] = useState<TaskRecord | null>(null);
   const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
+  const [taskFormReadOnly, setTaskFormReadOnly] = useState(false);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
   const [taskDueDate, setTaskDueDate] = useState<Date>(() => {
@@ -253,8 +262,37 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
   });
   const [showTaskDueDatePicker, setShowTaskDueDatePicker] = useState(false);
   const [showTaskDueTimePicker, setShowTaskDueTimePicker] = useState(false);
-  const [taskRepeat, setTaskRepeat] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none');
+  const [taskRepeatType, setTaskRepeatType] = useState<'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'>('none');
+  const [taskRepeatInterval, setTaskRepeatInterval] = useState<number>(1);
+  const [taskRepeatDays, setTaskRepeatDays] = useState<string[]>([]);
   const [taskReminderMinutes, setTaskReminderMinutes] = useState<number | null>(null);
+  const [taskPriority, setTaskPriority] = useState<string | null>(null);
+  const [taskCategory, setTaskCategory] = useState<string | null>(null);
+  const [taskCompletions, setTaskCompletions] = useState<TaskCompletionRecord[]>([]);
+  const [taskFormSubView, setTaskFormSubView] = useState<'priority' | 'category' | 'reminder' | null>(null);
+
+  const renderTaskBadges = useCallback((task: TaskRecord) => {
+    const isRecurring = task.repeatType && task.repeatType !== 'none';
+    const hasReminder = task.reminderMinutes != null;
+    if (!isRecurring && !hasReminder) return null;
+    return (
+      <View style={styles.repeatBadge}>
+        {isRecurring ? (
+          <Feather name="repeat" size={12} color="#8f968f" style={hasReminder ? { marginRight: 4 } : undefined} />
+        ) : null}
+        {hasReminder ? (
+          <Feather name="bell" size={12} color="#8f968f" />
+        ) : null}
+      </View>
+    );
+  }, []);
+
+  const renderPriorityDot = useCallback((task: TaskRecord) => {
+    if (!task.priority) return null;
+    const color = task.priority === 'high' ? '#d1453b' : '#e88d3f';
+    return <View style={{ width: 10, height: 10, borderRadius: 10, backgroundColor: color, marginLeft: 12 }} />;
+  }, []);
+
   const canRequestExactAlarm = Platform.OS === 'android' && Number(Platform.Version) >= 31;
   const featuredFolders = folders.slice(0, 3);
   const remainingFolders = folders.slice(3);
@@ -268,10 +306,51 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     return accumulator;
   }, {});
   const pinnedNotes = notes.filter((n) => n.isPinned);
+  const isBeforeToday = useCallback((date: number) => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    return date < todayStart.getTime();
+  }, []);
+
   const pendingTasks = useMemo(
-    () => tasks.filter((t) => !t.isCompleted).sort((a, b) => a.dueAt - b.dueAt),
+    () => tasks.filter((t) => t.nextOccurrenceDate < 4102444800000).sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate),
     [tasks]
   );
+  const todayCompletedOccurrenceIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of taskCompletions) {
+      if (isSameCalendarDay(c.occurrenceDate, Date.now())) {
+        ids.add(c.taskId);
+      }
+    }
+    return ids;
+  }, [taskCompletions]);
+
+  const overdueTasks = useMemo(
+    () => pendingTasks.filter((t) => !todayCompletedOccurrenceIds.has(t.id) && isBeforeToday(t.nextOccurrenceDate)),
+    [pendingTasks, todayCompletedOccurrenceIds, isBeforeToday]
+  );
+  const todayTasks = useMemo(
+    () => pendingTasks.filter((t) => !todayCompletedOccurrenceIds.has(t.id) && isSameCalendarDay(t.nextOccurrenceDate, Date.now())),
+    [pendingTasks, todayCompletedOccurrenceIds]
+  );
+  const futureTasks = useMemo(
+    () => pendingTasks.filter((t) => t.nextOccurrenceDate > Date.now() && !isSameCalendarDay(t.nextOccurrenceDate, Date.now())),
+    [pendingTasks]
+  );
+
+  const completedOccurrences = useMemo(() => {
+    const taskMap = new Map(tasks.map((t) => [t.id, t]));
+    const result: Array<{ task: TaskRecord; completion: TaskCompletionRecord }> = [];
+
+    for (const completion of taskCompletions) {
+      const task = taskMap.get(completion.taskId);
+      if (!task) continue;
+      result.push({ task, completion });
+    }
+
+    return result.sort((a, b) => b.completion.completedAt - a.completion.completedAt);
+  }, [tasks, taskCompletions]);
   const pendingTasksPreview = useMemo(() => pendingTasks.slice(0, 3), [pendingTasks]);
   const totalNotes = notes.length;
   const totalFolders = folders.length;
@@ -338,11 +417,19 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       setFolders(storedFolders);
       setNotes(storedNotes);
       setTasks(storedTasks);
+      const taskIds = storedTasks.map((t) => t.id);
+      if (taskIds.length > 0) {
+        const completions = await getTaskCompletions(taskIds);
+        setTaskCompletions(completions);
+      } else {
+        setTaskCompletions([]);
+      }
     } catch (error) {
       console.warn('Failed to load subject detail data', error);
       setFolders([]);
       setNotes([]);
       setTasks([]);
+      setTaskCompletions([]);
     }
   }, [subject?.id]);
 
@@ -460,25 +547,45 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     }
   };
 
-  const openTaskForm = () => {
+  const openTaskForm = (task?: TaskRecord, readOnly = false) => {
     Keyboard.dismiss();
     setIsActionSheetOpen(false);
     sheetOpacity.setValue(0);
     sheetTranslate.setValue(18);
     buttonRotate.setValue(0);
     buttonScale.setValue(0);
-    setTaskTitle('');
-    setTaskDescription('');
-    const d = new Date();
-    d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
-    setTaskDueDate(d);
-    setTaskRepeat('none');
-    setTaskReminderMinutes(null);
+    setTaskFormReadOnly(readOnly);
+    if (task) {
+      setEditingTask(task);
+      setTaskTitle(task.title ?? '');
+      setTaskDescription(task.description ?? '');
+      setTaskDueDate(new Date(task.startDate));
+      setTaskRepeatType(task.repeatType as any);
+      setTaskRepeatInterval(task.repeatInterval ?? 1);
+      setTaskRepeatDays(task.repeatDays ?? []);
+      setTaskReminderMinutes(task.reminderMinutes ?? null);
+      setTaskPriority(task.priority ?? null);
+      setTaskCategory(task.category ?? null);
+    } else {
+      setEditingTask(null);
+      setTaskTitle('');
+      setTaskDescription('');
+      const d = new Date();
+      d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+      setTaskDueDate(d);
+      setTaskRepeatType('none');
+      setTaskRepeatInterval(1);
+      setTaskRepeatDays([]);
+      setTaskReminderMinutes(null);
+      setTaskPriority(null);
+      setTaskCategory(null);
+    }
     setIsTaskFormOpen(true);
   };
 
   const closeTaskForm = () => {
     setIsTaskFormOpen(false);
+    setTaskFormSubView(null);
     setShowTaskDueDatePicker(false);
     setShowTaskDueTimePicker(false);
   };
@@ -488,15 +595,40 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     if (!name || !subject?.id) return;
 
     try {
-      const saved = await insertTask({
-        subjectId: subject.id,
-        title: name,
-        description: taskDescription.trim() || undefined,
-        dueAt: taskDueDate.getTime(),
-        repeat: taskRepeat,
-        reminderMinutes: taskReminderMinutes ?? undefined,
-      });
-      setTasks((current) => [...current, saved].sort((a, b) => a.dueAt - b.dueAt));
+      let saved: TaskRecord;
+      if (editingTask) {
+        await updateTask(editingTask.id, {
+          title: name,
+          description: taskDescription.trim() || undefined,
+          startDate: taskDueDate.getTime(),
+          dueAt: taskDueDate.getTime(),
+          repeatType: taskRepeatType,
+          repeatInterval: taskRepeatInterval,
+          repeatDays: taskRepeatDays.length > 0 ? taskRepeatDays : null,
+          nextOccurrenceDate: taskDueDate.getTime(),
+          reminderMinutes: taskReminderMinutes ?? undefined,
+          priority: taskPriority,
+          category: taskCategory,
+        });
+        saved = { ...editingTask, title: name, description: taskDescription.trim() || undefined, startDate: taskDueDate.getTime(), dueAt: taskDueDate.getTime(), repeatType: taskRepeatType, repeatInterval: taskRepeatInterval, repeatDays: taskRepeatDays, nextOccurrenceDate: taskDueDate.getTime(), reminderMinutes: taskReminderMinutes ?? undefined, priority: taskPriority, category: taskCategory };
+        setTasks((current) => current.map((t) => t.id === saved.id ? saved : t).sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate));
+      } else {
+        saved = await insertTask({
+          subjectId: subject.id,
+          title: name,
+          description: taskDescription.trim() || undefined,
+          startDate: taskDueDate.getTime(),
+          dueAt: taskDueDate.getTime(),
+          repeatType: taskRepeatType,
+          repeatInterval: taskRepeatInterval,
+          repeatDays: taskRepeatDays.length > 0 ? taskRepeatDays : null,
+          nextOccurrenceDate: taskDueDate.getTime(),
+          reminderMinutes: taskReminderMinutes ?? undefined,
+          priority: taskPriority,
+          category: taskCategory,
+        });
+        setTasks((current) => [...current, saved].sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate));
+      }
       closeTaskForm();
 
       if (taskReminderMinutes !== null) {
@@ -537,6 +669,67 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       }
     } catch (error) {
       console.warn('Failed to save task', error);
+    }
+  };
+
+  const handleCompleteTask = async (task: TaskRecord) => {
+    try {
+      const isRecurring = task.repeatType && task.repeatType !== 'none';
+      if (isRecurring && task.nextOccurrenceDate > Date.now() && !isSameCalendarDay(task.nextOccurrenceDate, Date.now())) {
+        return; // Can only complete recurring tasks on the same day or overdue
+      }
+      const occurrenceDate = task.nextOccurrenceDate;
+      const next = calculateNextOccurrenceDate(task, occurrenceDate);
+      await completeTaskOccurrence(task.id, occurrenceDate, next);
+      setTasks((current) =>
+        current
+          .map((t) => (t.id === task.id ? { ...t, nextOccurrenceDate: next } : t))
+          .sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate)
+      );
+      setTaskCompletions((current) => [
+        ...current,
+        { id: `optimistic-${task.id}-${occurrenceDate}`, taskId: task.id, occurrenceDate, completedAt: Date.now() },
+      ]);
+      if (task.reminderMinutes !== null && task.reminderMinutes !== undefined) {
+        const updated = { ...task, nextOccurrenceDate: next };
+        void scheduleTaskReminder(updated, subject?.title ?? subject?.code ?? undefined).catch(console.warn);
+      }
+    } catch (error) {
+      console.warn('Failed to complete task', error);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await deleteTask(taskId);
+      setTasks((current) => current.filter((t) => t.id !== taskId));
+    } catch (error) {
+      console.warn('Failed to delete task', error);
+    }
+  };
+
+  const handleUncompleteTask = async (task: TaskRecord) => {
+    try {
+      const restoredDate = await uncompleteTaskOccurrence(task.id);
+      if (restoredDate === 0) return;
+      setTasks((current) =>
+        current.map((t) =>
+          t.id === task.id
+            ? { ...t, nextOccurrenceDate: restoredDate }
+            : t
+        ).sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate)
+      );
+      // Remove the latest completion from state so todayCompletedOccurrenceIds recalculates
+      setTaskCompletions((current) => {
+        const taskCompletions = current.filter((c) => c.taskId === task.id);
+        if (taskCompletions.length === 0) return current;
+        const latest = taskCompletions.reduce((a, b) =>
+          a.completedAt > b.completedAt ? a : b
+        );
+        return current.filter((c) => c.id !== latest.id);
+      });
+    } catch (error) {
+      console.warn('Failed to uncomplete task', error);
     }
   };
 
@@ -1105,9 +1298,10 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                 </View>
               ) : (
                 pendingTasksPreview.map((task, index) => {
-                  const due = new Date(task.dueAt);
+                  const occDate = task.nextOccurrenceDate;
+                  const due = new Date(occDate);
                   const dueLabel = due.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-                  const isUrgent = index === 0 && task.dueAt - Date.now() < 1000 * 60 * 60 * 6;
+                  const isUrgent = index === 0 && occDate - Date.now() < 1000 * 60 * 60 * 6;
                   return (
                     <CardScale
                       key={task.id}
@@ -1122,12 +1316,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                           {task.title}
                         </Text>
                         <View style={styles.taskDueDateRow}>
-                          <Feather name="calendar" size={13} color={isUrgent ? '#BA1A1A' : '#6b746f'} style={styles.dueIcon} />
-                          <Text style={[styles.taskDueDateText, isUrgent && { color: '#BA1A1A', fontFamily: 'Manrope_700Bold' }]} numberOfLines={1}>
+                          <Text style={[styles.taskDueDateText, isUrgent && { color: '#BA1A1A' }]} numberOfLines={1}>
                             Due {dueLabel}
                           </Text>
+                          {renderTaskBadges(task)}
                         </View>
                       </View>
+                      {renderPriorityDot(task)}
                       {isUrgent ? (
                         <View style={styles.urgentTaskBadge}>
                           <Text style={styles.urgentTaskBadgeText}>SOON</Text>
@@ -1183,49 +1378,222 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
         {activeTab === 'tasks' && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeaderTitle}>Pending Tasks</Text>
+            <Text style={styles.sectionHeaderTitle}>Tasks</Text>
 
-            {pendingTasks.length === 0 ? (
+            {/* OVERDUE SECTION */}
+            {overdueTasks.length > 0 && (
+              <>
+                <View style={styles.completedSectionHeader}>
+                  <Text style={styles.overdueSectionHeaderText}>OVERDUE</Text>
+                </View>
+                {overdueTasks.map((task) => {
+                  const occDate = task.nextOccurrenceDate;
+                  const due = new Date(occDate);
+                  const dueLabel = due.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                  const isRecurring = task.repeatType && task.repeatType !== 'none';
+                  const canComplete = !isRecurring || (isSameCalendarDay(occDate, Date.now()) || occDate < Date.now());
+                  return (
+                    <CardScale
+                      key={task.id}
+                      onPress={() => openTaskForm(task)}
+                      style={styles.taskCard}
+                    >
+                      {canComplete ? (
+                        <Pressable
+                          style={styles.taskCheckbox}
+                          onPress={() => void handleCompleteTask(task)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <MaterialCommunityIcons name="circle-outline" size={22} color="#a0aba5" />
+                        </Pressable>
+                      ) : (
+                        <View style={styles.taskCheckbox}>
+                          <Feather name="lock" size={15} color="#c9cdc9" />
+                        </View>
+                      )}
+                      <View style={styles.taskTextWrapper}>
+                        <Text style={styles.taskTitle} numberOfLines={1}>
+                          {task.title}
+                        </Text>
+                        <View style={styles.taskDueDateRow}>
+                          <Text style={[styles.taskDueDateText, { color: '#BA1A1A' }]} numberOfLines={1}>
+                            {dueLabel}
+                          </Text>
+                          <Text style={[styles.taskDueDateText, { color: '#BA1A1A', marginLeft: 6 }]} numberOfLines={1}>
+                            (Overdue)
+                          </Text>
+                          {renderTaskBadges(task)}
+                        </View>
+                        {task.description ? (
+                          <Text style={styles.taskDueDateText} numberOfLines={2}>
+                            {task.description}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {renderPriorityDot(task)}
+                    </CardScale>
+                  );
+                })}
+              </>
+            )}
+
+            {/* TODAY SECTION */}
+            {todayTasks.length > 0 && (
+              <>
+                <View style={styles.completedSectionHeader}>
+                  <Text style={styles.completedSectionHeaderText}>TODAY</Text>
+                </View>
+                {todayTasks.map((task) => {
+                  const occDate = task.nextOccurrenceDate;
+                  const due = new Date(occDate);
+                  const dueLabel = due.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                  const isRecurring = task.repeatType && task.repeatType !== 'none';
+                  const canComplete = !isRecurring || (isSameCalendarDay(occDate, Date.now()) || occDate < Date.now());
+                  return (
+                    <CardScale
+                      key={task.id}
+                      onPress={() => openTaskForm(task)}
+                      style={styles.taskCard}
+                    >
+                      {canComplete ? (
+                        <Pressable
+                          style={styles.taskCheckbox}
+                          onPress={() => void handleCompleteTask(task)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <MaterialCommunityIcons name="circle-outline" size={22} color="#a0aba5" />
+                        </Pressable>
+                      ) : (
+                        <View style={styles.taskCheckbox}>
+                          <Feather name="lock" size={15} color="#c9cdc9" />
+                        </View>
+                      )}
+                      <View style={styles.taskTextWrapper}>
+                        <Text style={styles.taskTitle} numberOfLines={1}>
+                          {task.title}
+                        </Text>
+                        <View style={styles.taskDueDateRow}>
+                          <Text style={styles.taskDueDateText} numberOfLines={1}>
+                            {dueLabel}
+                          </Text>
+                          {renderTaskBadges(task)}
+                        </View>
+                        {task.description ? (
+                          <Text style={styles.taskDueDateText} numberOfLines={2}>
+                            {task.description}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {renderPriorityDot(task)}
+                    </CardScale>
+                  );
+                })}
+              </>
+            )}
+
+            {/* FUTURE SECTION */}
+            {futureTasks.length > 0 && (
+              <>
+                <View style={styles.completedSectionHeader}>
+                  <Text style={styles.completedSectionHeaderText}>FUTURE</Text>
+                </View>
+                {futureTasks.map((task) => {
+                  const occDate = task.nextOccurrenceDate;
+                  const due = new Date(occDate);
+                  const dueLabel = due.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                  const isRecurring = task.repeatType && task.repeatType !== 'none';
+                  return (
+                    <CardScale
+                      key={task.id}
+                      onPress={() => openTaskForm(task)}
+                      style={styles.taskCard}
+                    >
+                      <View style={styles.taskCheckbox}>
+                        <Feather name="lock" size={15} color="#c9cdc9" />
+                      </View>
+                      <View style={styles.taskTextWrapper}>
+                        <Text style={styles.taskTitle} numberOfLines={1}>
+                          {task.title}
+                        </Text>
+                        <View style={styles.taskDueDateRow}>
+                          <Text style={styles.taskDueDateText} numberOfLines={1}>
+                            {dueLabel}
+                          </Text>
+                          {renderTaskBadges(task)}
+                        </View>
+                        {task.description ? (
+                          <Text style={styles.taskDueDateText} numberOfLines={2}>
+                            {task.description}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {renderPriorityDot(task)}
+                    </CardScale>
+                  );
+                })}
+              </>
+            )}
+
+            {/* EMPTY STATE */}
+            {overdueTasks.length === 0 && todayTasks.length === 0 && futureTasks.length === 0 && (
               <View style={styles.sectionEmptyState}>
                 <View style={styles.sectionEmptyIconWrapper}>
                   <Feather name="check-circle" size={18} color="#8f968f" />
                 </View>
                 <Text style={styles.sectionEmptyTitle}>No pending tasks</Text>
               </View>
-            ) : (
-              pendingTasks.map((task) => {
-                const due = new Date(task.dueAt);
-                const dueLabel = due.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-                const isOverdue = task.dueAt < Date.now();
-                return (
-                  <CardScale key={task.id} style={[styles.taskCard, isOverdue && styles.urgentTaskCard]}>
-                    <View style={styles.taskCheckbox}>
-                      <Feather name="square" size={20} color={isOverdue ? '#BA1A1A' : '#a0aba5'} />
-                    </View>
-                    <View style={styles.taskTextWrapper}>
-                      <Text style={[styles.taskTitle, isOverdue && { color: '#BA1A1A' }]} numberOfLines={1}>
-                        {task.title}
-                      </Text>
-                      <View style={styles.taskDueDateRow}>
-                        <Feather name="calendar" size={13} color={isOverdue ? '#BA1A1A' : '#6b746f'} style={styles.dueIcon} />
-                        <Text style={[styles.taskDueDateText, isOverdue && { color: '#BA1A1A', fontFamily: 'Manrope_700Bold' }]} numberOfLines={1}>
-                          {isOverdue ? `Overdue ${dueLabel}` : `Due ${dueLabel}`}
-                        </Text>
+            )}
+
+            {/* COMPLETED SECTION */}
+            {completedOccurrences.length > 0 && (
+              <>
+                <View style={styles.completedSectionHeader}>
+                  <Text style={styles.completedSectionHeaderText}>COMPLETED</Text>
+                </View>
+                {completedOccurrences.map(({ task, completion }) => {
+                  const isRecurring = task.repeatType && task.repeatType !== 'none';
+                  const canUncomplete = isSameCalendarDay(completion.completedAt, Date.now());
+                  const due = new Date(completion.occurrenceDate);
+                  const dueLabel = due.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                  return (
+                    <CardScale
+                      key={completion.id}
+                      onPress={() => openTaskForm(task, true)}
+                      style={[styles.taskCard, styles.completedTaskCard]}
+                    >
+                      <View style={styles.taskCheckbox}>
+                        {canUncomplete ? (
+                          <Pressable
+                            onPress={() => void handleUncompleteTask(task)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Feather name="rotate-ccw" size={16} color="#8f968f" />
+                          </Pressable>
+                        ) : (
+                          <Feather name="lock" size={14} color="#c9cdc9" />
+                        )}
                       </View>
-                      {task.description ? (
-                        <Text style={styles.taskDueDateText} numberOfLines={2}>
-                          {task.description}
+                      <View style={styles.taskTextWrapper}>
+                        <Text style={[styles.taskTitle, { color: '#8f968f', textDecorationLine: 'line-through' }]} numberOfLines={1}>
+                          {task.title}
                         </Text>
-                      ) : null}
-                    </View>
-                    {isOverdue ? (
-                      <View style={styles.urgentTaskBadge}>
-                        <Text style={styles.urgentTaskBadgeText}>OVERDUE</Text>
+                        <View style={styles.taskDueDateRow}>
+                          <Text style={[styles.taskDueDateText, { color: '#8f968f' }]} numberOfLines={1}>
+                            {dueLabel}
+                          </Text>
+                          {isRecurring ? (
+                            <Text style={[styles.taskDueDateText, { color: '#8f968f', marginLeft: 6 }]} numberOfLines={1}>
+                              {canUncomplete ? '(Completed today)' : '(Completed)'}
+                            </Text>
+                          ) : null}
+                          {renderTaskBadges(task)}
+                        </View>
                       </View>
-                    ) : null}
-                  </CardScale>
-                );
-              })
+                      {renderPriorityDot(task)}
+                    </CardScale>
+                  );
+                })}
+              </>
             )}
           </View>
         )}
@@ -1462,7 +1830,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                 }),
               }],
             }}>
-              <Pressable style={styles.actionButton} onPress={openTaskForm}>
+              <Pressable style={styles.actionButton} onPress={() => openTaskForm()}>
                 <View style={styles.actionIconCircle}>
                   <Feather name="check-square" size={18} color="#1e2b26" />
                 </View>
@@ -1623,60 +1991,209 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
               contentContainerStyle={{ paddingBottom: 24 + keyboardHeight + insets.bottom }}
             >
               <View style={styles.taskFormHeader}>
-                <Text style={styles.taskFormTitle}>Add Task</Text>
+                <Text style={styles.taskFormTitle}>{taskFormReadOnly ? 'Task' : 'Add Task'}</Text>
               </View>
 
-              <View style={styles.taskFormSection}>
-                <Text style={styles.taskFormLabel}>Task Name</Text>
-                <TextInput
-                  value={taskTitle}
-                  onChangeText={setTaskTitle}
-                  placeholder="e.g. Homework 2"
-                  placeholderTextColor="#c1c5c1"
-                  style={styles.taskFormInput}
-                  returnKeyType="done"
-                />
+              <View style={styles.editInfoCard}>
+                <View style={styles.editInfoRow}>
+                  <TextInput
+                    value={taskTitle}
+                    onChangeText={setTaskTitle}
+                    placeholder="Task Name"
+                    placeholderTextColor="#91948f"
+                    style={styles.editInfoInput}
+                    returnKeyType="done"
+                  />
+                </View>
+                <View style={styles.editInfoSeparator} />
+                <View style={[styles.editInfoRow, { minHeight: 88 }]}>
+                  <TextInput
+                    value={taskDescription}
+                    onChangeText={taskFormReadOnly ? undefined : setTaskDescription}
+                    placeholder="Description (Optional)"
+                    placeholderTextColor="#91948f"
+                    style={[styles.editInfoInput, taskFormReadOnly && { color: '#8f968f' }]}
+                    multiline
+                    editable={!taskFormReadOnly}
+                  />
+                </View>
               </View>
 
-              <View style={styles.taskFormSection}>
-                <Text style={styles.taskFormLabel}>Description</Text>
-                <TextInput
-                  value={taskDescription}
-                  onChangeText={setTaskDescription}
-                  placeholder="Optional details..."
-                  placeholderTextColor="#c1c5c1"
-                  style={[styles.taskFormInput, styles.taskFormInputMultiline]}
-                  multiline
-                />
-              </View>
-
-              <View style={styles.taskFormSection}>
-                <Text style={styles.taskFormLabel}>Subject</Text>
-                <View style={styles.taskFormLockedRow}>
+              <View style={[styles.editInfoCard, { marginTop: 16 }]}>
+                <View style={styles.editInfoRow}>
                   <Feather name="lock" size={14} color="#8f968f" />
-                  <Text style={styles.taskFormLockedText} numberOfLines={1}>
+                  <Text style={[styles.editInfoInput, { flex: 1, paddingVertical: 0, marginLeft: 10 }]} numberOfLines={1}>
                     {subject?.code?.trim() || subject?.title || 'Subject'}
                   </Text>
                 </View>
               </View>
 
-              <View style={styles.taskFormSection}>
-                <Text style={styles.taskFormLabel}>Due Date & Time</Text>
-                <View style={styles.taskFormDueRow}>
-                  <Pressable style={styles.taskFormChip} onPress={() => setShowTaskDueDatePicker(true)}>
-                    <Feather name="calendar" size={14} color="#1e2b26" />
-                    <Text style={styles.taskFormChipText}>
-                      {taskDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                    </Text>
-                  </Pressable>
-                  <Pressable style={styles.taskFormChip} onPress={() => setShowTaskDueTimePicker(true)}>
-                    <Feather name="clock" size={14} color="#1e2b26" />
-                    <Text style={styles.taskFormChipText}>
-                      {taskDueDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                    </Text>
-                  </Pressable>
-                </View>
+              <View style={[styles.editInfoCard, { marginTop: 16 }]}>
+                {taskFormSubView === 'priority' ? (
+                  <>
+                    <View style={styles.editInfoRow}>
+                      <Text style={styles.editInfoInput}>Priority</Text>
+                    </View>
+                    {[
+                      { value: null, label: 'None', icon: null },
+                      { value: 'low', label: 'Low', icon: '#e88d3f' },
+                      { value: 'high', label: 'High', icon: '#d1453b' },
+                    ].map((opt) => {
+                      const selected = taskPriority === opt.value;
+                      return (
+                        <Pressable
+                          key={String(opt.value)}
+                          style={[styles.editInfoRow, selected && { backgroundColor: '#f5f5f0' }]}
+                          onPress={() => { setTaskPriority(opt.value); setTaskFormSubView(null); }}
+                        >
+                          {opt.icon ? (
+                            <View style={{ width: 12, height: 12, borderRadius: 12, backgroundColor: opt.icon, marginRight: 12 }} />
+                          ) : (
+                            <View style={{ width: 12, height: 12, borderRadius: 12, backgroundColor: '#d4d8d4', marginRight: 12 }} />
+                          )}
+                          <Text style={[styles.editInfoInput, selected && { fontFamily: 'Manrope_700Bold' }]}>{opt.label}</Text>
+                          {selected ? <Feather name="check" size={18} color="#0f2a24" style={{ marginLeft: 'auto' }} /> : null}
+                        </Pressable>
+                      );
+                    })}
+                    <Pressable style={styles.editInfoRow} onPress={() => setTaskFormSubView(null)}>
+                      <Text style={styles.editInfoCancelText}>Back</Text>
+                    </Pressable>
+                  </>
+                ) : taskFormSubView === 'category' ? (
+                  <>
+                    <View style={styles.editInfoRow}>
+                      <Text style={styles.editInfoInput}>Category</Text>
+                    </View>
+                    {(['Assignment', 'Quiz', 'Exam', 'Project', 'Meeting', 'Study session', 'Personal'] as const).map((cat) => {
+                      const selected = taskCategory === cat;
+                      return (
+                        <Pressable
+                          key={cat}
+                          style={[styles.editInfoRow, selected && { backgroundColor: '#f5f5f0' }]}
+                          onPress={() => { setTaskCategory(selected ? null : cat); setTaskFormSubView(null); }}
+                        >
+                          <Text style={[styles.editInfoInput, selected && { fontFamily: 'Manrope_700Bold' }]}>{cat}</Text>
+                          {selected ? <Feather name="check" size={18} color="#0f2a24" style={{ marginLeft: 'auto' }} /> : null}
+                        </Pressable>
+                      );
+                    })}
+                    <Pressable style={styles.editInfoRow} onPress={() => setTaskFormSubView(null)}>
+                      <Text style={styles.editInfoCancelText}>Back</Text>
+                    </Pressable>
+                  </>
+                ) : taskFormSubView === 'reminder' ? (
+                  <>
+                    <View style={styles.editInfoRow}>
+                      <Text style={styles.editInfoInput}>Reminder</Text>
+                    </View>
+                    {([
+                      { mins: null, label: 'None' },
+                      { mins: 0, label: 'At due time' },
+                      { mins: 5, label: '5 mins before' },
+                      { mins: 15, label: '15 mins before' },
+                      { mins: 30, label: '30 mins before' },
+                      { mins: 60, label: '1 hour before' },
+                      { mins: 1440, label: '1 day before' },
+                    ] as const).map((opt) => {
+                      const selected = taskReminderMinutes === opt.mins;
+                      return (
+                        <Pressable
+                          key={String(opt.mins)}
+                          style={[styles.editInfoRow, selected && { backgroundColor: '#f5f5f0' }]}
+                          onPress={() => { setTaskReminderMinutes(opt.mins); setTaskFormSubView(null); }}
+                        >
+                          <Text style={[styles.editInfoInput, selected && { fontFamily: 'Manrope_700Bold' }]}>{opt.label}</Text>
+                          {selected ? <Feather name="check" size={18} color="#0f2a24" style={{ marginLeft: 'auto' }} /> : null}
+                        </Pressable>
+                      );
+                    })}
+                    <Pressable style={styles.editInfoRow} onPress={() => setTaskFormSubView(null)}>
+                      <Text style={styles.editInfoCancelText}>Back</Text>
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <Pressable style={styles.editInfoRow} onPress={() => setTaskFormSubView('priority')}>
+                      <Text style={styles.editInfoInput}>Priority</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        {taskPriority ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <View style={{ width: 10, height: 10, borderRadius: 10, backgroundColor: taskPriority === 'high' ? '#d1453b' : '#e88d3f' }} />
+                            <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>
+                              {taskPriority === 'high' ? 'High' : 'Low'}
+                            </Text>
+                          </View>
+                        ) : (
+                          <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>None</Text>
+                        )}
+                        <Feather name="chevron-right" size={18} color="#9aa09a" />
+                      </View>
+                    </Pressable>
+                    <View style={styles.editInfoSeparator} />
+                    <Pressable style={styles.editInfoRow} onPress={() => setTaskFormSubView('category')}>
+                      <Text style={styles.editInfoInput}>Category</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        {taskCategory ? (
+                          <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>{taskCategory}</Text>
+                        ) : (
+                          <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>None</Text>
+                        )}
+                        <Feather name="chevron-right" size={18} color="#9aa09a" />
+                      </View>
+                    </Pressable>
+                    <View style={styles.editInfoSeparator} />
+                    <Pressable style={styles.editInfoRow} onPress={() => setTaskFormSubView('reminder')}>
+                      <Text style={styles.editInfoInput}>Reminder</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        {taskReminderMinutes !== null ? (
+                          <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>
+                            {taskReminderMinutes === 0 ? 'At due time' : taskReminderMinutes === 5 ? '5 mins before' : taskReminderMinutes === 15 ? '15 mins before' : taskReminderMinutes === 30 ? '30 mins before' : taskReminderMinutes === 60 ? '1 hour before' : taskReminderMinutes === 1440 ? '1 day before' : ''}
+                          </Text>
+                        ) : (
+                          <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>None</Text>
+                        )}
+                        <Feather name="chevron-right" size={18} color="#9aa09a" />
+                      </View>
+                    </Pressable>
+                  </>
+                )}
+              </View>
 
+              <View style={[styles.editInfoCard, { marginTop: 16 }]}>
+                <View style={styles.editInfoRow}>
+                  {taskFormReadOnly ? (
+                    <>
+                      <View style={[styles.taskFormChip, { opacity: 0.6 }]}>
+                        <Feather name="calendar" size={14} color="#8f968f" />
+                        <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>
+                          {taskDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </Text>
+                      </View>
+                      <View style={[styles.taskFormChip, { opacity: 0.6 }]}>
+                        <Feather name="clock" size={14} color="#8f968f" />
+                        <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>
+                          {taskDueDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                        </Text>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <Pressable style={styles.taskFormChip} onPress={() => setShowTaskDueDatePicker(true)}>
+                        <Feather name="calendar" size={14} color="#1e2b26" />
+                        <Text style={styles.taskFormChipText}>
+                          {taskDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </Text>
+                      </Pressable>
+                      <Pressable style={styles.taskFormChip} onPress={() => setShowTaskDueTimePicker(true)}>
+                        <Feather name="clock" size={14} color="#1e2b26" />
+                        <Text style={styles.taskFormChipText}>
+                          {taskDueDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                        </Text>
+                      </Pressable>
+                    </>
+                  )}
+                </View>
                 {showTaskDueDatePicker ? (
                   <DateTimePicker
                     value={taskDueDate}
@@ -1690,7 +2207,6 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                     }}
                   />
                 ) : null}
-
                 {showTaskDueTimePicker ? (
                   <DateTimePicker
                     value={taskDueDate}
@@ -1707,70 +2223,52 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                 ) : null}
               </View>
 
-              <View style={styles.taskFormSection}>
-                <Text style={styles.taskFormLabel}>Repeat</Text>
-                <View style={styles.taskFormChipRow}>
-                  {([
-                    { key: 'none', label: 'None' },
-                    { key: 'daily', label: 'Daily' },
-                    { key: 'weekly', label: 'Weekly' },
-                    { key: 'monthly', label: 'Monthly' },
-                  ] as const).map((opt) => {
-                    const selected = taskRepeat === opt.key;
-                    return (
-                      <Pressable
-                        key={opt.key}
-                        style={[styles.taskFormChoiceChip, selected && styles.taskFormChoiceChipSelected]}
-                        onPress={() => setTaskRepeat(opt.key)}
-                      >
-                        <Text style={[styles.taskFormChoiceChipText, selected && styles.taskFormChoiceChipTextSelected]}>
-                          {opt.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+              <View style={[styles.editInfoCard, { marginTop: 16 }]}>
+                <View style={styles.editInfoRow}>
+                  <Text style={styles.taskFormLabel}>Repeat</Text>
+                </View>
+                <View style={[styles.editInfoRow, { minHeight: 44, paddingBottom: 12 }]}>
+                  <View style={styles.taskFormChipRow}>
+                    {([
+                      { key: 'none', label: 'None' },
+                      { key: 'daily', label: 'Daily' },
+                      { key: 'weekly', label: 'Weekly' },
+                      { key: 'monthly', label: 'Monthly' },
+                    ] as const).map((opt) => {
+                      const selected = taskRepeatType === opt.key;
+                      const chip = (
+                        <View
+                          key={opt.key}
+                          style={[styles.taskFormChoiceChip, selected && styles.taskFormChoiceChipSelected, taskFormReadOnly && { opacity: 0.6 }]}
+                        >
+                          <Text style={[styles.taskFormChoiceChipText, selected && styles.taskFormChoiceChipTextSelected, taskFormReadOnly && { color: '#8f968f' }]}>
+                            {opt.label}
+                          </Text>
+                        </View>
+                      );
+                      return taskFormReadOnly ? chip : (
+                        <Pressable key={opt.key} onPress={() => setTaskRepeatType(opt.key as any)}>
+                          {chip}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 </View>
               </View>
 
-              <View style={styles.taskFormSection}>
-                <Text style={styles.taskFormLabel}>Reminder</Text>
-                <View style={styles.taskFormChipRow}>
-                  {([
-                    { mins: null, label: 'None' },
-                    { mins: 0, label: 'At due time' },
-                    { mins: 5, label: '5 mins before' },
-                    { mins: 15, label: '15 mins before' },
-                    { mins: 30, label: '30 mins before' },
-                    { mins: 60, label: '1 hour before' },
-                    { mins: 1440, label: '1 day before' },
-                  ] as const).map((opt) => {
-                    const selected = taskReminderMinutes === opt.mins;
-                    return (
-                      <Pressable
-                        key={String(opt.mins)}
-                        style={[styles.taskFormChoiceChip, selected && styles.taskFormChoiceChipSelected]}
-                        onPress={() => setTaskReminderMinutes(opt.mins)}
-                      >
-                        <Text style={[styles.taskFormChoiceChipText, selected && styles.taskFormChoiceChipTextSelected]}>
-                          {opt.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-
-              <View style={styles.taskFormFooter}>
+              <View style={styles.editInfoActions}>
                 <Pressable onPress={closeTaskForm}>
-                  <Text style={styles.taskFormCancelText}>Cancel</Text>
+                  <Text style={styles.editInfoCancelText}>{taskFormReadOnly ? 'Close' : 'Cancel'}</Text>
                 </Pressable>
-                <Pressable
-                  style={[styles.taskFormSubmitButton, !taskTitle.trim() && styles.taskFormSubmitButtonDisabled]}
-                  onPress={() => void handleSaveTask()}
-                  disabled={!taskTitle.trim()}
-                >
-                  <Text style={styles.taskFormSubmitText}>Create Task</Text>
-                </Pressable>
+                {taskFormReadOnly ? null : (
+                  <Pressable
+                    style={[styles.editInfoSaveButton, !taskTitle.trim() && styles.editInfoSaveButtonDisabled]}
+                    onPress={() => void handleSaveTask()}
+                    disabled={!taskTitle.trim()}
+                  >
+                    <Text style={styles.editInfoSaveText}>Create Task</Text>
+                  </Pressable>
+                )}
               </View>
             </ScrollView>
           </View>
@@ -2059,10 +2557,10 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                         }}
                       />
                     )}
-                  </View>
+              </View>
 
-                  <View style={[styles.editInfoCard, { marginTop: 16 }]}>
-                    <View style={styles.editInfoRow}>
+              <View style={[styles.editInfoCard, { marginTop: 16 }]}>
+                <View style={styles.editInfoRow}>
                       <Feather name="map-pin" size={16} color="#1e2b26" style={{ marginRight: 10 }} />
                       <TextInput
                         value={editLocation}
@@ -2455,8 +2953,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#ffffff',
     borderRadius: 20,
-    padding: 18,
+    padding: 14,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#efede8',
     ...shadowLg,
   },
   taskCardWithButton: {
@@ -2518,11 +3018,41 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 6,
   },
-  urgentTaskBadgeText: {
-    fontFamily: 'Manrope_800ExtraBold',
+  repeatBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  repeatBadgeText: {
+    fontFamily: 'Manrope_600SemiBold',
     fontSize: 9,
-    color: '#ffffff',
-    letterSpacing: 0.6,
+    color: '#4a7c6f',
+    textTransform: 'capitalize',
+  },
+  taskDeleteButton: {
+    padding: 4,
+    marginLeft: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completedSectionHeader: {
+    marginTop: 24,
+    marginBottom: 12,
+  },
+  completedSectionHeaderText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
+    color: '#8f968f',
+    letterSpacing: 0.8,
+  },
+  overdueSectionHeaderText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
+    color: '#BA1A1A',
+    letterSpacing: 0.8,
+  },
+  completedTaskCard: {
+    opacity: 0.7,
   },
   recentNoteCard: {
     backgroundColor: '#ffffff',
@@ -2883,31 +3413,10 @@ const styles = StyleSheet.create({
     color: '#101413',
     letterSpacing: -0.3,
   },
-  taskFormSection: {
-    marginBottom: 16,
-  },
   taskFormLabel: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 12,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 15,
     color: '#39423e',
-    marginBottom: 14,
-  },
-  taskFormInput: {
-    fontFamily: 'Manrope_500Medium',
-    fontSize: 16,
-    color: '#111111',
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#efede8',
-  },
-  taskFormInputMultiline: {
-    minHeight: 88,
-    textAlignVertical: 'top',
   },
   taskFormLockedRow: {
     flexDirection: 'row',
@@ -2971,35 +3480,6 @@ const styles = StyleSheet.create({
   },
   taskFormChoiceChipTextSelected: {
     color: '#ffffff',
-  },
-  taskFormFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    marginTop: 4,
-  },
-  taskFormCancelText: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 16,
-    color: '#9aa09a',
-    paddingHorizontal: 8,
-  },
-  taskFormSubmitButton: {
-    flex: 1,
-    minHeight: 58,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#0f201b',
-  },
-  taskFormSubmitButtonDisabled: {
-    opacity: 0.5,
-  },
-  taskFormSubmitText: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 16,
-    color: '#F9F9F6',
-    letterSpacing: 0.2,
   },
   noteCard: {
     backgroundColor: '#ffffff',

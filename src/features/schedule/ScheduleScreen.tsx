@@ -2,10 +2,12 @@ import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { Animated, Dimensions, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { SubjectRecord } from '../../data/local/db';
-import { getMetaValue, setMetaValue } from '../../data/local/db';
+import { getMetaValue, setMetaValue, getAllTasks, getTaskCompletions, TaskRecord, TaskCompletionRecord } from '../../data/local/db';
 import { shadowLg } from '../../ui/tokens/shadows';
 import { springModalSlide } from '../../ui/tokens/animations';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
+import { getExpandedTasksForRange } from '../../utils/recurrenceUtils';
+import { useFocusEffect } from '@react-navigation/native';
 
 const DAY_MAP: Record<string, number> = {
   Su: 0, Mo: 1, Tu: 2, We: 3, Th: 4, Fr: 5, Sa: 6,
@@ -102,6 +104,29 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const filterSlide = useRef(new Animated.Value(0)).current;
   const filterOpacity = useRef(new Animated.Value(0)).current;
+
+  const [dbTasks, setDbTasks] = useState<TaskRecord[]>([]);
+  const [taskCompletions, setTaskCompletions] = useState<TaskCompletionRecord[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+      const loadTasks = async () => {
+        try {
+          const tasks = await getAllTasks();
+          if (isActive) setDbTasks(tasks);
+          const completions = await getTaskCompletions(tasks.map((t) => t.id));
+          if (isActive) setTaskCompletions(completions);
+        } catch (e) {
+          console.warn('Failed to load tasks for schedule', e);
+        }
+      };
+      loadTasks();
+      return () => {
+        isActive = false;
+      };
+    }, [])
+  );
 
   const closeDetail = useCallback(() => {
     Animated.parallel([
@@ -242,6 +267,30 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
         map.set(matchingWeekDay.key, list);
       }
     }
+    
+    // Expand Tasks for the Week
+    const weekStart = new Date(weekDays[0].key).getTime();
+    const weekEnd = new Date(weekDays[weekDays.length - 1].key);
+    weekEnd.setHours(23, 59, 59, 999);
+    
+    const expandedTasks = getExpandedTasksForRange(dbTasks, taskCompletions, weekStart, weekEnd.getTime());
+    
+    for (const task of expandedTasks) {
+      const taskDate = new Date(task.occurrenceDate);
+      const key = getLocalDateKey(taskDate);
+      if (map.has(key)) {
+        const list = map.get(key) ?? [];
+        list.push({
+          id: task.virtualId,
+          startTime: formatTime(taskDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+          title: task.title,
+          kind: 'task',
+          isCompleted: task.isCompleted,
+        } as any);
+        map.set(key, list);
+      }
+    }
+
     for (const [key, list] of map.entries()) {
       list.sort((a, b) => {
         const timeA = parseTimeToMinutes(a.startTime) ?? 0;
@@ -251,7 +300,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
       map.set(key, list);
     }
     return map;
-  }, [subjects, weekDays]);
+  }, [subjects, weekDays, dbTasks, taskCompletions]);
 
   const entriesByDayAll = useMemo(() => {
     const map = new Map<string, ScheduleEntry[]>();
@@ -283,6 +332,32 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
         }
       }
     }
+
+    // Expand Tasks for the Month
+    const monthYear = monthDate.getFullYear();
+    const monthIdx = monthDate.getMonth();
+    const monthStart = new Date(monthYear, monthIdx, 1).getTime();
+    const monthEnd = new Date(monthYear, monthIdx + 1, 0);
+    monthEnd.setHours(23, 59, 59, 999);
+
+    const expandedTasks = getExpandedTasksForRange(dbTasks, taskCompletions, monthStart, monthEnd.getTime());
+
+    for (const task of expandedTasks) {
+      const taskDate = new Date(task.occurrenceDate);
+      const key = getLocalDateKey(taskDate);
+      if (map.has(key)) {
+        const list = map.get(key) ?? [];
+        list.push({
+          id: task.virtualId,
+          startTime: formatTime(taskDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+          title: task.title,
+          kind: 'task',
+          isCompleted: task.isCompleted,
+        } as any);
+        map.set(key, list);
+      }
+    }
+
     for (const [key, list] of map.entries()) {
       list.sort((a, b) => {
         const timeA = parseTimeToMinutes(a.startTime) ?? 0;
@@ -292,7 +367,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
       map.set(key, list);
     }
     return map;
-  }, [subjects, monthGrid, monthDate]);
+  }, [subjects, monthGrid, monthDate, dbTasks, taskCompletions]);
 
   const selectedEntries = entriesByDay.get(selectedDayKey) ?? entriesByDayAll.get(selectedDayKey) ?? [];
   const selectedDayIndex = weekDays.findIndex((day) => day.key === selectedDayKey);
@@ -582,7 +657,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
                     </View>
                   </View>
                   <View style={styles.eventIconWrapper}>
-                    <Feather name={entry.kind === 'task' ? 'check-square' : 'book-open'} size={16} color={isActive ? '#8fbaa4' : isPast ? '#c9cdc9' : '#c5c9c5'} />
+                    <Feather name={entry.kind === 'task' ? ((entry as any).isCompleted ? 'check-square' : 'square') : 'book-open'} size={16} color={isActive ? '#8fbaa4' : isPast ? '#c9cdc9' : '#c5c9c5'} />
                   </View>
                 </Pressable>
               </View>
