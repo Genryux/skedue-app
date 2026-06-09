@@ -1135,6 +1135,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
 
         {isNoteSheetOpen ? (
           <Animated.View
+            pointerEvents="box-none"
             style={[styles.noteSheetPanelWrapper, {
               transform: [{
                 translateY: noteSheetSlide.interpolate({
@@ -1154,35 +1155,30 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
                   <>
                     <Text style={styles.noteSheetTitle}>Note Actions</Text>
 
-                    <Pressable style={styles.noteSheetActionRow} onPress={togglePinned}>
-                      <View style={[styles.noteSheetActionIcon, isPinned && styles.noteSheetActionIconActive]}>
-                        <MaterialCommunityIcons name={isPinned ? 'bookmark' : 'bookmark-outline'} size={16} color={isPinned ? '#1f5f4d' : '#4d5a54'} />
-                      </View>
-                      <Text style={styles.noteSheetActionLabel}>{isPinned ? 'Unpin' : 'Pin'}</Text>
-                    </Pressable>
-
-                    <Pressable style={styles.noteSheetActionRow} onPress={() => void handleExportNote()}>
-                      <View style={styles.noteSheetActionIcon}>
-                        <Feather name="share-2" size={16} color="#4d5a54" />
-                      </View>
-                      <Text style={styles.noteSheetActionLabel}>Export</Text>
-                    </Pressable>
-
-                    <Pressable style={styles.noteSheetActionRow} onPress={() => setNoteSheetView(isQuick ? 'subjects' : 'folders')}>
-                      <View style={styles.noteSheetActionIcon}>
-                        <Feather name={isQuick ? 'book' : 'folder'} size={16} color="#4d5a54" />
-                      </View>
-                      <Text style={styles.noteSheetActionLabel}>{isQuick ? 'Move to subject...' : 'Move to folder...'}</Text>
-                    </Pressable>
-
-                    <View style={styles.noteSheetDivider} />
-
-                    <Pressable style={styles.noteSheetActionRow} onPress={handleDeleteNote}>
-                      <View style={styles.noteSheetActionIcon}>
-                        <Feather name="trash-2" size={16} color="#b42318" />
-                      </View>
-                      <Text style={[styles.noteSheetActionLabel, styles.noteSheetActionLabelDanger]}>Delete</Text>
-                    </Pressable>
+                    <View style={styles.noteSheetCard}>
+                      <Pressable style={styles.noteSheetActionRow} onPress={togglePinned}>
+                        <MaterialCommunityIcons name={isPinned ? 'bookmark' : 'bookmark-outline'} size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                        <Text style={styles.noteSheetActionLabel}>{isPinned ? 'Unpin' : 'Pin'}</Text>
+                        {isPinned ? <Feather name="check" size={18} color="#0f2a24" /> : <Feather name="chevron-right" size={18} color="#9aa09a" />}
+                      </Pressable>
+                      <View style={styles.noteSheetDivider} />
+                      <Pressable style={styles.noteSheetActionRow} onPress={() => void handleExportNote()}>
+                        <Feather name="share-2" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                        <Text style={styles.noteSheetActionLabel}>Export</Text>
+                        <Feather name="chevron-right" size={18} color="#9aa09a" />
+                      </Pressable>
+                      <View style={styles.noteSheetDivider} />
+                      <Pressable style={styles.noteSheetActionRow} onPress={() => setNoteSheetView(isQuick ? 'subjects' : 'folders')}>
+                        <Feather name={isQuick ? 'book' : 'folder'} size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                        <Text style={styles.noteSheetActionLabel}>{isQuick ? 'Move to subject...' : 'Move to folder...'}</Text>
+                        <Feather name="chevron-right" size={18} color="#9aa09a" />
+                      </Pressable>
+                      <View style={styles.noteSheetDivider} />
+                      <Pressable style={styles.noteSheetActionRow} onPress={handleDeleteNote}>
+                        <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
+                        <Text style={[styles.noteSheetActionLabel, { color: '#b42318' }]}>Delete</Text>
+                      </Pressable>
+                    </View>
                   </>
                 )}
 
@@ -1194,7 +1190,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
                     </Text>
 
                     <View style={styles.noteSheetDeleteActions}>
-                      <Pressable style={styles.noteSheetCancelButton} onPress={cancelDelete}>
+                      <Pressable onPress={cancelDelete}>
                         <Text style={styles.noteSheetCancelText}>Cancel</Text>
                       </Pressable>
                       <Pressable style={styles.noteSheetDeleteButton} onPress={confirmDelete}>
@@ -1214,23 +1210,24 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
                       <View style={{ width: 22 }} />
                     </View>
 
-                    <Pressable style={styles.noteSheetActionRow} onPress={() => handleFolderSelect(null)}>
-                      <View style={styles.noteSheetActionIcon}>
-                        <Feather name="file-text" size={16} color="#4d5a54" />
-                      </View>
-                      <Text style={styles.noteSheetActionLabel}>Loose notes</Text>
-                      {!folderId ? <Feather name="check" size={16} color="#1f5f4d" /> : null}
-                    </Pressable>
-
-                    {folderOptions.map((folder) => (
-                      <Pressable key={folder.id} style={styles.noteSheetActionRow} onPress={() => handleFolderSelect(folder.id)}>
-                        <View style={[styles.noteSheetActionIcon, { backgroundColor: folder.color + '20' }]}>
-                          <Feather name="folder" size={16} color={folder.color} />
-                        </View>
-                        <Text style={styles.noteSheetActionLabel}>{folder.title}</Text>
-                        {folder.id === folderId ? <Feather name="check" size={16} color="#1f5f4d" /> : null}
+                    <View style={styles.noteSheetCard}>
+                      <Pressable style={styles.noteSheetActionRow} onPress={() => handleFolderSelect(null)}>
+                        <Feather name="file-text" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                        <Text style={styles.noteSheetActionLabel}>Loose notes</Text>
+                        {!folderId ? <Feather name="check" size={18} color="#0f2a24" /> : null}
                       </Pressable>
-                    ))}
+
+                      {folderOptions.map((folder, index) => (
+                        <View key={folder.id}>
+                          <View style={styles.noteSheetDivider} />
+                          <Pressable style={styles.noteSheetActionRow} onPress={() => handleFolderSelect(folder.id)}>
+                            <Feather name="folder" size={16} color={folder.color} style={{ marginRight: 10 }} />
+                            <Text style={styles.noteSheetActionLabel}>{folder.title}</Text>
+                            {folder.id === folderId ? <Feather name="check" size={18} color="#0f2a24" /> : null}
+                          </Pressable>
+                        </View>
+                      ))}
+                    </View>
                   </>
                 )}
 
@@ -1244,18 +1241,21 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
                       <View style={{ width: 22 }} />
                     </View>
 
-                    {(subjectOptions ?? []).map((subject) => {
-                      const isSelected = (pendingSubjectId ?? subjectId) === subject.id;
-                      return (
-                        <Pressable key={subject.id} style={styles.noteSheetActionRow} onPress={() => handleSubjectSelect(subject.id)}>
-                          <View style={styles.noteSheetActionIcon}>
-                            <Feather name="book" size={16} color="#4d5a54" />
+                    <View style={styles.noteSheetCard}>
+                      {(subjectOptions ?? []).map((subject, index) => {
+                        const isSelected = (pendingSubjectId ?? subjectId) === subject.id;
+                        return (
+                          <View key={subject.id}>
+                            {index > 0 && <View style={styles.noteSheetDivider} />}
+                            <Pressable style={styles.noteSheetActionRow} onPress={() => handleSubjectSelect(subject.id)}>
+                              <Feather name="book" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                              <Text style={styles.noteSheetActionLabel}>{subject.code} — {subject.title}</Text>
+                              {isSelected ? <Feather name="check" size={18} color="#0f2a24" /> : null}
+                            </Pressable>
                           </View>
-                          <Text style={styles.noteSheetActionLabel}>{subject.code} — {subject.title}</Text>
-                          {isSelected ? <Feather name="check" size={16} color="#1f5f4d" /> : null}
-                        </Pressable>
-                      );
-                    })}
+                        );
+                      })}
+                    </View>
                   </>
                 )}
               </ScrollView>
@@ -1629,15 +1629,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    top: 0,
     zIndex: 100,
+    justifyContent: 'flex-end',
   },
   noteSheetPanel: {
     backgroundColor: '#f8f7f2',
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    paddingHorizontal: 24,
+    paddingHorizontal: 18,
     paddingTop: 10,
-    paddingBottom: 40,
+    paddingBottom: 20,
     ...shadowLg,
   },
   noteSheetHandle: {
@@ -1648,44 +1650,38 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 16,
   },
+  noteSheetCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    overflow: 'hidden',
+    ...shadowLg,
+  },
   noteSheetTitle: {
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 24,
-    color: '#111111',
-    letterSpacing: -0.4,
-    marginBottom: 20,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 18,
+    color: '#101413',
+    letterSpacing: -0.3,
+    marginBottom: 18,
+    textAlign: 'center',
   },
   noteSheetActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 16,
-    paddingHorizontal: 4,
+    paddingHorizontal: 16,
+    minHeight: 52,
   },
   noteSheetActionIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f2f4f1',
-  },
-  noteSheetActionIconActive: {
-    backgroundColor: '#e6f2ed',
+    marginRight: 10,
   },
   noteSheetActionLabel: {
     flex: 1,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
-    color: '#111111',
-  },
-  noteSheetActionLabelDanger: {
-    color: '#b42318',
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 16,
+    color: '#1e2b26',
   },
   noteSheetDivider: {
     height: 1,
-    backgroundColor: '#e8e6de',
-    marginVertical: 4,
+    backgroundColor: '#f0f0ed',
   },
   noteSheetFolderHeader: {
     flexDirection: 'row',
@@ -1694,9 +1690,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   noteSheetFolderTitle: {
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 20,
-    color: '#111111',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 18,
+    color: '#101413',
     letterSpacing: -0.3,
   },
   noteSheetDeleteBody: {
@@ -1708,32 +1704,27 @@ const styles = StyleSheet.create({
   },
   noteSheetDeleteActions: {
     flexDirection: 'row',
-    gap: 10,
-  },
-  noteSheetCancelButton: {
-    flex: 1,
-    height: 46,
-    borderRadius: 16,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#eef2ee',
+    gap: 16,
+    marginTop: 20,
   },
   noteSheetCancelText: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
-    color: '#1f2b25',
+    fontSize: 16,
+    color: '#9aa09a',
+    paddingHorizontal: 8,
   },
   noteSheetDeleteButton: {
     flex: 1,
-    height: 46,
-    borderRadius: 16,
+    minHeight: 58,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#b42318',
   },
   noteSheetDeleteText: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
+    fontSize: 16,
     color: '#ffffff',
   },
 });

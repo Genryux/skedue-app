@@ -1,5 +1,7 @@
 import { TaskRecord, TaskCompletionRecord } from '../data/local/db';
 
+export const END_OF_TIME = 4102444800000;
+
 export const DAY_MAP: Record<string, number> = {
   su: 0, mo: 1, tu: 2, we: 3, th: 4, fr: 5, sa: 6,
   sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6,
@@ -10,8 +12,8 @@ export const calculateNextOccurrenceDate = (
   task: Pick<TaskRecord, 'startDate' | 'dueAt' | 'repeatType' | 'repeatInterval' | 'repeatDays' | 'endDate'>,
   afterDate: number = Date.now()
 ): number => {
-  if (task.repeatType === 'none') {
-    return 4102444800000; // Always done — non-recurring task completed
+  if (task.repeatType === 'none' || !task.startDate) {
+    return END_OF_TIME;
   }
 
   const baseDate = new Date(task.startDate);
@@ -26,6 +28,12 @@ export const calculateNextOccurrenceDate = (
   while (next.getTime() <= afterDate) {
     if (task.repeatType === 'daily') {
       next.setDate(next.getDate() + interval);
+      if (task.repeatDays && task.repeatDays.length > 0) {
+        const days = task.repeatDays.map(d => DAY_MAP[d.toLowerCase()]).sort();
+        while (!days.includes(next.getDay())) {
+          next.setDate(next.getDate() + 1);
+        }
+      }
     } else if (task.repeatType === 'weekly') {
       if (task.repeatDays && task.repeatDays.length > 0) {
         const days = task.repeatDays.map(d => DAY_MAP[d.toLowerCase()]).sort();
@@ -51,7 +59,7 @@ export const calculateNextOccurrenceDate = (
   }
 
   if (task.endDate && next.getTime() > task.endDate) {
-    return 4102444800000;
+    return END_OF_TIME;
   }
 
   return next.getTime();
@@ -82,6 +90,7 @@ export const getExpandedTasksForRange = (
   const expanded: ExpandedTask[] = [];
 
   for (const task of tasks) {
+    if (!task.startDate) continue;
     if (task.startDate > rangeEnd) continue;
     if (task.endDate && task.startDate > task.endDate) continue;
 
@@ -90,10 +99,18 @@ export const getExpandedTasksForRange = (
 
     // Fast-forward optimization for daily and simple weekly
     if (task.repeatType === 'daily') {
-      if (current.getTime() < rangeStart) {
+      if (current.getTime() < rangeStart && (!task.repeatDays || task.repeatDays.length === 0)) {
         const diffDays = Math.floor((rangeStart - current.getTime()) / (1000 * 60 * 60 * 24));
         const intervalsToSkip = Math.floor(diffDays / interval);
         current.setDate(current.getDate() + intervalsToSkip * interval);
+      } else if (current.getTime() < rangeStart && task.repeatDays && task.repeatDays.length > 0) {
+        const days = task.repeatDays.map(d => DAY_MAP[d.toLowerCase()]).sort();
+        while (current.getTime() < rangeStart) {
+          current.setDate(current.getDate() + interval);
+          while (!days.includes(current.getDay())) {
+            current.setDate(current.getDate() + 1);
+          }
+        }
       }
     } else if (task.repeatType === 'weekly' && (!task.repeatDays || task.repeatDays.length === 0)) {
       if (current.getTime() < rangeStart) {
@@ -125,6 +142,12 @@ export const getExpandedTasksForRange = (
 
       if (task.repeatType === 'daily') {
         current.setDate(current.getDate() + interval);
+        if (task.repeatDays && task.repeatDays.length > 0) {
+          const days = task.repeatDays.map(d => DAY_MAP[d.toLowerCase()]).sort();
+          while (!days.includes(current.getDay())) {
+            current.setDate(current.getDate() + 1);
+          }
+        }
       } else if (task.repeatType === 'weekly') {
         if (task.repeatDays && task.repeatDays.length > 0) {
           const days = task.repeatDays.map(d => DAY_MAP[d.toLowerCase()]).sort();

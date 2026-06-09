@@ -174,4 +174,44 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 11,
+    up: async (db) => {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS tasks_new (
+          id TEXT PRIMARY KEY,
+          subjectId TEXT NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT,
+          dueAt INTEGER,
+          repeat TEXT NOT NULL DEFAULT 'none',
+          reminderMinutes INTEGER,
+          isCompleted INTEGER NOT NULL DEFAULT 0,
+          createdAt INTEGER NOT NULL,
+          updatedAt INTEGER NOT NULL,
+          repeatType TEXT NOT NULL DEFAULT 'none',
+          repeatInterval INTEGER,
+          repeatDays TEXT,
+          startDate INTEGER,
+          endDate INTEGER,
+          nextOccurrenceDate INTEGER NOT NULL DEFAULT 0,
+          priority TEXT,
+          category TEXT,
+          FOREIGN KEY(subjectId) REFERENCES subjects(id) ON DELETE CASCADE
+        );
+        INSERT INTO tasks_new (
+          id, subjectId, title, description, dueAt, repeat, reminderMinutes,
+          isCompleted, createdAt, updatedAt, repeatType, repeatInterval,
+          repeatDays, startDate, endDate, nextOccurrenceDate, priority, category
+        )
+        SELECT
+          id, subjectId, title, description, dueAt, repeat, reminderMinutes,
+          isCompleted, createdAt, updatedAt, repeatType, repeatInterval,
+          repeatDays, startDate, endDate, nextOccurrenceDate, priority, category
+        FROM tasks;
+        DROP TABLE tasks;
+        ALTER TABLE tasks_new RENAME TO tasks;
+      `);
+    },
+  },
 ];

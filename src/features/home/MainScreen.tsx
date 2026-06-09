@@ -23,7 +23,7 @@ import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
 import { getAllNotes, getAllTasks, getMetaValue, getNotesBySubjectId, getSubjects, insertSubject, insertNote, updateNote, deleteNote, findRecentMatchingNote, setMetaValue, updateSubject, completeTaskOccurrence, type SubjectRecord, type NoteRecord, type TaskRecord } from '../../data/local/db';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
-import { calculateNextOccurrenceDate, isSameCalendarDay } from '../../utils/recurrenceUtils';
+import { calculateNextOccurrenceDate, isSameCalendarDay, END_OF_TIME } from '../../utils/recurrenceUtils';
 import ScheduleScreen from '../schedule/ScheduleScreen';
 import AddSubjectScreen from '../subjects/AddSubjectScreen';
 import SubjectsScreen from '../subjects/SubjectsScreen';
@@ -174,7 +174,7 @@ export default function MainScreen() {
       const tasks = await getAllTasks();
       const activeSubjectIds = new Set(dbSubjects.filter((s) => !s.isArchived).map((s) => s.id));
       const pending = tasks.filter(
-        (t) => t.nextOccurrenceDate < 4102444800000 && activeSubjectIds.has(t.subjectId)
+        (t) => t.nextOccurrenceDate < END_OF_TIME && activeSubjectIds.has(t.subjectId)
       ).sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate);
       setPendingTasks(pending);
     } catch (err) {
@@ -194,7 +194,7 @@ export default function MainScreen() {
       setPendingTasks((current) =>
         current
           .map((t) => (t.id === task.id ? { ...t, nextOccurrenceDate: next } : t))
-          .filter((t) => t.nextOccurrenceDate < 4102444800000)
+          .filter((t) => t.nextOccurrenceDate < END_OF_TIME)
           .sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate)
       );
     } catch (error) {

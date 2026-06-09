@@ -7,7 +7,6 @@ import {
   BackHandler,
   Dimensions,
   Keyboard,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -37,27 +36,7 @@ import {
 } from '../../src/data/local/db';
 import { shadowLg, shadowLgDark } from '../../src/ui/tokens/shadows';
 import { springModalSlide, useDragToClose } from '../../src/ui/tokens/animations';
-
-const NoteEditorScreen = require('../../src/features/subjects/NoteEditorScreen').default as React.ComponentType<{
-  subjectId: string;
-  subjectTitle: string;
-  note: NoteRecord | null;
-  defaultFolderId?: string;
-  folderOptions: Array<{ id: string; title: string; color: string }>;
-  onClose: (options?: { saved?: boolean; deleted?: boolean }) => void;
-  onSave: (
-    noteId: string | null,
-    draft: {
-      subjectId: string;
-      folderId: string | null;
-      title: string;
-      contentHtml: string;
-      contentText: string;
-      isPinned: boolean;
-    }
-  ) => Promise<NoteRecord>;
-  onDelete: (noteId: string) => Promise<void> | void;
-}>;
+import NoteEditorScreen from '../../src/features/subjects/NoteEditorScreen';
 
 const isLightColor = (hex: string) => {
   const c = hex.replace('#', '');
@@ -235,7 +214,7 @@ export default function FolderScreen() {
       }),
     ]).start();
     if (folder && id) {
-      getFoldersBySubjectId(folder.subjectId).then(setAllSubjectFolders);
+      getFoldersBySubjectId(folder.subjectId).then(setAllSubjectFolders).catch(console.warn);
     }
   }, [folder, id, folderMenuSlide, folderMenuOpacity]);
 
@@ -280,38 +259,58 @@ export default function FolderScreen() {
 
   const handleRenameFolder = useCallback(async () => {
     if (!folder || !renameText.trim() || !id) return;
-    await updateFolder(id, { title: renameText.trim() });
-    setFolder((prev) => prev ? { ...prev, title: renameText.trim() } : null);
-    closeFolderMenu();
+    try {
+      await updateFolder(id, { title: renameText.trim() });
+      setFolder((prev) => prev ? { ...prev, title: renameText.trim() } : null);
+      closeFolderMenu();
+    } catch (error) {
+      console.warn('Failed to rename folder', error);
+    }
   }, [folder, renameText, id, closeFolderMenu]);
 
   const handleDeleteFolder = useCallback(async () => {
     if (!folder || !id) return;
-    await deleteFolder(id);
-    router.back();
+    try {
+      await deleteFolder(id);
+      router.back();
+    } catch (error) {
+      console.warn('Failed to delete folder', error);
+    }
   }, [folder, id, router]);
 
   const handleChangeColor = useCallback(async (color: string) => {
     if (!folder || !id) return;
-    await updateFolder(id, { color });
-    setFolder((prev) => prev ? { ...prev, color } : null);
-    setSelectedColor(color);
-    setFolderMenuView('main');
+    try {
+      await updateFolder(id, { color });
+      setFolder((prev) => prev ? { ...prev, color } : null);
+      setSelectedColor(color);
+      setFolderMenuView('main');
+    } catch (error) {
+      console.warn('Failed to change folder color', error);
+    }
   }, [folder, id]);
 
   const handleTogglePin = useCallback(async () => {
     if (!folder || !id) return;
-    const newPinned = !folder.isPinned;
-    await updateFolder(id, { isPinned: newPinned });
-    setFolder((prev) => prev ? { ...prev, isPinned: newPinned } : null);
-    closeFolderMenu();
+    try {
+      const newPinned = !folder.isPinned;
+      await updateFolder(id, { isPinned: newPinned });
+      setFolder((prev) => prev ? { ...prev, isPinned: newPinned } : null);
+      closeFolderMenu();
+    } catch (error) {
+      console.warn('Failed to toggle folder pin', error);
+    }
   }, [folder, id, closeFolderMenu]);
 
   const handleMoveNotes = useCallback(async (targetId: string | null) => {
     if (!id) return;
-    await moveNotesToFolder(id, targetId);
-    if (id) setNotes(await getNotesByFolderId(id));
-    closeFolderMenu();
+    try {
+      await moveNotesToFolder(id, targetId);
+      if (id) setNotes(await getNotesByFolderId(id));
+      closeFolderMenu();
+    } catch (error) {
+      console.warn('Failed to move notes', error);
+    }
   }, [id, closeFolderMenu]);
 
   const switchViewMode = useCallback((mode: 'list' | 'card' | 'grid') => {
@@ -511,8 +510,9 @@ export default function FolderScreen() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      <Animated.View
-        style={[
+        <Animated.View
+          pointerEvents="box-none"
+          style={[
           styles.searchDock,
           {
             bottom: keyboardHeight > 0 ? keyboardHeight + 32 : 20,
@@ -569,6 +569,7 @@ export default function FolderScreen() {
 
       {isFolderMenuOpen ? (
         <Animated.View
+          pointerEvents="box-none"
           style={[
             styles.folderMenuPanelWrapper,
             {
@@ -594,59 +595,67 @@ export default function FolderScreen() {
                 <>
                   <Text style={styles.folderMenuTitle}>Folder Actions</Text>
 
-                  <Pressable style={styles.folderMenuActionRow} onPress={() => setFolderMenuView('rename')}>
-                    <Feather name="edit-2" size={18} color="#1e2b26" />
-                    <Text style={styles.folderMenuActionText}>Rename</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.folderMenuActionRow} onPress={() => setFolderMenuView('color')}>
-                    <Feather name="circle" size={18} color="#1e2b26" />
-                    <Text style={styles.folderMenuActionText}>Change color</Text>
-                    <View style={[styles.folderMenuColorPreview, { backgroundColor: folder.color }]} />
-                  </Pressable>
-
-                  <Pressable style={styles.folderMenuActionRow} onPress={handleTogglePin}>
-                    <MaterialCommunityIcons name={folder.isPinned ? 'bookmark' : 'bookmark-outline'} size={18} color="#1e2b26" />
-                    <Text style={styles.folderMenuActionText}>{folder.isPinned ? 'Unpin' : 'Pin'}</Text>
-                    {folder.isPinned ? <Feather name="check" size={16} color="#1f5f4d" /> : null}
-                  </Pressable>
-
-                  <Pressable style={styles.folderMenuActionRow} onPress={() => setFolderMenuView('info')}>
-                    <Feather name="info" size={18} color="#1e2b26" />
-                    <Text style={styles.folderMenuActionText}>Folder info</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.folderMenuActionRow} onPress={() => setFolderMenuView('view')}>
-                    <Feather name="layout" size={18} color="#1e2b26" />
-                    <Text style={styles.folderMenuActionText}>View</Text>
-                    <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 13, color: '#8f968f', textTransform: 'capitalize' }}>{noteViewMode}</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.folderMenuActionRow} onPress={() => setFolderMenuView('move')}>
-                    <Feather name="corner-up-right" size={18} color="#1e2b26" />
-                    <Text style={styles.folderMenuActionText}>Move all notes to...</Text>
-                  </Pressable>
-
-                  <View style={styles.folderMenuDivider} />
-
-                  <Pressable style={styles.folderMenuActionRow} onPress={() => { setDeleteConfirmInput(''); setFolderMenuView('delete'); }}>
-                    <Feather name="trash-2" size={18} color="#b42318" />
-                    <Text style={[styles.folderMenuActionText, { color: '#b42318' }]}>Delete folder</Text>
-                  </Pressable>
+                  <View style={[styles.folderMenuCard, { marginBottom: 20 }]}>
+                    <Pressable style={styles.folderMenuActionRow} onPress={() => setFolderMenuView('rename')}>
+                      <Feather name="edit-2" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                      <Text style={[styles.folderMenuActionText, { color: '#1e2b26' }]}>Rename</Text>
+                      <Feather name="chevron-right" size={18} color="#9aa09a" />
+                    </Pressable>
+                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <Pressable style={styles.folderMenuActionRow} onPress={() => setFolderMenuView('color')}>
+                      <Feather name="circle" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                      <Text style={[styles.folderMenuActionText, { color: '#1e2b26' }]}>Change color</Text>
+                      <View style={[styles.folderMenuColorPreview, { backgroundColor: folder.color }]} />
+                    </Pressable>
+                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <Pressable style={styles.folderMenuActionRow} onPress={handleTogglePin}>
+                      <MaterialCommunityIcons name={folder.isPinned ? 'bookmark' : 'bookmark-outline'} size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                      <Text style={[styles.folderMenuActionText, { color: '#1e2b26' }]}>{folder.isPinned ? 'Unpin' : 'Pin'}</Text>
+                      {folder.isPinned ? <Feather name="check" size={18} color="#0f2a24" /> : null}
+                    </Pressable>
+                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <Pressable style={styles.folderMenuActionRow} onPress={() => setFolderMenuView('info')}>
+                      <Feather name="info" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                      <Text style={[styles.folderMenuActionText, { color: '#1e2b26' }]}>Folder info</Text>
+                      <Feather name="chevron-right" size={18} color="#9aa09a" />
+                    </Pressable>
+                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <Pressable style={styles.folderMenuActionRow} onPress={() => setFolderMenuView('view')}>
+                      <Feather name="layout" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                      <Text style={[styles.folderMenuActionText, { color: '#1e2b26' }]}>View</Text>
+                      <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 13, color: '#8f968f', textTransform: 'capitalize' }}>{noteViewMode}</Text>
+                    </Pressable>
+                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <Pressable style={styles.folderMenuActionRow} onPress={() => setFolderMenuView('move')}>
+                      <Feather name="corner-up-right" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                      <Text style={[styles.folderMenuActionText, { color: '#1e2b26' }]}>Move all notes to...</Text>
+                      <Feather name="chevron-right" size={18} color="#9aa09a" />
+                    </Pressable>
+                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <Pressable style={styles.folderMenuActionRow} onPress={() => { setDeleteConfirmInput(''); setFolderMenuView('delete'); }}>
+                      <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
+                      <Text style={[styles.folderMenuActionText, { color: '#b42318' }]}>Delete folder</Text>
+                    </Pressable>
+                  </View>
                 </>
               )}
 
               {folderMenuView === 'rename' && (
                 <>
                   <Text style={styles.folderMenuTitle}>Rename folder</Text>
-                  <TextInput
-                    value={renameText}
-                    onChangeText={setRenameText}
-                    style={styles.folderMenuInput}
-                    placeholder="Folder name"
-                    placeholderTextColor="#a7a7a1"
-                  />
-                  <View style={styles.folderMenuActionRow}>
+                  <View style={styles.folderMenuCard}>
+                    <View style={styles.folderMenuActionRow}>
+                      <Feather name="folder" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                      <TextInput
+                        value={renameText}
+                        onChangeText={setRenameText}
+                        style={styles.folderMenuInput}
+                        placeholder="Folder name"
+                        placeholderTextColor="#91948f"
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.editInfoActions}>
                     <Pressable onPress={() => setFolderMenuView('main')}>
                       <Text style={styles.folderMenuCancelText}>Cancel</Text>
                     </Pressable>
@@ -673,8 +682,8 @@ export default function FolderScreen() {
                       />
                     ))}
                   </View>
-                  <Pressable style={styles.folderMenuBackAction} onPress={() => setFolderMenuView('main')}>
-                    <Text style={styles.folderMenuBackText}>Back</Text>
+                  <Pressable style={styles.subModalBackRow} onPress={() => setFolderMenuView('main')}>
+                    <Text style={styles.subModalBackText}>Back</Text>
                   </Pressable>
                 </>
               )}
@@ -682,30 +691,36 @@ export default function FolderScreen() {
               {folderMenuView === 'info' && (
                 <>
                   <Text style={styles.folderMenuTitle}>Folder info</Text>
-                  <View style={styles.folderMenuInfoRow}>
-                    <Text style={styles.folderMenuInfoLabel}>Name</Text>
-                    <Text style={styles.folderMenuInfoValue}>{folder.title}</Text>
+                  <View style={styles.folderMenuCard}>
+                    <View style={styles.folderMenuActionRow}>
+                      <Text style={styles.folderMenuInfoLabel}>Name</Text>
+                      <Text style={styles.folderMenuInfoValue}>{folder.title}</Text>
+                    </View>
+                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <View style={styles.folderMenuActionRow}>
+                      <Text style={styles.folderMenuInfoLabel}>Subject</Text>
+                      <Text style={styles.folderMenuInfoValue}>{subject?.title || '—'}</Text>
+                    </View>
+                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <View style={styles.folderMenuActionRow}>
+                      <Text style={styles.folderMenuInfoLabel}>Notes</Text>
+                      <Text style={styles.folderMenuInfoValue}>{notes.length}</Text>
+                    </View>
+                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <View style={styles.folderMenuActionRow}>
+                      <Text style={styles.folderMenuInfoLabel}>Created</Text>
+                      <Text style={styles.folderMenuInfoValue}>
+                        {new Date(folder.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                      </Text>
+                    </View>
+                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <View style={styles.folderMenuActionRow}>
+                      <Text style={styles.folderMenuInfoLabel}>Color</Text>
+                      <View style={[styles.folderMenuInfoColorDot, { backgroundColor: folder.color }]} />
+                    </View>
                   </View>
-                  <View style={styles.folderMenuInfoRow}>
-                    <Text style={styles.folderMenuInfoLabel}>Subject</Text>
-                    <Text style={styles.folderMenuInfoValue}>{subject?.title || '—'}</Text>
-                  </View>
-                  <View style={styles.folderMenuInfoRow}>
-                    <Text style={styles.folderMenuInfoLabel}>Notes</Text>
-                    <Text style={styles.folderMenuInfoValue}>{notes.length}</Text>
-                  </View>
-                  <View style={styles.folderMenuInfoRow}>
-                    <Text style={styles.folderMenuInfoLabel}>Created</Text>
-                    <Text style={styles.folderMenuInfoValue}>
-                      {new Date(folder.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                    </Text>
-                  </View>
-                  <View style={styles.folderMenuInfoRow}>
-                    <Text style={styles.folderMenuInfoLabel}>Color</Text>
-                    <View style={[styles.folderMenuInfoColorDot, { backgroundColor: folder.color }]} />
-                  </View>
-                  <Pressable style={styles.folderMenuBackAction} onPress={() => setFolderMenuView('main')}>
-                    <Text style={styles.folderMenuBackText}>Back</Text>
+                  <Pressable style={styles.subModalBackRow} onPress={() => setFolderMenuView('main')}>
+                    <Text style={styles.subModalBackText}>Back</Text>
                   </Pressable>
                 </>
               )}
@@ -713,27 +728,31 @@ export default function FolderScreen() {
               {folderMenuView === 'move' && (
                 <>
                   <Text style={styles.folderMenuTitle}>Move all notes to...</Text>
-                  <Pressable
-                    style={styles.folderMenuActionRow}
-                    onPress={() => handleMoveNotes(null)}
-                  >
-                    <Feather name="inbox" size={18} color="#8f968f" />
-                    <Text style={styles.folderMenuActionText}>Loose notes</Text>
-                  </Pressable>
-                  {allSubjectFolders
-                    .filter((f) => f.id !== folder.id)
-                    .map((f) => (
-                      <Pressable
-                        key={f.id}
-                        style={styles.folderMenuActionRow}
-                        onPress={() => handleMoveNotes(f.id)}
-                      >
-                        <Feather name="folder" size={18} color="#8f968f" />
-                        <Text style={styles.folderMenuActionText}>{f.title}</Text>
-                      </Pressable>
-                    ))}
-                  <Pressable style={styles.folderMenuBackAction} onPress={() => setFolderMenuView('main')}>
-                    <Text style={styles.folderMenuBackText}>Back</Text>
+                  <View style={styles.folderMenuCard}>
+                    <Pressable
+                      style={styles.folderMenuActionRow}
+                      onPress={() => handleMoveNotes(null)}
+                    >
+                      <Feather name="inbox" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                      <Text style={styles.folderMenuActionText}>Loose notes</Text>
+                    </Pressable>
+                    {allSubjectFolders
+                      .filter((f) => f.id !== folder.id)
+                      .map((f, index) => (
+                        <View key={f.id}>
+                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <Pressable
+                            style={styles.folderMenuActionRow}
+                            onPress={() => handleMoveNotes(f.id)}
+                          >
+                            <Feather name="folder" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                            <Text style={styles.folderMenuActionText}>{f.title}</Text>
+                          </Pressable>
+                        </View>
+                      ))}
+                  </View>
+                  <Pressable style={styles.subModalBackRow} onPress={() => setFolderMenuView('main')}>
+                    <Text style={styles.subModalBackText}>Back</Text>
                   </Pressable>
                 </>
               )}
@@ -741,23 +760,27 @@ export default function FolderScreen() {
               {folderMenuView === 'view' && (
                 <>
                   <Text style={styles.folderMenuTitle}>View mode</Text>
+                  <View style={styles.folderMenuCard}>
+                    {(['list', 'card', 'grid'] as const).map((mode, index) => (
+                      <View key={mode}>
+                        {index > 0 && <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />}
+                        <Pressable
+                          style={styles.folderMenuActionRow}
+                          onPress={() => switchViewMode(mode)}
+                        >
+                          <Feather name={mode === 'list' ? 'align-left' : mode === 'card' ? 'credit-card' : 'grid'} size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                          <Text style={[styles.folderMenuActionText, { color: '#1e2b26' }]}>{mode === 'list' ? 'List' : mode === 'card' ? 'Card' : 'Grid'}</Text>
+                          {noteViewMode === mode ? <Feather name="check" size={18} color="#0f2a24" /> : null}
+                        </Pressable>
+                      </View>
+                    ))}
+                  </View>
                   <View style={styles.folderMenuNote}>
                     <Feather name="info" size={14} color="#8f968f" />
                     <Text style={styles.folderMenuNoteText}>Applies to all folders</Text>
                   </View>
-                  {(['list', 'card', 'grid'] as const).map((mode) => (
-                    <Pressable
-                      key={mode}
-                      style={styles.folderMenuActionRow}
-                      onPress={() => switchViewMode(mode)}
-                    >
-                      <Feather name={mode === 'list' ? 'align-left' : mode === 'card' ? 'credit-card' : 'grid'} size={18} color="#1e2b26" />
-                      <Text style={styles.folderMenuActionText}>{mode === 'list' ? 'List' : mode === 'card' ? 'Card' : 'Grid'}</Text>
-                      {noteViewMode === mode ? <Feather name="check" size={16} color="#1f5f4d" /> : null}
-                    </Pressable>
-                  ))}
-                  <Pressable style={styles.folderMenuBackAction} onPress={() => setFolderMenuView('main')}>
-                    <Text style={styles.folderMenuBackText}>Back</Text>
+                  <Pressable style={styles.subModalBackRow} onPress={() => setFolderMenuView('main')}>
+                    <Text style={styles.subModalBackText}>Back</Text>
                   </Pressable>
                 </>
               )}
@@ -1027,19 +1050,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    top: 0,
     zIndex: 100,
+    justifyContent: 'flex-end',
   },
   folderMenuPanel: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     backgroundColor: '#f8f7f2',
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    paddingHorizontal: 24,
+    paddingHorizontal: 18,
     paddingTop: 10,
-    paddingBottom: 40,
+    paddingBottom: 20,
     ...shadowLg,
   },
   folderMenuHandle: {
@@ -1050,22 +1071,29 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 16,
   },
+  folderMenuCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    overflow: 'hidden',
+    ...shadowLg,
+  },
   folderMenuTitle: {
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 24,
-    color: '#111111',
-    letterSpacing: -0.4,
-    marginBottom: 20,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 18,
+    color: '#101413',
+    letterSpacing: -0.3,
+    marginBottom: 18,
+    textAlign: 'center',
   },
   folderMenuActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    marginTop: 20,
+    paddingHorizontal: 16,
+    minHeight: 52,
   },
   folderMenuActionText: {
     flex: 1,
-    fontFamily: 'Manrope_600SemiBold',
+    fontFamily: 'Manrope_500Medium',
     fontSize: 16,
     color: '#1e2b26',
   },
@@ -1082,8 +1110,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
+    marginTop: 14,
     marginBottom: 20,
-    marginTop: -10,
+  },
+  editInfoActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 16,
   },
   folderMenuNoteText: {
     fontFamily: 'Manrope_500Medium',
@@ -1091,19 +1125,12 @@ const styles = StyleSheet.create({
     color: '#5f6661',
     flex: 1,
   },
-  folderMenuDivider: {
-    height: 1,
-    backgroundColor: '#e8e6de',
-    marginVertical: 4,
-  },
   folderMenuInput: {
+    flex: 1,
     fontFamily: 'Manrope_500Medium',
-    fontSize: 17,
-    color: '#111111',
-    borderBottomWidth: 2,
-    borderBottomColor: '#2d4d43',
-    paddingVertical: 10,
-    marginBottom: 24,
+    fontSize: 16,
+    color: '#1e2b26',
+    paddingVertical: 14,
   },
   folderMenuCancelText: {
     fontFamily: 'Manrope_700Bold',
@@ -1117,13 +1144,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1c2f2a',
+    backgroundColor: '#0f2a24',
   },
   folderMenuSaveText: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
     color: '#ffffff',
-    letterSpacing: 0.2,
   },
   folderMenuColorGrid: {
     flexDirection: 'row',
@@ -1140,21 +1166,15 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#111111',
   },
-  folderMenuBackAction: {
+  subModalBackRow: {
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 16,
+    marginTop: 4,
   },
-  folderMenuBackText: {
-    fontFamily: 'Manrope_700Bold',
+  subModalBackText: {
+    fontFamily: 'Manrope_600SemiBold',
     fontSize: 15,
-    color: '#2d4d43',
-  },
-  folderMenuInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#efede8',
+    color: '#66706b',
   },
   folderMenuInfoLabel: {
     width: 80,
@@ -1179,10 +1199,6 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     color: '#5f6661',
     marginBottom: 24,
-  },
-  folderMenuDeleteActions: {
-    flexDirection: 'row',
-    gap: 10,
   },
   folderMenuDeleteInput: {
     fontFamily: 'Manrope_500Medium',

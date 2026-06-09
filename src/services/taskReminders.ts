@@ -94,8 +94,8 @@ export const openExactAlarmSettings = async (): Promise<boolean> => {
   }
 };
 
-export const getTaskReminderFireAt = (dueAt: number, reminderMinutes: number | null | undefined): number | null => {
-  if (reminderMinutes === null || reminderMinutes === undefined) {
+export const getTaskReminderFireAt = (dueAt: number | null | undefined, reminderMinutes: number | null | undefined): number | null => {
+  if (!dueAt || reminderMinutes === null || reminderMinutes === undefined) {
     return null;
   }
 

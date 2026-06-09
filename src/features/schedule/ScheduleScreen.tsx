@@ -244,8 +244,10 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
   }, [monthDate]);
 
   const entriesByDay = useMemo(() => {
+    const activeSubjectIds = new Set(subjects.filter((s) => !s.isArchived).map((s) => s.id));
     const map = new Map<string, ScheduleEntry[]>();
     for (const subject of subjects) {
+      if (!activeSubjectIds.has(subject.id)) continue;
       if (!subject.days || subject.days.length === 0) continue;
       const startTime = formatTime(subject.startTime);
       const endTime = formatTime(subject.endTime);
@@ -276,19 +278,18 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
     const expandedTasks = getExpandedTasksForRange(dbTasks, taskCompletions, weekStart, weekEnd.getTime());
     
     for (const task of expandedTasks) {
+      if (!activeSubjectIds.has(task.subjectId)) continue;
       const taskDate = new Date(task.occurrenceDate);
       const key = getLocalDateKey(taskDate);
-      if (map.has(key)) {
-        const list = map.get(key) ?? [];
-        list.push({
-          id: task.virtualId,
-          startTime: formatTime(taskDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
-          title: task.title,
-          kind: 'task',
-          isCompleted: task.isCompleted,
-        } as any);
-        map.set(key, list);
-      }
+      const list = map.get(key) ?? [];
+      list.push({
+        id: task.virtualId,
+        startTime: formatTime(taskDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+        title: task.title,
+        kind: 'task',
+        isCompleted: task.isCompleted,
+      } as any);
+      map.set(key, list);
     }
 
     for (const [key, list] of map.entries()) {
@@ -303,8 +304,10 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
   }, [subjects, weekDays, dbTasks, taskCompletions]);
 
   const entriesByDayAll = useMemo(() => {
+    const activeSubjectIds = new Set(subjects.filter((s) => !s.isArchived).map((s) => s.id));
     const map = new Map<string, ScheduleEntry[]>();
     for (const subject of subjects) {
+      if (!activeSubjectIds.has(subject.id)) continue;
       if (!subject.days || subject.days.length === 0) continue;
       const startTime = formatTime(subject.startTime);
       const endTime = formatTime(subject.endTime);
@@ -343,19 +346,18 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
     const expandedTasks = getExpandedTasksForRange(dbTasks, taskCompletions, monthStart, monthEnd.getTime());
 
     for (const task of expandedTasks) {
+      if (!activeSubjectIds.has(task.subjectId)) continue;
       const taskDate = new Date(task.occurrenceDate);
       const key = getLocalDateKey(taskDate);
-      if (map.has(key)) {
-        const list = map.get(key) ?? [];
-        list.push({
-          id: task.virtualId,
-          startTime: formatTime(taskDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
-          title: task.title,
-          kind: 'task',
-          isCompleted: task.isCompleted,
-        } as any);
-        map.set(key, list);
-      }
+      const list = map.get(key) ?? [];
+      list.push({
+        id: task.virtualId,
+        startTime: formatTime(taskDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+        title: task.title,
+        kind: 'task',
+        isCompleted: task.isCompleted,
+      } as any);
+      map.set(key, list);
     }
 
     for (const [key, list] of map.entries()) {
