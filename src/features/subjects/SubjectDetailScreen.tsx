@@ -69,6 +69,7 @@ type SubjectDetailScreenProps = {
   onDelete?: (deletedTitle?: string) => void;
   onArchive?: (archivedTitle?: string) => void;
   onUnarchive?: (unarchivedTitle?: string) => void;
+  initialTab?: 'subject' | 'notes' | 'tasks';
 };
 
 // Premium Touch Feedback - Scales down card on press and springs back on release
@@ -181,7 +182,7 @@ const DAYS = [
 
 const EXACT_ALARM_PROMPT_KEY = 'exact_alarm_prompted';
 
-export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelete, onArchive, onUnarchive }: SubjectDetailScreenProps) {
+export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelete, onArchive, onUnarchive, initialTab }: SubjectDetailScreenProps) {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -210,17 +211,11 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
   const buttonScale = useRef(new Animated.Value(0)).current;
   const buttonAnims = useRef(Array.from({ length: 3 }, () => new Animated.Value(0))).current;
   const onBackRef = useRef(onBack);
-  onBackRef.current = onBack;
-  const closeSubjectSheetRef = useRef(closeSubjectSheet);
-  closeSubjectSheetRef.current = closeSubjectSheet;
-  const handleCloseFolderFormRef = useRef(handleCloseFolderForm);
-  handleCloseFolderFormRef.current = handleCloseFolderForm;
-  const closeTaskFormRef = useRef(closeTaskForm);
-  closeTaskFormRef.current = closeTaskForm;
-  const closeSubModalRef = useRef(closeSubModal);
-  closeSubModalRef.current = closeSubModal;
-  const closeTaskDetailRef = useRef(closeTaskDetail);
-  closeTaskDetailRef.current = closeTaskDetail;
+  const closeSubjectSheetRef = useRef<() => void>(null!);
+  const handleCloseFolderFormRef = useRef<() => void>(null!);
+  const closeTaskFormRef = useRef<() => void>(null!);
+  const closeSubModalRef = useRef<() => void>(null!);
+  const closeTaskDetailRef = useRef<() => void>(null!);
   const folderFormSlide = useRef(new Animated.Value(0)).current;
   const folderFormOpacity = useRef(new Animated.Value(0)).current;
   const taskFormSlide = useRef(new Animated.Value(0)).current;
@@ -787,7 +782,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
   };
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<'subject' | 'notes' | 'tasks'>('subject');
+  const [activeTab, setActiveTab] = useState<'subject' | 'notes' | 'tasks'>(initialTab ?? 'subject');
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
 
   // Staggered Mount Entry Animations
@@ -1393,6 +1388,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       useNativeDriver: true,
     }).start();
   };
+
+  onBackRef.current = onBack;
+  closeSubjectSheetRef.current = closeSubjectSheet;
+  handleCloseFolderFormRef.current = handleCloseFolderForm;
+  closeTaskFormRef.current = closeTaskForm;
+  closeSubModalRef.current = closeSubModal;
+  closeTaskDetailRef.current = closeTaskDetail;
 
   return (
     <View style={styles.container}>

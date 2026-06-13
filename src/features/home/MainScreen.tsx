@@ -1,7 +1,7 @@
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   BackHandler,
@@ -14,13 +14,15 @@ import {
   RefreshControl,
   ScrollView,
   StatusBar as RNStatusBar,
+  StyleProp,
+  ViewStyle,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
-import { getAllNotes, getAllTasks, getMetaValue, getNotesBySubjectId, getSubjects, insertSubject, insertNote, updateNote, deleteNote, findRecentMatchingNote, setMetaValue, updateSubject, completeTaskOccurrence, type SubjectRecord, type NoteRecord, type TaskRecord } from '../../data/local/db';
+import { getAllNotes, getAllTasks, getMetaValue, getNotesBySubjectId, getSubjects, insertSubject, insertNote, updateNote, deleteNote, deleteTask, insertTask, findRecentMatchingNote, setMetaValue, updateSubject, completeTaskOccurrence, getTaskCompletions, type SubjectRecord, type NoteRecord, type TaskRecord, type TaskCompletionRecord } from '../../data/local/db';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
 import { calculateNextOccurrenceDate, isSameCalendarDay, END_OF_TIME } from '../../utils/recurrenceUtils';
@@ -29,6 +31,8 @@ import AddSubjectScreen from '../subjects/AddSubjectScreen';
 import SubjectsScreen from '../subjects/SubjectsScreen';
 import DynamicIslandToast from '../../ui/DynamicIslandToast';
 import SubjectDetailScreen from '../subjects/SubjectDetailScreen';
+import TaskEditModal from './TaskEditModal';
+import CreateTaskModal from './CreateTaskModal';
 
 const QuickNoteEditor = require('../subjects/NoteEditorScreen').default as React.ComponentType<{
   subjectId: string;
@@ -72,6 +76,52 @@ const formatNoteDate = (timestamp: number) => {
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   }
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+
+const CardScale = ({
+  children,
+  onPress,
+  onLongPress,
+  style,
+}: {
+  children: React.ReactNode;
+  onPress?: () => void;
+  onLongPress?: () => void;
+  style?: StyleProp<ViewStyle>;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.96,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 0,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 30,
+      bounciness: 8,
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={{ overflow: 'visible' }}
+    >
+      <Animated.View style={[style, { transform: [{ scale }] }]}>
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
 };
 
 const DAY_MAP: Record<string, number> = {
@@ -119,6 +169,7 @@ export default function MainScreen() {
   const [isAddSubjectOpen, setIsAddSubjectOpen] = useState(false);
   const [isSubjectDetailOpen, setIsSubjectDetailOpen] = useState(false);
   const [selectedSubjectDetail, setSelectedSubjectDetail] = useState<any>(null);
+  const [subjectDetailInitialTab, setSubjectDetailInitialTab] = useState<'subject' | 'notes' | 'tasks'>('subject');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [subjectFilter, setSubjectFilter] = useState<{ type: 'active' | 'archived' | 'all'; term: string | null }>({ type: 'active', term: null });
   const [isAllQuickNotesOpen, setIsAllQuickNotesOpen] = useState(false);
@@ -149,6 +200,14 @@ export default function MainScreen() {
 
   // Recent notes state (quick notes + subject notes)
   const [pendingTasks, setPendingTasks] = useState<TaskRecord[]>([]);
+  const [taskCompletions, setTaskCompletions] = useState<TaskCompletionRecord[]>([]);
+  const [editingTaskForEdit, setEditingTaskForEdit] = useState<TaskRecord | null>(null);
+  const [isTaskEditOpen, setIsTaskEditOpen] = useState(false);
+  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+  const [detailTask, setDetailTask] = useState<TaskRecord | null>(null);
+  const [isTaskDetailOpen, setIsTaskDetailOpen] = useState(false);
+  const taskDetailSlide = useRef(new Animated.Value(0)).current;
+  const taskDetailOpacity = useRef(new Animated.Value(0)).current;
   const [recentNoteRecords, setRecentNoteRecords] = useState<NoteRecord[]>([]);
   const [selectedQuickNote, setSelectedQuickNote] = useState<NoteRecord | null>(null);
   const [noteEditorMode, setNoteEditorMode] = useState<'quick' | 'full'>('quick');
@@ -177,6 +236,8 @@ export default function MainScreen() {
         (t) => t.nextOccurrenceDate < END_OF_TIME && activeSubjectIds.has(t.subjectId)
       ).sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate);
       setPendingTasks(pending);
+      const completions = await getTaskCompletions(pending.map((t) => t.id));
+      setTaskCompletions(completions);
     } catch (err) {
       console.warn('Failed to load pending tasks', err);
     }
@@ -197,10 +258,157 @@ export default function MainScreen() {
           .filter((t) => t.nextOccurrenceDate < END_OF_TIME)
           .sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate)
       );
+      setTaskCompletions((current) => [
+        ...current,
+        { id: `${Date.now()}-${Math.round(Math.random() * 1e6)}`, taskId: task.id, occurrenceDate, completedAt: Date.now() },
+      ]);
     } catch (error) {
       console.warn('Failed to complete task', error);
+      setToastMessage('Failed to complete task');
+      setToastVisible(true);
     }
   };
+
+  const handleStartAddTask = useCallback(() => {
+    resetPlusButton();
+    setIsCreateTaskOpen(true);
+    setIsActionSheetOpen(false);
+  }, []);
+
+  const handleTaskCreated = useCallback((task: TaskRecord) => {
+    setPendingTasks((current) => [...current, task].sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate));
+    setToastMessage('Task created');
+    setToastVisible(true);
+  }, []);
+
+  const handleOpenTaskEdit = useCallback((task: TaskRecord) => {
+    setEditingTaskForEdit(task);
+    setIsTaskEditOpen(true);
+  }, []);
+
+  const handleCloseTaskEdit = useCallback(() => {
+    setEditingTaskForEdit(null);
+    setIsTaskEditOpen(false);
+  }, []);
+
+  const handleSaveTaskEdit = useCallback((saved: TaskRecord) => {
+    setPendingTasks((current) =>
+      current.map((t) => (t.id === saved.id ? saved : t)).sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate)
+    );
+    setToastMessage('Task updated');
+    setToastVisible(true);
+  }, []);
+
+  const handleOpenTaskDetail = useCallback((task: TaskRecord) => {
+    setDetailTask(task);
+    setIsTaskDetailOpen(true);
+    taskDetailSlide.setValue(0);
+    taskDetailOpacity.setValue(0);
+    Animated.parallel([
+      Animated.timing(taskDetailOpacity, { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.spring(taskDetailSlide, { toValue: 1, ...springModalSlide }),
+    ]).start();
+  }, [taskDetailOpacity, taskDetailSlide]);
+
+  const snapTaskDetailOpen = useCallback(() => {
+    Animated.spring(taskDetailSlide, { toValue: 1, ...springModalSlide }).start();
+  }, [taskDetailSlide]);
+
+  const closeTaskDetail = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(taskDetailOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(taskDetailSlide, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setIsTaskDetailOpen(false);
+        setDetailTask(null);
+      }
+    });
+  }, [taskDetailOpacity, taskDetailSlide]);
+
+  const { panResponder: taskDetailPanResponder, scrollYRef: taskDetailScrollYRef } = useDragToClose(
+    taskDetailSlide, snapTaskDetailOpen, closeTaskDetail,
+  );
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await deleteTask(taskId);
+      setPendingTasks((current) => current.filter((t) => t.id !== taskId));
+      setToastMessage('Task deleted');
+      setToastVisible(true);
+    } catch (error) {
+      console.warn('Failed to delete task', error);
+      setToastMessage('Failed to delete task');
+      setToastVisible(true);
+    }
+  };
+
+  const handleOpenTaskSubject = useCallback((task: TaskRecord) => {
+    const subject = dbSubjects.find((s) => s.id === task.subjectId);
+    if (subject) {
+      setSubjectDetailInitialTab('subject');
+      setSelectedSubjectDetail(subject);
+      setIsSubjectDetailOpen(true);
+    }
+  }, [dbSubjects]);
+
+  const handleOpenDetailTaskSubject = useCallback((subject: SubjectRecord, _taskId: string) => {
+    setIsTaskDetailOpen(false);
+    setDetailTask(null);
+    setSelectedSubjectDetail(subject);
+    setSubjectDetailInitialTab('tasks');
+    setIsSubjectDetailOpen(true);
+    Animated.timing(subjectDetailSlideAnim, {
+      toValue: 1,
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [subjectDetailSlideAnim]);
+
+  const isBeforeToday = useCallback((date: number) => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    return date < todayStart.getTime();
+  }, []);
+
+  const todayCompletedOccurrenceIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of taskCompletions) {
+      if (isSameCalendarDay(c.occurrenceDate, Date.now())) {
+        ids.add(c.taskId);
+      }
+    }
+    return ids;
+  }, [taskCompletions]);
+
+  const overdueTasks = useMemo(
+    () => pendingTasks.filter((t) => !todayCompletedOccurrenceIds.has(t.id) && isBeforeToday(t.nextOccurrenceDate)),
+    [pendingTasks, todayCompletedOccurrenceIds, isBeforeToday]
+  );
+  const todayTasks = useMemo(
+    () => pendingTasks.filter((t) => !todayCompletedOccurrenceIds.has(t.id) && isSameCalendarDay(t.nextOccurrenceDate, Date.now())),
+    [pendingTasks, todayCompletedOccurrenceIds]
+  );
+  const futureTasks = useMemo(
+    () => pendingTasks.filter((t) => t.nextOccurrenceDate > Date.now() && !isSameCalendarDay(t.nextOccurrenceDate, Date.now())),
+    [pendingTasks]
+  );
+
+  const urgentTasksPreview = useMemo(() => {
+    const priorityOrder = (p: string | null | undefined) => {
+      if (p === 'high') return 0;
+      if (p === 'low') return 1;
+      return 2;
+    };
+    const sortGroup = (arr: typeof overdueTasks) =>
+      [...arr].sort((a, b) => priorityOrder(a.priority) - priorityOrder(b.priority));
+    return [
+      ...sortGroup(overdueTasks),
+      ...sortGroup(todayTasks),
+      ...sortGroup(futureTasks),
+    ].slice(0, 4);
+  }, [overdueTasks, todayTasks, futureTasks]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30000); // Update every 30s
@@ -575,6 +783,7 @@ export default function MainScreen() {
   };
 
   const handlePressSubject = (subject: any) => {
+    setSubjectDetailInitialTab('subject');
     setSelectedSubjectDetail(subject);
     setIsSubjectDetailOpen(true);
     Animated.timing(subjectDetailSlideAnim, {
@@ -659,6 +868,8 @@ export default function MainScreen() {
       setToastVisible(true);
     } catch (error) {
       console.warn('Failed to save subject', error);
+      setToastMessage('Failed to save subject');
+      setToastVisible(true);
     }
   };
 
@@ -732,10 +943,23 @@ export default function MainScreen() {
         handleCancelAddSubject();
         return true;
       }
+      if (isTaskDetailOpen) {
+        closeTaskDetail();
+        return true;
+      }
+      if (isTaskEditOpen) {
+        handleCloseTaskEdit();
+        return true;
+      }
+      if (isCreateTaskOpen) {
+        setIsCreateTaskOpen(false);
+        return true;
+      }
       return false;
     });
     return () => handler.remove();
-  }, [isAllQuickNotesOpen, isQuickNoteOpen, isAddSubjectOpen, handleCloseAllQuickNotes, handleQuickNoteClose, handleCancelAddSubject]);
+  }, [isAllQuickNotesOpen, isQuickNoteOpen, isAddSubjectOpen, isTaskDetailOpen, isTaskEditOpen, isCreateTaskOpen,
+    handleCloseAllQuickNotes, handleQuickNoteClose, handleCancelAddSubject, closeTaskDetail, handleCloseTaskEdit]);
 
   // Format subjects for the All Subjects tab
   const subjects = useMemo(() => {
@@ -798,7 +1022,10 @@ export default function MainScreen() {
             hasActiveFilter={subjectFilter.type !== 'active' || subjectFilter.term !== null}
           />
         ) : activeTab === 'schedule' ? (
-          <ScheduleScreen subjects={activeSubjects} />
+          <ScheduleScreen
+            subjects={activeSubjects}
+            onToast={(msg) => { setToastMessage(msg); setToastVisible(true); }}
+          />
         ) : (
           <>
             <View style={styles.titleBlock}>
@@ -858,50 +1085,68 @@ export default function MainScreen() {
                   )}
                 </LinearGradient>
 
-                <View style={styles.pendingTasksSection}>
-                  <View style={styles.pendingTasksHeaderRow}>
-                    <Text style={styles.pendingTasksTitle}>Pending Tasks</Text>
-                    <Pressable style={styles.headerIconButton}>
-                      <Feather name="more-horizontal" size={16} color="#6d756f" />
-                    </Pressable>
-                  </View>
+                <View style={styles.urgentTasksSection}>
+                  <Text style={styles.sectionHeaderTitle}>Urgent Tasks</Text>
 
-                  {pendingTasks.length === 0 ? (
+                  {urgentTasksPreview.length === 0 ? (
                     <View style={styles.sectionEmptyState}>
                       <View style={styles.sectionEmptyIconWrapper}>
                         <Feather name="check-circle" size={18} color="#8f968f" />
                       </View>
-                      <Text style={styles.sectionEmptyTitle}>No pending tasks</Text>
+                      <Text style={styles.sectionEmptyTitle}>No urgent tasks</Text>
                     </View>
                   ) : (
-                    pendingTasks.map((task) => {
-                      const due = new Date(task.nextOccurrenceDate);
-                      const dueLabel = due.toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      });
+                    urgentTasksPreview.map((task) => {
+                      const occDate = task.nextOccurrenceDate;
+                      const due = new Date(occDate);
+                      const dueLabel = due.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                      const isRecurring = task.repeatType && task.repeatType !== 'none';
+                      const canComplete = !isRecurring || (isSameCalendarDay(occDate, Date.now()) || occDate < Date.now());
+                      const isTimeOverdue = task.startDate ? occDate < Date.now() : false;
                       return (
-                        <View key={task.id} style={styles.taskRow}>
-                          {(!task.repeatType || task.repeatType === 'none' || isSameCalendarDay(task.nextOccurrenceDate, Date.now()) || task.nextOccurrenceDate < Date.now()) ? (
+                        <CardScale
+                          key={task.id}
+                          onPress={() => handleOpenTaskEdit(task)}
+                          onLongPress={() => handleOpenTaskDetail(task)}
+                          style={styles.taskCard}
+                        >
+                          {canComplete ? (
                             <Pressable
                               style={styles.taskCheckbox}
                               onPress={() => void handleCompleteTask(task)}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
-                              <Feather name="square" size={18} color="#a0aba5" />
+                              <MaterialCommunityIcons name="circle-outline" size={22} color="#a0aba5" />
                             </Pressable>
                           ) : (
                             <View style={styles.taskCheckbox}>
-                              <Feather name="lock" size={14} color="#c9cdc9" />
+                              <Feather name="lock" size={15} color="#c9cdc9" />
                             </View>
                           )}
-                          <View>
-                            <Text style={styles.taskTitle}>{task.title}</Text>
-                            <Text style={styles.taskMeta}>{dueLabel}</Text>
+                          <View style={styles.taskTextWrapper}>
+                            <Text style={styles.taskTitle} numberOfLines={1}>
+                              {task.title}
+                            </Text>
+                            {task.startDate ? (
+                            <View style={styles.taskDueDateRow}>
+                              <Text style={[styles.taskDueDateText, isTimeOverdue && { color: '#BA1A1A' }]} numberOfLines={1}>
+                                {dueLabel}
+                              </Text>
+                              <View style={styles.repeatBadge}>
+                                {isRecurring ? (
+                                  <Feather name="repeat" size={12} color="#8f968f" style={task.reminderMinutes != null ? { marginRight: 4 } : undefined} />
+                                ) : null}
+                                {task.reminderMinutes != null ? (
+                                  <Feather name="bell" size={12} color="#8f968f" />
+                                ) : null}
+                              </View>
+                            </View>
+                            ) : null}
                           </View>
-                        </View>
+                          {task.priority ? (
+                            <MaterialIcons name="flag" size={22} color={task.priority === 'high' ? '#d1453b' : '#e88d3f'} style={{ marginLeft: 12 }} />
+                          ) : null}
+                        </CardScale>
                       );
                     })
                   )}
@@ -1005,6 +1250,12 @@ export default function MainScreen() {
               </View>
               <Text style={styles.actionText}>Create quick note</Text>
             </Pressable>
+            <Pressable style={styles.actionButton} onPress={handleStartAddTask}>
+              <View style={styles.actionIconCircle}>
+                <Feather name="check-circle" size={18} color="#1e2b26" />
+              </View>
+              <Text style={styles.actionText}>Add task</Text>
+            </Pressable>
           </Animated.View>
         </View>
       ) : null}
@@ -1068,6 +1319,7 @@ export default function MainScreen() {
           <SubjectDetailScreen 
             subject={selectedSubjectDetail} 
             onBack={handleCloseSubjectDetail} 
+            initialTab={subjectDetailInitialTab}
             onUpdate={(updatedSubject) => {
               loadData();
               if (updatedSubject) {
@@ -1105,8 +1357,8 @@ export default function MainScreen() {
 
       {isFilterOpen ? (
         <Animated.View
+          pointerEvents="box-none"
           style={[styles.filterPanelWrapper, {
-            bottom: 0,
             transform: [{
               translateY: filterSlide.interpolate({
                 inputRange: [0, 1],
@@ -1349,6 +1601,141 @@ export default function MainScreen() {
         </Animated.View>
       ) : null}
 
+      <TaskEditModal
+        visible={isTaskEditOpen}
+        task={editingTaskForEdit}
+        subjectOptions={activeSubjects.map((s) => ({ id: s.id, title: s.title, code: s.code ?? '' }))}
+        onClose={handleCloseTaskEdit}
+        onSaved={handleSaveTaskEdit}
+        onError={(msg) => { setToastMessage(msg); setToastVisible(true); }}
+      />
+
+      <CreateTaskModal
+        visible={isCreateTaskOpen}
+        onClose={() => setIsCreateTaskOpen(false)}
+        onCreated={handleTaskCreated}
+        onError={(msg) => { setToastMessage(msg); setToastVisible(true); }}
+      />
+
+      {isTaskDetailOpen && detailTask ? (
+        <>
+          <Animated.View style={[styles.taskFormBackdrop, { opacity: taskDetailOpacity, zIndex: 160 }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeTaskDetail} />
+          </Animated.View>
+          <Animated.View
+            pointerEvents="box-none"
+            style={[
+              styles.taskFormPanelWrapper,
+              {
+                zIndex: 161,
+                transform: [{
+                  translateY: taskDetailSlide.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [screenHeight, 0],
+                  }),
+                }],
+              },
+            ]}
+          >
+            <View style={[styles.panel, { maxHeight: screenHeight * 0.8 }]} {...taskDetailPanResponder.panHandlers}>
+              <View style={styles.handle} />
+              <ScrollView
+                bounces={false}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 8 }}
+                onScroll={(e) => { taskDetailScrollYRef.current = e.nativeEvent.contentOffset.y; }}
+                scrollEventThrottle={16}
+              >
+                  <View style={{ backgroundColor: '#ffffff', borderRadius: 20, overflow: 'hidden', ...shadowLg, marginBottom: 20 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}>
+                    <Feather name="check-square" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                    <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>{detailTask.title}</Text>
+                  </View>
+                  <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                  <Pressable
+                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
+                    onPress={() => {
+                      const sub = dbSubjects.find((s) => s.id === detailTask.subjectId);
+                      if (sub) handleOpenDetailTaskSubject(sub, detailTask.id);
+                    }}
+                  >
+                    <Feather name="book-open" size={16} color="#5c6762" style={{ marginRight: 10 }} />
+                    <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#5c6762', paddingVertical: 14 }}>
+                      {dbSubjects.find((s) => s.id === detailTask.subjectId)?.title ?? 'Unknown'}
+                    </Text>
+                    <Feather name="arrow-right" size={18} color="#9aa09a" />
+                  </Pressable>
+                  {detailTask.description ? (
+                    <>
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, minHeight: 88 }}>
+                        <Feather name="align-left" size={16} color="#8f968f" style={{ marginRight: 10, marginTop: 16 }} />
+                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>{detailTask.description}</Text>
+                      </View>
+                    </>
+                  ) : null}
+                  {detailTask.startDate ? (
+                    <>
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}>
+                        <Feather name="calendar" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>
+                          {new Date(detailTask.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {' '}
+                          {new Date(detailTask.startDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                        </Text>
+                      </View>
+                    </>
+                  ) : null}
+                  {detailTask.priority ? (
+                    <>
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}>
+                        <MaterialIcons name="flag" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>
+                          {detailTask.priority === 'high' ? 'High' : 'Low'} Priority
+                        </Text>
+                      </View>
+                    </>
+                  ) : null}
+                  {detailTask.category ? (
+                    <>
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}>
+                        <Feather name="folder" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>{detailTask.category}</Text>
+                      </View>
+                    </>
+                  ) : null}
+                  {detailTask.repeatType !== 'none' ? (
+                    <>
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}>
+                        <Feather name="repeat" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>
+                          {detailTask.repeatType === 'daily' ? 'Daily' : detailTask.repeatType === 'weekly' ? `Weekly${detailTask.repeatDays && detailTask.repeatDays.length > 0 ? ` (${detailTask.repeatDays.join(', ')})` : ''}` : detailTask.repeatType === 'monthly' ? 'Monthly' : ''}
+                        </Text>
+                      </View>
+                    </>
+                  ) : null}
+                  <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                  <Pressable
+                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
+                    onPress={() => {
+                      void handleDeleteTask(detailTask.id);
+                      closeTaskDetail();
+                    }}
+                  >
+                    <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
+                    <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 16, color: '#b42318' }}>Delete Task</Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </View>
+          </Animated.View>
+        </>
+      ) : null}
+
       <DynamicIslandToast 
         visible={toastVisible} 
         message={toastMessage} 
@@ -1524,24 +1911,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#1e2b26',
   },
-  pendingTasksSection: {
+  urgentTasksSection: {
     marginBottom: 26,
   },
-  pendingTasksHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  pendingTasksHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  pendingTasksTitle: {
+  sectionHeaderTitle: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
     color: '#1e2b26',
+    marginBottom: 14,
   },
   card: {
     backgroundColor: '#ffffff',
@@ -1679,29 +2056,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#2b4a3f',
   },
-  taskRow: {
+  taskCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#efede8',
+    ...shadowLg,
   },
   taskCheckbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: '#c9c6bf',
+    marginRight: 14,
+  },
+  taskTextWrapper: {
+    flex: 1,
+    paddingRight: 8,
   },
   taskTitle: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
-    color: '#2a332e',
-    marginBottom: 2,
+    color: '#1e2b26',
+    marginBottom: 4,
   },
-  taskMeta: {
-    fontFamily: 'Manrope_400Regular',
+  taskDueDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  taskDueDateText: {
+    fontFamily: 'Manrope_500Medium',
     fontSize: 12,
     color: '#6b746f',
+  },
+  repeatBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 10,
   },
   noteCard: {
     backgroundColor: '#ffffff',
@@ -1866,20 +2257,18 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    top: 0,
     bottom: 0,
+    justifyContent: 'flex-end',
     zIndex: 100,
   },
   filterPanel: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     backgroundColor: '#f8f7f2',
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    paddingHorizontal: 24,
+    paddingHorizontal: 18,
     paddingTop: 10,
-    paddingBottom: 40,
+    paddingBottom: 20,
     ...shadowLg,
   },
   filterHandle: {
@@ -1892,32 +2281,38 @@ const styles = StyleSheet.create({
   },
   filterTitle: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 20,
-    color: '#1e2b26',
-    marginBottom: 20,
+    fontSize: 18,
+    color: '#101413',
+    letterSpacing: -0.3,
+    marginBottom: 16,
+    textAlign: 'center',
+    alignSelf: 'stretch',
   },
   filterSectionLabel: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
     color: '#6b746f',
     letterSpacing: 0.5,
-    marginBottom: 10,
+    marginBottom: 8,
     textTransform: 'uppercase',
   },
   filterOptionsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 20,
+    gap: 8,
+    marginBottom: 16,
   },
   filterChip: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#f0efea',
+    borderRadius: 999,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#efede8',
   },
   filterChipSelected: {
-    backgroundColor: '#1c2f2a',
+    backgroundColor: '#0f2a24',
+    borderColor: '#0f2a24',
   },
   filterChipText: {
     fontFamily: 'Manrope_700Bold',
@@ -1926,5 +2321,36 @@ const styles = StyleSheet.create({
   },
   filterChipTextSelected: {
     color: '#ffffff',
+  },
+  panel: {
+    backgroundColor: '#f8f7f2',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 20,
+    ...shadowLg,
+  },
+  handle: {
+    width: 68,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#e3e0d8',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  taskFormBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(5, 8, 7, 0.3)',
+    zIndex: 160,
+  },
+  taskFormPanelWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    top: 0,
+    zIndex: 161,
+    justifyContent: 'flex-end',
   },
 });

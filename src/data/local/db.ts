@@ -582,12 +582,16 @@ export const insertTask = async (
 
 export const updateTask = async (
   taskId: string,
-  updates: Partial<Omit<TaskRecord, 'id' | 'subjectId' | 'createdAt' | 'updatedAt'>>
+  updates: Partial<Omit<TaskRecord, 'id' | 'createdAt' | 'updatedAt'>>
 ): Promise<void> => {
   const db = await getDb();
   const fields: string[] = [];
   const values: any[] = [];
 
+  if (updates.subjectId !== undefined) {
+    fields.push('subjectId = ?');
+    values.push(updates.subjectId);
+  }
   if (updates.title !== undefined) {
     fields.push('title = ?');
     values.push(updates.title);

@@ -1,12 +1,12 @@
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { Animated, Dimensions, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { SubjectRecord } from '../../data/local/db';
-import { getMetaValue, setMetaValue, getAllTasks, getTaskCompletions, TaskRecord, TaskCompletionRecord } from '../../data/local/db';
+import { getMetaValue, setMetaValue, getAllTasks, getTaskCompletions, deleteTask, completeTaskOccurrence, TaskRecord, TaskCompletionRecord } from '../../data/local/db';
 import { shadowLg } from '../../ui/tokens/shadows';
 import { springModalSlide } from '../../ui/tokens/animations';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
-import { getExpandedTasksForRange } from '../../utils/recurrenceUtils';
+import { calculateNextOccurrenceDate, isSameCalendarDay, getExpandedTasksForRange } from '../../utils/recurrenceUtils';
 import { useFocusEffect } from '@react-navigation/native';
 
 const DAY_MAP: Record<string, number> = {
@@ -32,7 +32,7 @@ const formatTime = (time: string | null | undefined) => {
   const [h, m] = time.split(':').map(Number);
   if (isNaN(h) || isNaN(m)) return time;
   const period = h >= 12 ? 'PM' : 'AM';
-  const hour = h % 12 === 0 ? 12 : h % 12;
+  const hour = h === 0 ? 12 : h > 12 ? h - 12 : h;
   return `${hour}:${String(m).padStart(2, '0')} ${period}`;
 };
 
@@ -44,10 +44,22 @@ type ScheduleEntry = {
   instructor?: string;
   location?: string;
   kind: 'subject' | 'task';
+  isCompleted?: boolean;
+  description?: string;
+  dueAt?: number;
+  priority?: string | null;
+  category?: string | null;
+  repeatType?: string;
+  repeatDays?: string[];
+  reminderMinutes?: number | null;
+  subjectTitle?: string;
+  taskId?: string;
+  occurrenceDate?: number;
 };
 
 type ScheduleScreenProps = {
   subjects: SubjectRecord[];
+  onToast?: (message: string) => void;
 };
 
 const getLocalDateKey = (date: Date) => {
@@ -77,7 +89,7 @@ const buildMonthGrid = (year: number, month: number) => {
   return weeks;
 };
 
-export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
+export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProps) {
   const today = new Date();
   const todayKey = getLocalDateKey(today);
 
@@ -108,24 +120,21 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
   const [dbTasks, setDbTasks] = useState<TaskRecord[]>([]);
   const [taskCompletions, setTaskCompletions] = useState<TaskCompletionRecord[]>([]);
 
+  const loadTasks = useCallback(async () => {
+    try {
+      const tasks = await getAllTasks();
+      setDbTasks(tasks);
+      const completions = await getTaskCompletions(tasks.map((t) => t.id));
+      setTaskCompletions(completions);
+    } catch (e) {
+      console.warn('Failed to load tasks for schedule', e);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      let isActive = true;
-      const loadTasks = async () => {
-        try {
-          const tasks = await getAllTasks();
-          if (isActive) setDbTasks(tasks);
-          const completions = await getTaskCompletions(tasks.map((t) => t.id));
-          if (isActive) setTaskCompletions(completions);
-        } catch (e) {
-          console.warn('Failed to load tasks for schedule', e);
-        }
-      };
       loadTasks();
-      return () => {
-        isActive = false;
-      };
-    }, [])
+    }, [loadTasks])
   );
 
   const closeDetail = useCallback(() => {
@@ -147,6 +156,37 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
       }
     });
   }, [detailOpacity, detailSlide]);
+
+  const handleMarkTaskDone = async () => {
+    if (!detailEntry || !detailEntry.taskId) return;
+    try {
+      const isRecurring = detailEntry.repeatType && detailEntry.repeatType !== 'none';
+      const occurrenceDate = detailEntry.occurrenceDate ?? detailEntry.dueAt ?? Date.now();
+      if (isRecurring && occurrenceDate > Date.now() && !isSameCalendarDay(occurrenceDate, Date.now())) {
+        return; // Can only complete recurring tasks on the same day or overdue
+      }
+      const task = dbTasks.find((t) => t.id === detailEntry.taskId);
+      const next = task
+        ? calculateNextOccurrenceDate(task, occurrenceDate)
+        : 4102444800000;
+      await completeTaskOccurrence(detailEntry.taskId, occurrenceDate, next);
+      closeDetail();
+      onToast?.('Task marked as done');
+      await loadTasks();
+    } catch (error) {
+      console.warn('Failed to complete task', error);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await deleteTask(taskId);
+      closeDetail();
+      await loadTasks();
+    } catch (error) {
+      console.warn('Failed to delete task', error);
+    }
+  };
 
   const handlePanResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
@@ -282,13 +322,24 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
       const taskDate = new Date(task.occurrenceDate);
       const key = getLocalDateKey(taskDate);
       const list = map.get(key) ?? [];
+      const taskSubject = subjects.find((s) => s.id === task.subjectId);
       list.push({
         id: task.virtualId,
         startTime: formatTime(taskDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
         title: task.title,
         kind: 'task',
         isCompleted: task.isCompleted,
-      } as any);
+        description: task.description ?? undefined,
+        dueAt: task.dueAt,
+        priority: task.priority,
+        category: task.category,
+        repeatType: task.repeatType,
+        repeatDays: task.repeatDays,
+        reminderMinutes: task.reminderMinutes,
+        subjectTitle: taskSubject?.title ?? taskSubject?.code,
+        taskId: task.id,
+        occurrenceDate: task.occurrenceDate,
+      });
       map.set(key, list);
     }
 
@@ -349,15 +400,26 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
       if (!activeSubjectIds.has(task.subjectId)) continue;
       const taskDate = new Date(task.occurrenceDate);
       const key = getLocalDateKey(taskDate);
-      const list = map.get(key) ?? [];
-      list.push({
+      const monthList = map.get(key) ?? [];
+      const taskSubject = subjects.find((s) => s.id === task.subjectId);
+      monthList.push({
         id: task.virtualId,
         startTime: formatTime(taskDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
         title: task.title,
         kind: 'task',
         isCompleted: task.isCompleted,
-      } as any);
-      map.set(key, list);
+        description: task.description ?? undefined,
+        dueAt: task.dueAt,
+        priority: task.priority,
+        category: task.category,
+        repeatType: task.repeatType,
+        repeatDays: task.repeatDays,
+        reminderMinutes: task.reminderMinutes,
+        subjectTitle: taskSubject?.title ?? taskSubject?.code,
+        taskId: task.id,
+        occurrenceDate: task.occurrenceDate,
+      });
+      map.set(key, monthList);
     }
 
     for (const [key, list] of map.entries()) {
@@ -631,6 +693,9 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
             const endMins = parseTimeToMinutes(entry.endTime) ?? 0;
             const isActive = isToday && currentMinutes >= startMins && currentMinutes <= endMins;
             const isPast = selectedDayKey < todayKey || (isToday && currentMinutes > endMins);
+            const isCompletedToday = entry.isCompleted && entry.taskId
+              ? taskCompletions.some((tc) => tc.taskId === entry.taskId && tc.occurrenceDate === entry.occurrenceDate && getLocalDateKey(new Date(tc.completedAt)) === todayKey)
+              : false;
             const prevStartMins = ei > 0 ? (parseTimeToMinutes(selectedEntries[ei - 1].startTime) ?? 0) : -1;
             const sameHourAsPrev = ei > 0 && Math.floor(startMins / 60) === Math.floor(prevStartMins / 60);
             const nextStartMins = ei < selectedEntries.length - 1 ? (parseTimeToMinutes(selectedEntries[ei + 1].startTime) ?? 0) : -1;
@@ -646,20 +711,33 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
                     <View style={[styles.timeDot, isActive && styles.timeDotActive]} />
                   </View>
                 )}
-                <Pressable style={[styles.eventCard, isActive && styles.eventCardPrimary, isPast && styles.eventCardPast]} onPress={() => openDetail(entry)}>
+                <Pressable style={[styles.eventCard, isActive && styles.eventCardPrimary, isPast && styles.eventCardPast, entry.isCompleted && styles.eventCardDone]} onPress={() => openDetail(entry)}>
                   <View style={[styles.eventAccent, isActive && styles.eventAccentActive, isPast && styles.eventAccentPast]} />
-                  <View style={styles.eventContent}>
+                  <View style={[styles.eventContent, entry.isCompleted && styles.eventContentDone]}>
                     <View style={styles.eventTitleRow}>
-                      <Text style={styles.eventTitle} numberOfLines={1}>{entry.title}</Text>
+                      <Text style={[styles.eventTitle, entry.isCompleted && styles.eventTitleDone]} numberOfLines={1}>{entry.title}</Text>
                     </View>
                     <View style={styles.eventTimeRow}>
-                      <Text style={styles.eventTimeText}>
+                      <Text style={[styles.eventTimeText, entry.isCompleted && styles.eventTimeTextDone, entry.kind === 'task' && isPast && !entry.isCompleted && styles.eventTimeTextPast]}>
                         {entry.startTime}{entry.endTime ? ` - ${entry.endTime}` : ''}
                       </Text>
+                      {entry.isCompleted ? (
+                        <Text style={styles.completedLabel}>
+                          {isCompletedToday ? '(completed today)' : '(completed)'}
+                        </Text>
+                      ) : null}
                     </View>
                   </View>
                   <View style={styles.eventIconWrapper}>
-                    <Feather name={entry.kind === 'task' ? ((entry as any).isCompleted ? 'check-square' : 'square') : 'book-open'} size={16} color={isActive ? '#8fbaa4' : isPast ? '#c9cdc9' : '#c5c9c5'} />
+                    {entry.kind === 'task' ? (
+                      <MaterialIcons
+                        name="flag"
+                        size={16}
+                        color={entry.isCompleted ? '#d0d4d0' : entry.priority === 'high' ? '#d1453b' : entry.priority === 'low' ? '#e88d3f' : (isActive ? '#8fbaa4' : isPast ? '#c9cdc9' : '#c5c9c5')}
+                      />
+                    ) : (
+                      <Feather name="book-open" size={16} color={isActive ? '#8fbaa4' : isPast ? '#c9cdc9' : '#c5c9c5'} />
+                    )}
                   </View>
                 </Pressable>
               </View>
@@ -694,19 +772,21 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
               >
                 <Text style={styles.filterTitle}>Show</Text>
 
-                <Pressable style={styles.filterCheckRow} onPress={() => handleToggleFilter('subjects')}>
-                  <View style={[styles.filterCheckbox, scheduleFilter.subjects && styles.filterCheckboxChecked]}>
-                    {scheduleFilter.subjects ? <Feather name="check" size={12} color="#ffffff" /> : null}
-                  </View>
-                  <Text style={styles.filterCheckLabel}>Subjects</Text>
-                </Pressable>
-
-                <Pressable style={styles.filterCheckRow} onPress={() => handleToggleFilter('tasks')}>
-                  <View style={[styles.filterCheckbox, scheduleFilter.tasks && styles.filterCheckboxChecked]}>
-                    {scheduleFilter.tasks ? <Feather name="check" size={12} color="#ffffff" /> : null}
-                  </View>
-                  <Text style={styles.filterCheckLabel}>Tasks</Text>
-                </Pressable>
+                <View style={styles.filterOptionsCard}>
+                  <Pressable style={styles.filterCheckRow} onPress={() => handleToggleFilter('subjects')}>
+                    <View style={[styles.filterCheckbox, scheduleFilter.subjects && styles.filterCheckboxChecked]}>
+                      {scheduleFilter.subjects ? <Feather name="check" size={12} color="#ffffff" /> : null}
+                    </View>
+                    <Text style={styles.filterCheckLabel}>Subjects</Text>
+                  </Pressable>
+                  <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                  <Pressable style={styles.filterCheckRow} onPress={() => handleToggleFilter('tasks')}>
+                    <View style={[styles.filterCheckbox, scheduleFilter.tasks && styles.filterCheckboxChecked]}>
+                      {scheduleFilter.tasks ? <Feather name="check" size={12} color="#ffffff" /> : null}
+                    </View>
+                    <Text style={styles.filterCheckLabel}>Tasks</Text>
+                  </Pressable>
+                </View>
               </ScrollView>
             </View>
           </Animated.View>
@@ -720,6 +800,7 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
           </Animated.View>
 
           <Animated.View
+            pointerEvents="box-none"
             style={[styles.detailPanelWrapper, {
               transform: [{
                 translateY: detailSlide.interpolate({
@@ -733,26 +814,131 @@ export default function ScheduleScreen({ subjects }: ScheduleScreenProps) {
               <View style={styles.detailHandle} />
               {detailEntry && (
                 <>
-                  <Text style={styles.detailTitle}>{detailEntry.title}</Text>
-                  <View style={styles.detailDivider} />
-                  <View style={styles.detailRow}>
-                    <Feather name="clock" size={16} color="#6b746f" />
-                    <Text style={styles.detailText}>
-                      {detailEntry.startTime}{detailEntry.endTime ? ` - ${detailEntry.endTime}` : ''}
-                    </Text>
-                  </View>
-                  {detailEntry.location ? (
-                    <View style={styles.detailRow}>
-                      <Feather name="map-pin" size={16} color="#6b746f" />
-                      <Text style={styles.detailText}>{detailEntry.location}</Text>
+                  {detailEntry.kind === 'task' ? (
+                    <View style={styles.detailCard}>
+                      <View style={styles.editInfoRow}>
+                        <MaterialIcons
+                          name="flag"
+                          size={16}
+                          color={detailEntry.isCompleted ? '#d0d4d0' : detailEntry.priority === 'high' ? '#d1453b' : detailEntry.priority === 'low' ? '#e88d3f' : '#8f968f'}
+                          style={{ marginRight: 10 }}
+                        />
+                        <Text style={styles.editInfoInput}>{detailEntry.title}</Text>
+                      </View>
+                      {detailEntry.subjectTitle ? (
+                        <>
+                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={styles.editInfoRow}>
+                            <Feather name="book" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                            <Text style={styles.editInfoInput}>{detailEntry.subjectTitle}</Text>
+                          </View>
+                        </>
+                      ) : null}
+                      {detailEntry.description ? (
+                        <>
+                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={[styles.editInfoRow, { minHeight: 88, alignItems: 'flex-start' }]}>
+                            <Feather name="align-left" size={16} color="#8f968f" style={{ marginRight: 10, marginTop: 16 }} />
+                            <Text style={styles.editInfoInput}>{detailEntry.description}</Text>
+                          </View>
+                        </>
+                      ) : null}
+                      {detailEntry.dueAt ? (
+                        <>
+                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={styles.editInfoRow}>
+                            <Feather name="calendar" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                            <Text style={styles.editInfoInput}>
+                              {new Date(detailEntry.dueAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {' '}
+                              {detailEntry.startTime ? new Date(detailEntry.dueAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''}
+                            </Text>
+                          </View>
+                        </>
+                      ) : null}
+                      {detailEntry.priority ? (
+                        <>
+                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={styles.editInfoRow}>
+                            <MaterialIcons name="flag" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                            <Text style={styles.editInfoInput}>
+                              {detailEntry.priority === 'high' ? 'High' : 'Low'} Priority
+                            </Text>
+                          </View>
+                        </>
+                      ) : null}
+                      {detailEntry.category ? (
+                        <>
+                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={styles.editInfoRow}>
+                            <Feather name="folder" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                            <Text style={styles.editInfoInput}>{detailEntry.category}</Text>
+                          </View>
+                        </>
+                      ) : null}
+                      {detailEntry.repeatType && detailEntry.repeatType !== 'none' ? (
+                        <>
+                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={styles.editInfoRow}>
+                            <Feather name="repeat" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                            <Text style={styles.editInfoInput}>
+                              {detailEntry.repeatType === 'daily' ? 'Daily' : detailEntry.repeatType === 'weekly' ? `Weekly${detailEntry.repeatDays && detailEntry.repeatDays.length > 0 ? ` (${detailEntry.repeatDays.join(', ')})` : ''}` : detailEntry.repeatType === 'monthly' ? 'Monthly' : ''}
+                            </Text>
+                          </View>
+                        </>
+                      ) : null}
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      {(() => {
+                        const isRecurring = detailEntry.repeatType && detailEntry.repeatType !== 'none';
+                        const occDate = detailEntry.occurrenceDate ?? detailEntry.dueAt ?? 0;
+                        const canMarkDone = !detailEntry.isCompleted && (!isRecurring || isSameCalendarDay(occDate, Date.now()) || occDate < Date.now());
+                        const label = detailEntry.isCompleted ? 'Completed' : canMarkDone ? 'Mark as done' : 'Locked';
+                        const color = canMarkDone ? '#0f2a24' : '#c9cdc9';
+                        return (
+                          <Pressable
+                            style={[styles.editInfoRow, !canMarkDone && { opacity: 0.4 }]}
+                            onPress={canMarkDone ? handleMarkTaskDone : undefined}
+                            disabled={!canMarkDone}
+                          >
+                            <Feather name="check-circle" size={16} color={color} style={{ marginRight: 10 }} />
+                            <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 16, color }}>{label}</Text>
+                          </Pressable>
+                        );
+                      })()}
                     </View>
-                  ) : null}
-                  {detailEntry.instructor ? (
-                    <View style={styles.detailRow}>
-                      <Feather name="user" size={16} color="#6b746f" />
-                      <Text style={styles.detailText}>{detailEntry.instructor}</Text>
+                  ) : (
+                    <View style={styles.detailCard}>
+                      <View style={styles.editInfoRow}>
+                        <Feather name="book-open" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                        <Text style={styles.editInfoInput}>{detailEntry.title}</Text>
+                      </View>
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={styles.editInfoRow}>
+                        <Feather name="clock" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                        <Text style={styles.editInfoInput}>
+                          {detailEntry.startTime}{detailEntry.endTime ? ` - ${detailEntry.endTime}` : ''}
+                        </Text>
+                      </View>
+                      {detailEntry.location ? (
+                        <>
+                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={styles.editInfoRow}>
+                            <Feather name="map-pin" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                            <Text style={styles.editInfoInput}>{detailEntry.location}</Text>
+                          </View>
+                        </>
+                      ) : null}
+                      {detailEntry.instructor ? (
+                        <>
+                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={styles.editInfoRow}>
+                            <Feather name="user" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                            <Text style={styles.editInfoInput}>{detailEntry.instructor}</Text>
+                          </View>
+                        </>
+                      ) : null}
                     </View>
-                  ) : null}
+                  )}
                 </>
               )}
             </View>
@@ -1063,6 +1249,10 @@ const styles = StyleSheet.create({
   eventCardPast: {
     backgroundColor: '#f7f7f7',
   },
+  eventCardDone: {
+    backgroundColor: '#f3f3f3',
+    opacity: 0.75,
+  },
   eventAccent: {
     width: 6,
     backgroundColor: '#efefef',
@@ -1079,6 +1269,9 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 6,
   },
+  eventContentDone: {
+    paddingVertical: 6,
+  },
   eventTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1089,6 +1282,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#1e2b26',
   },
+  eventTitleDone: {
+    textDecorationLine: 'line-through',
+    color: '#b0b5b0',
+  },
   eventTimeRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1098,6 +1295,17 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
     color: '#6b746f',
+  },
+  eventTimeTextDone: {
+    color: '#c9cdc9',
+  },
+  eventTimeTextPast: {
+    color: '#d1453b',
+  },
+  completedLabel: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 11,
+    color: '#9aa09a',
   },
   eventIconWrapper: {
     width: 40,
@@ -1137,19 +1345,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    bottom: 0,
     zIndex: 100,
   },
   filterPanel: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     backgroundColor: '#f8f7f2',
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    paddingHorizontal: 24,
+    paddingHorizontal: 18,
     paddingTop: 10,
-    paddingBottom: 40,
+    paddingBottom: 20,
     ...shadowLg,
   },
   filterHandle: {
@@ -1160,36 +1365,46 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 16,
   },
+  filterOptionsCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
   filterTitle: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 20,
-    color: '#1e2b26',
-    marginBottom: 20,
+    fontSize: 18,
+    color: '#101413',
+    letterSpacing: -0.3,
+    marginBottom: 16,
+    textAlign: 'center',
+    alignSelf: 'stretch',
   },
   filterCheckRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    minHeight: 52,
   },
   filterCheckbox: {
-    width: 22,
-    height: 22,
+    width: 20,
+    height: 20,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: '#d4d4cf',
-    backgroundColor: '#ffffff',
+    borderColor: '#c9cdc9',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
   filterCheckboxChecked: {
-    backgroundColor: '#1c2f2a',
-    borderColor: '#1c2f2a',
+    backgroundColor: '#0f2a24',
+    borderColor: '#0f2a24',
   },
   filterCheckLabel: {
-    fontFamily: 'Manrope_600SemiBold',
+    fontFamily: 'Manrope_500Medium',
     fontSize: 16,
-    color: '#2a332e',
+    color: '#1e2b26',
   },
   detailRoot: {
     flex: 1,
@@ -1207,38 +1422,59 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    top: 0,
     bottom: 0,
+    justifyContent: 'flex-end',
   },
   detailPanel: {
     backgroundColor: '#f8f7f2',
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    paddingHorizontal: 24,
+    paddingHorizontal: 18,
     paddingTop: 10,
-    paddingBottom: 40,
+    paddingBottom: 20,
     maxHeight: SCREEN_HEIGHT * 0.8,
     ...shadowLg,
   },
   detailTitle: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
-    color: '#1e2b26',
-    marginBottom: 4,
+    color: '#101413',
+    letterSpacing: -0.3,
+    marginBottom: 16,
+    textAlign: 'center',
+    alignSelf: 'stretch',
   },
-  detailDivider: {
-    height: 1,
-    backgroundColor: '#efefe8',
-    marginVertical: 14,
+  detailCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 20,
   },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 12,
+    gap: 12,
+    paddingHorizontal: 16,
+    minHeight: 52,
   },
   detailText: {
     fontFamily: 'Manrope_500Medium',
-    fontSize: 14,
-    color: '#4d5852',
+    fontSize: 16,
+    color: '#1e2b26',
+    flex: 1,
+  },
+  editInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    minHeight: 52,
+  },
+  editInfoInput: {
+    flex: 1,
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 16,
+    color: '#1e2b26',
+    paddingVertical: 14,
   },
 });
