@@ -1,8 +1,9 @@
+import { BlurView } from 'expo-blur';
 import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { Animated, Dimensions, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { SubjectRecord } from '../../data/local/db';
-import { getMetaValue, setMetaValue, getAllTasks, getTaskCompletions, deleteTask, completeTaskOccurrence, TaskRecord, TaskCompletionRecord } from '../../data/local/db';
+import { getMetaValue, setMetaValue, getAllTasks, getTaskCompletions, getTaskOccurrenceExceptions, deleteTask, completeTaskOccurrence, TaskRecord, TaskCompletionRecord } from '../../data/local/db';
 import { shadowLg } from '../../ui/tokens/shadows';
 import { springModalSlide } from '../../ui/tokens/animations';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
@@ -53,6 +54,7 @@ type ScheduleEntry = {
   repeatDays?: string[];
   reminderMinutes?: number | null;
   subjectTitle?: string;
+  subjectId?: string;
   taskId?: string;
   occurrenceDate?: number;
 };
@@ -60,6 +62,7 @@ type ScheduleEntry = {
 type ScheduleScreenProps = {
   subjects: SubjectRecord[];
   onToast?: (message: string) => void;
+  onOpenSubjectDetail?: (subject: SubjectRecord) => void;
 };
 
 const getLocalDateKey = (date: Date) => {
@@ -89,7 +92,7 @@ const buildMonthGrid = (year: number, month: number) => {
   return weeks;
 };
 
-export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProps) {
+export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail }: ScheduleScreenProps) {
   const today = new Date();
   const todayKey = getLocalDateKey(today);
 
@@ -119,6 +122,7 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
 
   const [dbTasks, setDbTasks] = useState<TaskRecord[]>([]);
   const [taskCompletions, setTaskCompletions] = useState<TaskCompletionRecord[]>([]);
+  const [deletedOccurrenceKeys, setDeletedOccurrenceKeys] = useState<Set<string>>(new Set());
 
   const loadTasks = useCallback(async () => {
     try {
@@ -126,6 +130,8 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
       setDbTasks(tasks);
       const completions = await getTaskCompletions(tasks.map((t) => t.id));
       setTaskCompletions(completions);
+      const exceptions = await getTaskOccurrenceExceptions(tasks.map((t) => t.id));
+      setDeletedOccurrenceKeys(new Set(exceptions.filter((e) => e.status === 'deleted').map((e) => `${e.taskId}-${e.occurrenceDate}`)));
     } catch (e) {
       console.warn('Failed to load tasks for schedule', e);
     }
@@ -305,6 +311,7 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
           instructor: subject.instructor ?? undefined,
           location: subject.location ?? undefined,
           kind: 'subject',
+          subjectId: subject.id,
         });
         map.set(matchingWeekDay.key, list);
       }
@@ -316,9 +323,10 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
     weekEnd.setHours(23, 59, 59, 999);
     
     const expandedTasks = getExpandedTasksForRange(dbTasks, taskCompletions, weekStart, weekEnd.getTime());
-    
+
     for (const task of expandedTasks) {
-      if (!activeSubjectIds.has(task.subjectId)) continue;
+      if (deletedOccurrenceKeys.has(`${task.id}-${task.occurrenceDate}`)) continue;
+      if (task.subjectId && !activeSubjectIds.has(task.subjectId)) continue;
       const taskDate = new Date(task.occurrenceDate);
       const key = getLocalDateKey(taskDate);
       const list = map.get(key) ?? [];
@@ -337,12 +345,13 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
         repeatDays: task.repeatDays,
         reminderMinutes: task.reminderMinutes,
         subjectTitle: taskSubject?.title ?? taskSubject?.code,
+        subjectId: task.subjectId,
         taskId: task.id,
         occurrenceDate: task.occurrenceDate,
       });
       map.set(key, list);
     }
-
+    
     for (const [key, list] of map.entries()) {
       list.sort((a, b) => {
         const timeA = parseTimeToMinutes(a.startTime) ?? 0;
@@ -352,7 +361,7 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
       map.set(key, list);
     }
     return map;
-  }, [subjects, weekDays, dbTasks, taskCompletions]);
+  }, [subjects, weekDays, dbTasks, taskCompletions, deletedOccurrenceKeys]);
 
   const entriesByDayAll = useMemo(() => {
     const activeSubjectIds = new Set(subjects.filter((s) => !s.isArchived).map((s) => s.id));
@@ -381,6 +390,7 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
             instructor: subject.instructor ?? undefined,
             location: subject.location ?? undefined,
             kind: 'subject',
+            subjectId: subject.id,
           });
           map.set(key, list);
         }
@@ -397,7 +407,8 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
     const expandedTasks = getExpandedTasksForRange(dbTasks, taskCompletions, monthStart, monthEnd.getTime());
 
     for (const task of expandedTasks) {
-      if (!activeSubjectIds.has(task.subjectId)) continue;
+      if (deletedOccurrenceKeys.has(`${task.id}-${task.occurrenceDate}`)) continue;
+      if (task.subjectId && !activeSubjectIds.has(task.subjectId)) continue;
       const taskDate = new Date(task.occurrenceDate);
       const key = getLocalDateKey(taskDate);
       const monthList = map.get(key) ?? [];
@@ -416,12 +427,13 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
         repeatDays: task.repeatDays,
         reminderMinutes: task.reminderMinutes,
         subjectTitle: taskSubject?.title ?? taskSubject?.code,
+        subjectId: task.subjectId,
         taskId: task.id,
         occurrenceDate: task.occurrenceDate,
       });
       map.set(key, monthList);
     }
-
+    
     for (const [key, list] of map.entries()) {
       list.sort((a, b) => {
         const timeA = parseTimeToMinutes(a.startTime) ?? 0;
@@ -431,7 +443,7 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
       map.set(key, list);
     }
     return map;
-  }, [subjects, monthGrid, monthDate, dbTasks, taskCompletions]);
+  }, [subjects, monthGrid, monthDate, dbTasks, taskCompletions, deletedOccurrenceKeys]);
 
   const selectedEntries = entriesByDay.get(selectedDayKey) ?? entriesByDayAll.get(selectedDayKey) ?? [];
   const selectedDayIndex = weekDays.findIndex((day) => day.key === selectedDayKey);
@@ -692,7 +704,8 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
             const startMins = parseTimeToMinutes(entry.startTime) ?? 0;
             const endMins = parseTimeToMinutes(entry.endTime) ?? 0;
             const isActive = isToday && currentMinutes >= startMins && currentMinutes <= endMins;
-            const isPast = selectedDayKey < todayKey || (isToday && currentMinutes > endMins);
+            const cutoffMins = parseTimeToMinutes(entry.endTime ?? entry.startTime) ?? 0;
+            const isPast = selectedDayKey < todayKey || (isToday && currentMinutes > cutoffMins);
             const isCompletedToday = entry.isCompleted && entry.taskId
               ? taskCompletions.some((tc) => tc.taskId === entry.taskId && tc.occurrenceDate === entry.occurrenceDate && getLocalDateKey(new Date(tc.completedAt)) === todayKey)
               : false;
@@ -749,9 +762,11 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
       {/* Filter Sheet */}
       <Modal visible={isFilterOpen} transparent animationType="none" onRequestClose={handleCloseFilter}>
         <View style={styles.filterRoot}>
-          <Animated.View style={[StyleSheet.absoluteFill, { opacity: filterOpacity, backgroundColor: 'rgba(5, 8, 7, 0.3)' }]}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseFilter} />
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: filterOpacity }]}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5, 8, 7, 0.2)' }]} />
           </Animated.View>
+          <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseFilter} />
 
           <Animated.View
             style={[styles.filterPanelWrapper, {
@@ -795,9 +810,11 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
 
       <Modal visible={isDetailOpen} transparent animationType="none" onRequestClose={closeDetail}>
         <View style={styles.detailRoot}>
-          <Animated.View style={[StyleSheet.absoluteFill, { opacity: detailOpacity, backgroundColor: 'rgba(5, 8, 7, 0.3)' }]}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={closeDetail} />
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: detailOpacity }]}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5, 8, 7, 0.2)' }]} />
           </Animated.View>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeDetail} />
 
           <Animated.View
             pointerEvents="box-none"
@@ -828,10 +845,22 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
                       {detailEntry.subjectTitle ? (
                         <>
                           <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
-                          <View style={styles.editInfoRow}>
-                            <Feather name="book" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                            <Text style={styles.editInfoInput}>{detailEntry.subjectTitle}</Text>
-                          </View>
+                          {detailEntry.subjectId ? (
+                            <Pressable style={styles.editInfoRow} onPress={() => {
+                              closeDetail();
+                              const subject = subjects.find((s) => s.id === detailEntry.subjectId);
+                              if (subject) onOpenSubjectDetail?.(subject);
+                            }}>
+                              <Feather name="book-open" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                              <Text style={styles.editInfoInput}>{detailEntry.subjectTitle}</Text>
+                              <Feather name="arrow-right" size={16} color="#c5c9c5" />
+                            </Pressable>
+                          ) : (
+                            <View style={styles.editInfoRow}>
+                              <Feather name="book-open" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                              <Text style={styles.editInfoInput}>{detailEntry.subjectTitle}</Text>
+                            </View>
+                          )}
                         </>
                       ) : null}
                       {detailEntry.description ? (
@@ -908,10 +937,15 @@ export default function ScheduleScreen({ subjects, onToast }: ScheduleScreenProp
                     </View>
                   ) : (
                     <View style={styles.detailCard}>
-                      <View style={styles.editInfoRow}>
+                      <Pressable style={styles.editInfoRow} onPress={() => {
+                        closeDetail();
+                        const subject = subjects.find((s) => s.id === detailEntry.subjectId);
+                        if (subject) onOpenSubjectDetail?.(subject);
+                      }}>
                         <Feather name="book-open" size={16} color="#8f968f" style={{ marginRight: 10 }} />
                         <Text style={styles.editInfoInput}>{detailEntry.title}</Text>
-                      </View>
+                        <Feather name="arrow-right" size={16} color="#c5c9c5" />
+                      </Pressable>
                       <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
                       <View style={styles.editInfoRow}>
                         <Feather name="clock" size={16} color="#8f968f" style={{ marginRight: 10 }} />
@@ -1271,6 +1305,7 @@ const styles = StyleSheet.create({
   },
   eventContentDone: {
     paddingVertical: 6,
+    gap: 2,
   },
   eventTitleRow: {
     flexDirection: 'row',

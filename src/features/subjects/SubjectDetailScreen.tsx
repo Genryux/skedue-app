@@ -17,6 +17,7 @@ import {
   Dimensions,
   Keyboard,
   KeyboardAvoidingView,
+  StatusBar,
   StyleProp,
   ViewStyle,
 } from 'react-native';
@@ -45,6 +46,7 @@ import {
   getMetaValue,
   deleteNote,
   deleteTask,
+  deleteTaskOccurrence,
   insertFolder,
   insertTask,
   insertNote,
@@ -227,6 +229,8 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
   const [isSubjectSheetOpen, setIsSubjectSheetOpen] = useState(false);
   const subjectSheetSlide = useRef(new Animated.Value(0)).current;
   const subjectSheetOpacity = useRef(new Animated.Value(0)).current;
+  const subViewSlide = useRef(new Animated.Value(0)).current;
+  const subViewOpacity = useRef(new Animated.Value(0)).current;
   const [subjectSheetView, setSubjectSheetView] = useState<'main' | 'editInfo' | 'editTerm' | 'editSchedule' | 'delete' | 'stats'>('main');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
@@ -399,7 +403,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
         startTime: formatTimeDisplay(editStartDate),
         endTime: formatTimeDisplay(editEndDate),
       },
-      existingSubjects,
+      existingSubjects.filter((s) => !s.isArchived),
     );
   }, [subject?.id, editDays, editStartDate, editEndDate, existingSubjects]);
 
@@ -456,6 +460,11 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       loadSubjectData();
     }, [loadSubjectData])
   );
+
+  useEffect(() => {
+    StatusBar.setBarStyle('light-content');
+    return () => StatusBar.setBarStyle('dark-content');
+  }, []);
 
   const handleOpenNoteEditor = (note: NoteRecord | null = null) => {
     setShowSaveToast(false);
@@ -756,6 +765,27 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     }
   };
 
+  const handleDeleteTaskOccurrence = async (task: TaskRecord, occurrenceDate: number) => {
+    try {
+      const nextDate = await deleteTaskOccurrence(task.id, occurrenceDate);
+      setTasks((current) => {
+        const idx = current.findIndex((t) => t.id === task.id);
+        if (idx === -1) return current;
+        const t = current[idx];
+        if (t.nextOccurrenceDate !== occurrenceDate) return current;
+        const updated = [...current];
+        updated[idx] = { ...t, nextOccurrenceDate: nextDate };
+        return updated;
+      });
+      setTaskReminderToastMessage('Occurrence deleted');
+      setShowTaskReminderToast(true);
+    } catch (error) {
+      console.warn('Failed to delete occurrence', error);
+      setTaskReminderToastMessage('Failed to delete occurrence');
+      setShowTaskReminderToast(true);
+    }
+  };
+
   const handleUncompleteTask = async (task: TaskRecord) => {
     try {
       const restoredDate = await uncompleteTaskOccurrence(task.id);
@@ -783,36 +813,32 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'subject' | 'notes' | 'tasks'>(initialTab ?? 'subject');
+  const [navPillWidth, setNavPillWidth] = useState(0);
+  const tabIndicatorAnim = useRef(new Animated.Value(0)).current;
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
 
+  const handleTabPress = (tab: 'subject' | 'notes' | 'tasks') => {
+    if (tab === activeTab) return;
+    const idx = tab === 'subject' ? 0 : tab === 'notes' ? 1 : 2;
+    Animated.spring(tabIndicatorAnim, {
+      toValue: idx,
+      friction: 9,
+      tension: 50,
+      useNativeDriver: true,
+    }).start();
+    setActiveTab(tab);
+  };
+
   // Staggered Mount Entry Animations
-  const contentFadeAnim = useRef(new Animated.Value(0)).current;
-  const contentSlideAnim = useRef(new Animated.Value(35)).current;
   const headerFadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.sequence([
-      Animated.timing(headerFadeAnim, {
-        toValue: 1,
-        duration: 300,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.parallel([
-        Animated.timing(contentFadeAnim, {
-          toValue: 1,
-          duration: 450,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(contentSlideAnim, {
-          toValue: 0,
-          duration: 500,
-          easing: Easing.out(Easing.back(1.1)),
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start();
+    Animated.timing(headerFadeAnim, {
+      toValue: 1,
+      duration: 300,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
   }, []);
 
   const closeSubjectSheet = useCallback(() => {
@@ -1238,7 +1264,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     setEditCode(subject?.code ?? '');
     setEditInstructor(subject?.instructor ?? '');
     setEditTerm(subject?.term ?? '');
+    subViewOpacity.setValue(0);
+    subViewSlide.setValue(0);
     setSubjectSheetView('editInfo');
+    Animated.parallel([
+      Animated.timing(subViewOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.spring(subViewSlide, { toValue: 1, friction: 9, tension: 50, useNativeDriver: true }),
+    ]).start();
   };
 
   const handleSaveEditInfo = async () => {
@@ -1254,6 +1286,8 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       term: editTerm || undefined,
     });
 
+    subViewOpacity.setValue(0);
+    subViewSlide.setValue(0);
     setSubjectSheetView('main');
     setSubjectSavedToastMessage('Subject info updated');
     setShowSubjectSavedToast(true);
@@ -1291,7 +1325,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     
     setEditLocation(base?.location ?? '');
     getSubjects().then(setExistingSubjects).catch(console.warn);
+    subViewOpacity.setValue(0);
+    subViewSlide.setValue(0);
     setSubjectSheetView('editSchedule');
+    Animated.parallel([
+      Animated.timing(subViewOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.spring(subViewSlide, { toValue: 1, friction: 9, tension: 50, useNativeDriver: true }),
+    ]).start();
   };
 
   const handleToggleEditDay = (day: string) => {
@@ -1321,6 +1361,8 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       location: newLocation,
     });
 
+    subViewOpacity.setValue(0);
+    subViewSlide.setValue(0);
     setSubjectSheetView('main');
     setSubjectSavedToastMessage('Subject schedule updated');
     setShowSubjectSavedToast(true);
@@ -1409,7 +1451,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
         ]}
       >
         <Pressable onPress={onBack} style={styles.backButton}>
-          <Feather name="arrow-left" size={18} color="#1e2b26" />
+          <Feather name="arrow-left" size={18} color="#ffffff" />
         </Pressable>
         
         <View style={styles.headerTitleContainer}>
@@ -1417,17 +1459,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
         </View>
 
         <Pressable style={styles.headerActionButton} onPress={openSubjectSheet}>
-          <Feather name="more-horizontal" size={18} color="#1e2b26" />
+          <Feather name="more-horizontal" size={18} color="#ffffff" />
         </Pressable>
       </Animated.View>
 
-      <Animated.ScrollView
+      <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContainer}
-        style={{
-          opacity: contentFadeAnim,
-          transform: [{ translateY: contentSlideAnim }],
-        }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1445,62 +1483,51 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
               colors={['#16312b', '#0f201b']}
               style={styles.heroCard}
             >
-              {/* Top Row: Academic Period Pill */}
-              <View style={styles.periodPill}>
-                <Text style={styles.periodPillText}>
-                  {subject?.term || 'NO TERM SET'}
-                </Text>
-              </View>
+              {/* Academic Period */}
+              <Text style={styles.periodPillText}>
+                {subject?.term || 'NO TERM SET'}
+              </Text>
 
               {/* Prominent Subject Title */}
               <Text style={styles.heroSubjectTitle}>
                   {subject?.title || 'Untitled Subject'}
               </Text>
 
+              {subject?.instructor ? (
+                <Text style={styles.heroInstructor}>{subject.instructor}</Text>
+              ) : null}
+
               {/* Divider */}
               <View style={styles.heroDivider} />
 
-              {/* Bottom Grid Rows for Details */}
-              <View style={styles.cardMetaRows}>
-                {/* Row 1: Who & Where */}
-                <View style={styles.cardMetaRow}>
-                  <View style={styles.cardMetaItem}>
-                    <Feather name="user" size={14} color="#A2C9BA" style={styles.metaIcon} />
-                    <Text style={styles.cardMetaText} numberOfLines={1}>
-                      {subject?.instructor || 'No instructor'}
-                    </Text>
-                  </View>
-                  <View style={styles.cardMetaItem}>
-                    <Feather name="map-pin" size={14} color="#A2C9BA" style={styles.metaIcon} />
-                    <Text style={styles.cardMetaText} numberOfLines={1}>
-                      {subject?.location || 'No location'}
-                    </Text>
-                  </View>
+              {/* Details Card */}
+              <View style={styles.detailsCard}>
+                <View style={styles.detailsCardCol}>
+                  <Text style={styles.detailsCardLabel}>DAYS</Text>
+                  <Text style={styles.detailsCardValue} numberOfLines={1}>
+                    {subject?.days && subject.days.length > 0 ? subject.days.join(', ') : '—'}
+                  </Text>
                 </View>
-
-                {/* Row 2: Days & Times */}
-                <View style={[styles.cardMetaRow, { marginTop: 10 }]}>
-                  <View style={styles.cardMetaItem}>
-                    <Feather name="calendar" size={14} color="#A2C9BA" style={styles.metaIcon} />
-                    <Text style={styles.cardMetaText} numberOfLines={1}>
-                      {subject?.days && subject.days.length > 0
-                        ? subject.days.join(', ')
-                        : 'No days set'}
-                    </Text>
-                  </View>
-                  <View style={styles.cardMetaItem}>
-                    <Feather name="clock" size={14} color="#A2C9BA" style={styles.metaIcon} />
-                    <Text style={styles.cardMetaText} numberOfLines={1}>
-                      {subject?.time || 'No time set'}
-                    </Text>
-                  </View>
+                <View style={styles.detailsCardVLine} />
+                <View style={styles.detailsCardCol}>
+                  <Text style={styles.detailsCardLabel}>TIME</Text>
+                  <Text style={styles.detailsCardValue} numberOfLines={1}>
+                    {subject?.time || '—'}
+                  </Text>
+                </View>
+                <View style={styles.detailsCardVLine} />
+                <View style={styles.detailsCardCol}>
+                  <Text style={styles.detailsCardLabel}>LOCATION</Text>
+                  <Text style={styles.detailsCardValue} numberOfLines={1}>
+                    {subject?.location || '—'}
+                  </Text>
                 </View>
               </View>
             </LinearGradient>
 
             {/* Urgent Tasks Section */}
             <View style={styles.section}>
-              <Text style={styles.sectionHeaderTitle}>Urgent Tasks</Text>
+              <Text style={styles.sectionHeaderTitle}>URGENT TASKS</Text>
 
               {urgentTasksPreview.length === 0 ? (
                 <View style={styles.sectionEmptyState}>
@@ -1560,7 +1587,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
             {/* Recent Notes Section */}
             <View style={styles.section}>
-              <Text style={styles.sectionHeaderTitle}>Recent Notes</Text>
+              <Text style={styles.sectionHeaderTitle}>RECENT NOTES</Text>
 
               {recentNotes.length === 0 ? (
                 <View style={styles.recentNoteEmptyState}>
@@ -1602,7 +1629,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
         {activeTab === 'tasks' && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeaderTitle}>Tasks</Text>
+            <Text style={styles.sectionHeaderTitle}>TASKS</Text>
 
             {/* OVERDUE SECTION */}
             {overdueTasks.length > 0 && (
@@ -1830,7 +1857,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
             {/* Workspace Section */}
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionHeaderTitle}>Workspace</Text>
+                <Text style={styles.sectionHeaderTitle}>WORKSPACE</Text>
                 {remainingFolders.length > 0 ? (
                   <Pressable
                     onPress={handleToggleFolderExpansion}
@@ -1974,7 +2001,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
             >
               {/* Loose Notes Section */}
               <View style={styles.section}>
-                <Text style={styles.sectionHeaderTitle}>Loose Notes</Text>
+                <Text style={styles.sectionHeaderTitle}>LOOSE NOTES</Text>
 
                 {looseNotes.length === 0 ? (
                   <View style={styles.looseNotesEmptyState}>
@@ -2022,14 +2049,14 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
             </Animated.View>
           </>
         )}
-      </Animated.ScrollView>
+      </ScrollView>
 
       {/* Interactive Action Sheet Modal - rendered before navDock/FAB so they stay tappable */}
       {isActionSheetOpen ? (
         <View style={styles.actionSheetOverlay}>
           <Animated.View style={[StyleSheet.absoluteFill, { opacity: sheetOpacity }]}>
             <BlurView 
-              intensity={80} 
+              intensity={20} 
               tint="dark" 
               style={StyleSheet.absoluteFill}
               experimentalBlurMethod="dimezisBlurView" 
@@ -2112,9 +2139,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       ) : null}
 
       {isFolderFormOpen ? (
-        <Animated.View style={[styles.folderFormBackdrop, { opacity: folderFormOpacity }]}>
+        <View style={[StyleSheet.absoluteFill, { zIndex: 99 }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: folderFormOpacity }]}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+            <View style={styles.folderFormBackdrop} />
+          </Animated.View>
           <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseFolderForm} />
-        </Animated.View>
+        </View>
       ) : null}
 
       {isFolderFormOpen ? (
@@ -2204,9 +2235,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       ) : null}
 
       {isTaskFormOpen ? (
-        <Animated.View style={[styles.taskFormBackdrop, { opacity: taskFormOpacity }]}>
+        <View style={[StyleSheet.absoluteFill, { zIndex: 101 }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: taskFormOpacity }]}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+            <View style={styles.taskFormBackdrop} />
+          </Animated.View>
           <Pressable style={StyleSheet.absoluteFill} onPress={closeTaskForm} />
-        </Animated.View>
+        </View>
       ) : null}
 
       {isTaskFormOpen ? (
@@ -2427,9 +2462,11 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
       {isTaskFormOpen && taskFormSubView ? (
         <View style={[StyleSheet.absoluteFill, { zIndex: 150 }]}>
-          <Animated.View style={[styles.taskFormBackdrop, { opacity: subModalOpacity }]}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={closeSubModal} />
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: subModalOpacity }]}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+            <View style={styles.taskFormBackdrop} />
           </Animated.View>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeSubModal} />
           <Animated.View
             pointerEvents="box-none"
             style={[
@@ -2538,20 +2575,24 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                         { mins: 1440, label: '1 day before' },
                       ] as const).map((opt, index) => {
                         const selected = taskReminderMinutes === opt.mins;
+                        const disabled = opt.mins !== null && !taskDueDate;
                         return (
                           <View key={String(opt.mins)}>
                             {index > 0 && <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />}
                             <Pressable
                               style={[styles.editInfoRow, selected && { backgroundColor: '#eef2ec' }]}
-                              onPress={() => { setTaskReminderMinutes(opt.mins); closeSubModal(); }}
+                              onPress={disabled ? undefined : () => { setTaskReminderMinutes(opt.mins); closeSubModal(); }}
                             >
-                              <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold', flex: 1 }]}>{opt.label}</Text>
+                              <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold', flex: 1 }, disabled && { color: '#c9cdc9' }]}>{opt.label}</Text>
                               {selected && <Feather name="check" size={20} color="#0f2a24" />}
                             </Pressable>
                           </View>
                         );
                       })}
                     </View>
+                    {!taskDueDate && (
+                      <Text style={styles.subModalHint}>Set a date and time to enable reminders</Text>
+                    )}
                     <Pressable style={styles.subModalBackRow} onPress={closeSubModal}>
                       <Text style={styles.subModalBackText}>Back</Text>
                     </Pressable>
@@ -2568,7 +2609,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                         { key: 'monthly', label: 'Monthly' },
                       ] as const).map((opt, index) => {
                         const selected = taskRepeatType === opt.key;
-                        const isMonthlyDisabled = opt.key === 'monthly' && !taskDueDate;
+                        const isDisabled = opt.key !== 'none' && !taskDueDate;
                         return (
                           <View key={opt.key}>
                             {index > 0 && <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />}
@@ -2576,9 +2617,9 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                               style={[
                                 styles.editInfoRow,
                                 selected && { backgroundColor: '#eef2ec' },
-                                isMonthlyDisabled && { opacity: 0.35 },
+                                isDisabled && { opacity: 0.35 },
                               ]}
-                              disabled={isMonthlyDisabled}
+                              disabled={isDisabled}
                               onPress={() => {
                                 setTaskRepeatType(opt.key as any);
                                 if (opt.key === 'weekly') {
@@ -2598,7 +2639,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                       })}
                     </View>
                     {!taskDueDate && (
-                      <Text style={styles.subModalHint}>Set a due date first to enable monthly repeat</Text>
+                      <Text style={styles.subModalHint}>Set a date and time to enable repeats</Text>
                     )}
                     <Pressable style={styles.subModalBackRow} onPress={closeSubModal}>
                       <Text style={styles.subModalBackText}>Back</Text>
@@ -2678,9 +2719,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
       {isTaskDetailOpen && detailTask ? (
         <>
-          <Animated.View style={[styles.taskFormBackdrop, { opacity: taskDetailOpacity, zIndex: 160 }]}>
+          <View style={[StyleSheet.absoluteFill, { zIndex: 160 }]}>
+            <Animated.View style={[StyleSheet.absoluteFill, { opacity: taskDetailOpacity }]}>
+              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+              <View style={styles.taskFormBackdrop} />
+            </Animated.View>
             <Pressable style={StyleSheet.absoluteFill} onPress={closeTaskDetail} />
-          </Animated.View>
+          </View>
           <Animated.View
             pointerEvents="box-none"
             style={[
@@ -2763,19 +2808,52 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                       </View>
                     </>
                   ) : null}
-                  <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
-                  <Pressable
-                    style={styles.editInfoRow}
-                    onPress={() => {
-                      void handleDeleteTask(detailTask.id);
-                      closeTaskDetail();
-                      setTaskReminderToastMessage('Task deleted');
-                      setShowTaskReminderToast(true);
-                    }}
-                  >
-                    <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
-                    <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 16, color: '#b42318' }}>Delete Task</Text>
-                  </Pressable>
+                  {detailTask.repeatType !== 'none' ? (
+                    <>
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <Pressable
+                        style={styles.editInfoRow}
+                        onPress={() => {
+                          void handleDeleteTaskOccurrence(detailTask, detailTask.nextOccurrenceDate);
+                          closeTaskDetail();
+                          setTaskReminderToastMessage('Occurrence deleted');
+                          setShowTaskReminderToast(true);
+                        }}
+                      >
+                        <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
+                        <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 16, color: '#b42318' }}>Delete this occurrence only</Text>
+                      </Pressable>
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <Pressable
+                        style={styles.editInfoRow}
+                        onPress={() => {
+                          void handleDeleteTask(detailTask.id);
+                          closeTaskDetail();
+                          setTaskReminderToastMessage('Task deleted');
+                          setShowTaskReminderToast(true);
+                        }}
+                      >
+                        <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
+                        <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 16, color: '#b42318' }}>Delete entire series</Text>
+                      </Pressable>
+                    </>
+                  ) : (
+                    <>
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <Pressable
+                        style={styles.editInfoRow}
+                        onPress={() => {
+                          void handleDeleteTask(detailTask.id);
+                          closeTaskDetail();
+                          setTaskReminderToastMessage('Task deleted');
+                          setShowTaskReminderToast(true);
+                        }}
+                      >
+                        <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
+                        <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 16, color: '#b42318' }}>Delete Task</Text>
+                      </Pressable>
+                    </>
+                  )}
                 </View>
               </ScrollView>
             </View>
@@ -2785,27 +2863,36 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
       {/* Floating Bottom Tab Bar Navigation */}
       <View style={styles.navDock} pointerEvents={isSubjectSheetOpen ? 'none' : 'auto'}>
-          <View style={styles.navPill}>
-            <Pressable style={styles.navItem} onPress={() => setActiveTab('subject')}>
-              <View style={[styles.navItemInner, activeTab === 'subject' ? styles.navItemActive : null]}>
-                <Feather name="book-open" size={18} color={activeTab === 'subject' ? '#d7e4dd' : '#5c6762'} />
-                <Text style={activeTab === 'subject' ? styles.navLabelActive : styles.navLabel}>Subject</Text>
-              </View>
-            </Pressable>
-            <Pressable style={styles.navItem} onPress={() => setActiveTab('notes')}>
-              <View style={[styles.navItemInner, activeTab === 'notes' ? styles.navItemActive : null]}>
-                <Feather name="folder" size={18} color={activeTab === 'notes' ? '#d7e4dd' : '#5c6762'} />
-                <Text style={activeTab === 'notes' ? styles.navLabelActive : styles.navLabel}>Notes</Text>
-              </View>
-            </Pressable>
-            <Pressable style={styles.navItem} onPress={() => setActiveTab('tasks')}>
-              <View style={[styles.navItemInner, activeTab === 'tasks' ? styles.navItemActive : null]}>
-                <Feather name="check-circle" size={18} color={activeTab === 'tasks' ? '#d7e4dd' : '#5c6762'} />
-                <Text style={activeTab === 'tasks' ? styles.navLabelActive : styles.navLabel}>Tasks</Text>
-              </View>
-            </Pressable>
-          </View>
+        <View style={styles.navPill} onLayout={(e) => setNavPillWidth(e.nativeEvent.layout.width)}>
+          <Animated.View style={[styles.activeIndicator, {
+            transform: [{ translateX: tabIndicatorAnim.interpolate({
+              inputRange: [0, 1, 2],
+              outputRange: navPillWidth > 0
+                ? [8, 8 + (navPillWidth - 16) / 3, 8 + 2 * (navPillWidth - 16) / 3]
+                : [0, 0, 0],
+            }) }],
+            width: navPillWidth > 0 ? (navPillWidth - 16) / 3 : 0,
+          }]} />
+          <Pressable style={styles.navItem} onPress={() => handleTabPress('subject')}>
+            <View style={styles.navItemInner}>
+              <Feather name="book-open" size={18} color={activeTab === 'subject' ? '#d7e4dd' : '#5c6762'} />
+              <Text style={activeTab === 'subject' ? styles.navLabelActive : styles.navLabel}>Subject</Text>
+            </View>
+          </Pressable>
+          <Pressable style={styles.navItem} onPress={() => handleTabPress('notes')}>
+            <View style={styles.navItemInner}>
+              <Feather name="folder" size={18} color={activeTab === 'notes' ? '#d7e4dd' : '#5c6762'} />
+              <Text style={activeTab === 'notes' ? styles.navLabelActive : styles.navLabel}>Notes</Text>
+            </View>
+          </Pressable>
+          <Pressable style={styles.navItem} onPress={() => handleTabPress('tasks')}>
+            <View style={styles.navItemInner}>
+              <Feather name="check-circle" size={18} color={activeTab === 'tasks' ? '#d7e4dd' : '#5c6762'} />
+              <Text style={activeTab === 'tasks' ? styles.navLabelActive : styles.navLabel}>Tasks</Text>
+            </View>
+          </Pressable>
         </View>
+      </View>
 
       {/* Plus Button - rendered after action sheet overlay to stay tappable */}
       <Animated.View
@@ -2834,9 +2921,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       </Animated.View>
 
       {isSubjectSheetOpen ? (
-        <Animated.View style={[styles.subjectSheetBackdrop, { opacity: subjectSheetOpacity }]}>
+        <View style={[StyleSheet.absoluteFill, { zIndex: 99 }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: subjectSheetOpacity }]}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+            <View style={styles.subjectSheetBackdrop} />
+          </Animated.View>
           <Pressable style={StyleSheet.absoluteFill} onPress={closeSubjectSheet} />
-        </Animated.View>
+        </View>
       ) : null}
 
       {isSubjectSheetOpen ? (
@@ -2909,7 +3000,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
               )}
 
               {subjectSheetView === 'editInfo' && (
-                <>
+                <Animated.View style={{ opacity: subViewOpacity, transform: [{ translateY: subViewSlide.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }}>
                   <Text style={styles.subjectSheetTitle}>Edit Subject Info</Text>
 
                   <View style={styles.editInfoCard}>
@@ -2952,7 +3043,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                   </View>
 
                   <View style={styles.editInfoActions}>
-                    <Pressable onPress={() => setSubjectSheetView('main')}>
+                    <Pressable onPress={() => { subViewOpacity.setValue(0); subViewSlide.setValue(0); setSubjectSheetView('main'); }}>
                       <Text style={styles.editInfoCancelText}>Cancel</Text>
                     </Pressable>
                     <Pressable
@@ -2963,7 +3054,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                       <Text style={styles.editInfoSaveText}>Save</Text>
                     </Pressable>
                   </View>
-                </>
+                </Animated.View>
               )}
 
               {subjectSheetView === 'editTerm' && (
@@ -2997,7 +3088,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
               )}
 
               {subjectSheetView === 'editSchedule' && (
-                <>
+                <Animated.View style={{ opacity: subViewOpacity, transform: [{ translateY: subViewSlide.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }}>
                   <Text style={styles.subjectSheetTitle}>Edit Schedule</Text>
 
                   <View style={styles.editInfoCard}>
@@ -3095,7 +3186,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                   ) : null}
 
                   <View style={styles.editInfoActions}>
-                    <Pressable onPress={() => setSubjectSheetView('main')}>
+                    <Pressable onPress={() => { subViewOpacity.setValue(0); subViewSlide.setValue(0); setSubjectSheetView('main'); }}>
                       <Text style={styles.editInfoCancelText}>Cancel</Text>
                     </Pressable>
                     <Pressable
@@ -3105,7 +3196,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                       <Text style={styles.editInfoSaveText}>Save</Text>
                     </Pressable>
                   </View>
-                </>
+                </Animated.View>
               )}
 
               {subjectSheetView === 'stats' && (
@@ -3126,17 +3217,12 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                       <Text style={styles.statsLabel}>Loose Notes</Text>
                     </View>
                     <View style={styles.statsCard}>
-                      <Text style={styles.statsNumber}>{pinnedNotes.length}</Text>
-                      <Text style={styles.statsLabel}>Pinned</Text>
+                      <Text style={styles.statsNumber}>{tasks.length}</Text>
+                      <Text style={styles.statsLabel}>Tasks</Text>
                     </View>
                   </View>
 
                   <View style={styles.statsInfoCard}>
-                    <View style={styles.statsInfoRow}>
-                      <Feather name="calendar" size={16} color="#5c6762" />
-                      <Text style={styles.statsInfoLabel}>Subject age</Text>
-                      <Text style={styles.statsInfoValue}>{subjectAgeDays} day{subjectAgeDays !== 1 ? 's' : ''}</Text>
-                    </View>
                     {lastActivity && (
                       <View style={styles.statsInfoRow}>
                         <Feather name="clock" size={16} color="#5c6762" />
@@ -3249,18 +3335,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingBottom: 16,
-    backgroundColor: '#f8f7f2', // Clean solid top bar matches background
+    paddingBottom: 8,
+    backgroundColor: '#16312b',
   },
   backButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#fcfbfa',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#f2f1ee',
   },
   headerTitleContainer: {
     flex: 1,
@@ -3270,7 +3354,7 @@ const styles = StyleSheet.create({
   headerSubjectCode: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
-    color: '#1e2b26',
+    color: '#A2C9BA',
     letterSpacing: 1.1,
     textTransform: 'uppercase',
   },
@@ -3278,11 +3362,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#fcfbfa',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#f2f1ee',
   },
   scrollContainer: {
     paddingHorizontal: 18,
@@ -3290,21 +3372,15 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
   heroCard: {
-    borderRadius: 24,
-    padding: 22,
+    padding: 16,
+    marginHorizontal: -18,
+    marginTop: -18,
     marginBottom: 24,
     shadowColor: '#16312b',
     shadowOpacity: 0.2,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,
-  },
-  periodPill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 10,
-    alignSelf: 'flex-start',
   },
   periodPillText: {
     fontFamily: 'Manrope_700Bold',
@@ -3317,45 +3393,61 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_800ExtraBold',
     fontSize: 26,
     color: '#ffffff',
-    marginTop: 18,
-    marginBottom: 20,
+    marginTop: 16,
+    marginBottom: 8,
     lineHeight: 34,
+  },
+  heroInstructor: {
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 15,
+    color: '#A2C9BA',
+    marginBottom: 18,
   },
   heroDivider: {
     height: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     marginBottom: 18,
   },
-  cardMetaRows: {
-    width: '100%',
-  },
-  cardMetaRow: {
+  detailsCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 16,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    overflow: 'hidden',
   },
-  cardMetaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  detailsCardCol: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    gap: 4,
   },
-  metaIcon: {
-    marginRight: 6,
+  detailsCardVLine: {
+    width: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignSelf: 'stretch',
   },
-  cardMetaText: {
-    fontFamily: 'Manrope_500Medium',
+  detailsCardLabel: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 10,
+    color: '#A2C9BA',
+    letterSpacing: 1,
+  },
+  detailsCardValue: {
+    fontFamily: 'Manrope_600SemiBold',
     fontSize: 13,
-    color: '#d1e3db',
-    flex: 1,
+    color: '#ffffff',
+    textAlign: 'center',
   },
   section: {
     marginBottom: 26,
   },
   sectionHeaderTitle: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 18,
-    color: '#1e2b26',
+    fontSize: 12,
+    letterSpacing: 1.4,
+    color: '#6b746f',
     marginBottom: 14,
+    paddingHorizontal: 2,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -3783,7 +3875,7 @@ const styles = StyleSheet.create({
   },
   folderFormBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(5, 8, 7, 0.3)',
+    backgroundColor: 'rgba(5, 8, 7, 0.2)',
     zIndex: 99,
   },
   folderFormPanelWrapper: {
@@ -3902,7 +3994,7 @@ const styles = StyleSheet.create({
   },
   taskFormBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(5, 8, 7, 0.3)',
+    backgroundColor: 'rgba(5, 8, 7, 0.2)',
     zIndex: 101,
   },
   taskFormPanelWrapper: {
@@ -4087,6 +4179,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
   },
+  activeIndicator: {
+    position: 'absolute',
+    left: 0,
+    top: 6,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#2c3b35',
+  },
   navItemActive: {
     backgroundColor: '#2c3b35',
   },
@@ -4128,7 +4228,7 @@ const styles = StyleSheet.create({
   },
   actionSheetBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(5, 8, 7, 0.4)',
+    backgroundColor: 'rgba(5, 8, 7, 0.2)',
   },
   actionSheetPressTarget: {
     ...StyleSheet.absoluteFillObject,
@@ -4165,7 +4265,7 @@ const styles = StyleSheet.create({
   },
   subjectSheetBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(5, 8, 7, 0.3)',
+    backgroundColor: 'rgba(5, 8, 7, 0.2)',
     zIndex: 99,
   },
   subjectSheetPanelWrapper: {

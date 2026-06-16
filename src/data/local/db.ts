@@ -65,6 +65,14 @@ type TaskCompletionRow = {
   completedAt: number;
 };
 
+type TaskOccurrenceExceptionRow = {
+  id: string;
+  taskId: string;
+  occurrenceDate: number;
+  status: 'completed' | 'deleted';
+  completedAt: number | null;
+};
+
 export type SubjectRecord = {
   id: string;
   title: string;
@@ -127,6 +135,14 @@ export type TaskCompletionRecord = {
   completedAt: number;
 };
 
+export type TaskOccurrenceExceptionRecord = {
+  id: string;
+  taskId: string;
+  occurrenceDate: number;
+  status: 'completed' | 'deleted';
+  completedAt: number | null;
+};
+
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 const getDb = async () => {
@@ -141,6 +157,7 @@ export const initDb = async () => {
   const db = await getDb();
 
   await db.execAsync('PRAGMA journal_mode = WAL;');
+  await db.execAsync('PRAGMA foreign_keys = OFF;');
   await db.execAsync('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY NOT NULL);');
 
   const current = await db.getFirstAsync<{ version: number | null }>(
@@ -304,6 +321,7 @@ export const updateSubject = async (
 
 export const deleteSubject = async (subjectId: string): Promise<void> => {
   const db = await getDb();
+  await db.runAsync('DELETE FROM task_occurrence_exceptions WHERE taskId IN (SELECT id FROM tasks WHERE subjectId = ?)', [subjectId]);
   await db.runAsync('DELETE FROM task_completions WHERE taskId IN (SELECT id FROM tasks WHERE subjectId = ?)', [subjectId]);
   await db.runAsync('DELETE FROM tasks WHERE subjectId = ?', [subjectId]);
   await db.runAsync('DELETE FROM notes WHERE subjectId = ?', [subjectId]);
@@ -652,18 +670,68 @@ export const updateTask = async (
 
 export const deleteTask = async (taskId: string): Promise<void> => {
   const db = await getDb();
+  await db.runAsync('DELETE FROM task_occurrence_exceptions WHERE taskId = ?', [taskId]);
+  await db.runAsync('DELETE FROM task_completions WHERE taskId = ?', [taskId]);
   await db.runAsync('DELETE FROM tasks WHERE id = ?', [taskId]);
+};
+
+export const setTaskOccurrenceException = async (
+  taskId: string,
+  occurrenceDate: number,
+  status: 'completed' | 'deleted',
+  completedAt?: number
+): Promise<void> => {
+  const db = await getDb();
+  const id = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+  await db.runAsync(
+    `INSERT OR REPLACE INTO task_occurrence_exceptions (id, taskId, occurrenceDate, status, completedAt) VALUES (?, ?, ?, ?, ?)`,
+    [id, taskId, occurrenceDate, status, completedAt ?? null]
+  );
+};
+
+export const getTaskOccurrenceExceptions = async (taskIds: string[]): Promise<TaskOccurrenceExceptionRecord[]> => {
+  if (taskIds.length === 0) return [];
+  const db = await getDb();
+  const placeholders = taskIds.map(() => '?').join(',');
+  const rows = await db.getAllAsync<TaskOccurrenceExceptionRow>(
+    `SELECT * FROM task_occurrence_exceptions WHERE taskId IN (${placeholders})`,
+    taskIds
+  );
+  return rows.map(r => ({
+    id: r.id,
+    taskId: r.taskId,
+    occurrenceDate: r.occurrenceDate,
+    status: r.status,
+    completedAt: r.completedAt,
+  }));
+};
+
+export const deleteTaskOccurrence = async (taskId: string, occurrenceDate: number): Promise<number> => {
+  const db = await getDb();
+  const exceptionId = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+  await db.runAsync(
+    `INSERT OR REPLACE INTO task_occurrence_exceptions (id, taskId, occurrenceDate, status, completedAt) VALUES (?, ?, ?, ?, ?)`,
+    [exceptionId, taskId, occurrenceDate, 'deleted', null]
+  );
+  const task = await db.getFirstAsync<TaskRow>('SELECT * FROM tasks WHERE id = ?', [taskId]);
+  if (task && task.repeatType !== 'none' && task.nextOccurrenceDate === occurrenceDate) {
+    const next = await getNextOccurrenceDate(task, occurrenceDate);
+    await db.runAsync(
+      'UPDATE tasks SET nextOccurrenceDate = ?, updatedAt = ? WHERE id = ?',
+      [next, Date.now(), taskId]
+    );
+    return next;
+  }
+  return task?.nextOccurrenceDate ?? 0;
 };
 
 export const completeTaskOccurrence = async (taskId: string, occurrenceDate: number, nextOccurrenceDate: number): Promise<void> => {
   const db = await getDb();
-  const completionId = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-  
+  const id = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
   await db.runAsync(
-    `INSERT INTO task_completions (id, taskId, occurrenceDate, completedAt) VALUES (?, ?, ?, ?)`,
-    [completionId, taskId, occurrenceDate, Date.now()]
+    `INSERT OR REPLACE INTO task_occurrence_exceptions (id, taskId, occurrenceDate, status, completedAt) VALUES (?, ?, ?, ?, ?)`,
+    [id, taskId, occurrenceDate, 'completed', Date.now()]
   );
-
   await db.runAsync(
     `UPDATE tasks SET nextOccurrenceDate = ?, updatedAt = ? WHERE id = ?`,
     [nextOccurrenceDate, Date.now(), taskId]
@@ -673,59 +741,89 @@ export const completeTaskOccurrence = async (taskId: string, occurrenceDate: num
 export const getTaskCompletions = async (taskIds: string[]): Promise<TaskCompletionRecord[]> => {
   if (taskIds.length === 0) return [];
   const db = await getDb();
-  
-  // Create placeholders for the IN clause
   const placeholders = taskIds.map(() => '?').join(',');
-  const rows = await db.getAllAsync<TaskCompletionRow>(
-    `SELECT * FROM task_completions WHERE taskId IN (${placeholders})`,
+  const rows = await db.getAllAsync<TaskOccurrenceExceptionRow>(
+    `SELECT * FROM task_occurrence_exceptions WHERE taskId IN (${placeholders}) AND status = 'completed'`,
     taskIds
   );
-
   return rows.map(r => ({
     id: r.id,
     taskId: r.taskId,
     occurrenceDate: r.occurrenceDate,
-    completedAt: r.completedAt
+    completedAt: r.completedAt ?? 0,
   }));
 };
 
 export const uncompleteTaskOccurrence = async (taskId: string): Promise<number> => {
   const db = await getDb();
-
-  const lastCompletion = await db.getFirstAsync<TaskCompletionRow>(
-    'SELECT * FROM task_completions WHERE taskId = ? ORDER BY completedAt DESC LIMIT 1',
+  const lastCompletion = await db.getFirstAsync<TaskOccurrenceExceptionRow>(
+    `SELECT * FROM task_occurrence_exceptions WHERE taskId = ? AND status = 'completed' ORDER BY completedAt DESC LIMIT 1`,
     [taskId]
   );
-
   if (!lastCompletion) return 0;
-
-  const task = await db.getFirstAsync<TaskRow>(
-    'SELECT * FROM tasks WHERE id = ?',
-    [taskId]
-  );
-
+  const task = await db.getFirstAsync<TaskRow>('SELECT * FROM tasks WHERE id = ?', [taskId]);
   if (!task) return 0;
-
-  await db.runAsync('DELETE FROM task_completions WHERE id = ?', [lastCompletion.id]);
-
+  await db.runAsync('DELETE FROM task_occurrence_exceptions WHERE id = ?', [lastCompletion.id]);
   const remainingCount = await db.getFirstAsync<{ count: number }>(
-    'SELECT COUNT(*) as count FROM task_completions WHERE taskId = ?',
+    `SELECT COUNT(*) as count FROM task_occurrence_exceptions WHERE taskId = ? AND status = 'completed'`,
     [taskId]
   );
-
   let restoredDate: number;
   if (remainingCount && remainingCount.count === 0 && task.repeatType === 'none') {
     restoredDate = task.startDate ?? Date.now();
   } else {
     restoredDate = lastCompletion.occurrenceDate;
   }
-
   await db.runAsync(
     'UPDATE tasks SET nextOccurrenceDate = ?, updatedAt = ? WHERE id = ?',
     [restoredDate, Date.now(), taskId]
   );
-
   return restoredDate;
+};
+
+const getNextOccurrenceDate = async (task: TaskRow, afterDate: number): Promise<number> => {
+  const { repeatType, repeatInterval, repeatDays, startDate, endDate } = task;
+  if (repeatType === 'none' || !startDate) return 4102444800000;
+  const baseDate = new Date(startDate);
+  let next = new Date(baseDate);
+  if (next.getTime() > afterDate) return next.getTime();
+  const interval = Math.max(1, repeatInterval || 1);
+  const selectedDays = repeatDays
+    ? (JSON.parse(repeatDays) as string[])
+        .map((day) => ({ su: 0, mo: 1, tu: 2, we: 3, th: 4, fr: 5, sa: 6 }[day.toLowerCase()]))
+        .filter((day): day is number => day !== undefined)
+        .sort()
+    : [];
+
+  while (next.getTime() <= afterDate) {
+    if (repeatType === 'daily') {
+      next.setDate(next.getDate() + interval);
+      if (selectedDays.length > 0) {
+        while (!selectedDays.includes(next.getDay())) {
+          next.setDate(next.getDate() + 1);
+        }
+      }
+    } else if (repeatType === 'weekly') {
+      if (selectedDays.length > 0) {
+        const currentDay = next.getDay();
+        let nextDay = selectedDays.find((day) => day > currentDay);
+        if (nextDay !== undefined) {
+          next.setDate(next.getDate() + (nextDay - currentDay));
+        } else {
+          nextDay = selectedDays[0];
+          next.setDate(next.getDate() + (7 - currentDay) + nextDay + (interval - 1) * 7);
+        }
+      } else {
+        next.setDate(next.getDate() + 7 * interval);
+      }
+    } else if (repeatType === 'monthly') {
+      next.setMonth(next.getMonth() + interval);
+    } else if (repeatType === 'yearly') {
+      next.setFullYear(next.getFullYear() + interval);
+    } else break;
+  }
+  if (endDate && next.getTime() > endDate) return 4102444800000;
+  return next.getTime();
 };
 
 export const getAllNotes = async (): Promise<NoteRecord[]> => {

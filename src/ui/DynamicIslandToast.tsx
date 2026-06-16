@@ -18,6 +18,7 @@ export default function DynamicIslandToast({
 }: DynamicIslandToastProps) {
   const insets = useSafeAreaInsets();
   const [isRendered, setIsRendered] = useState(false);
+  const isError = /^(failed|error|unable)/i.test(message);
   
   const widthAnim = useRef(new Animated.Value(120)).current;
   const heightAnim = useRef(new Animated.Value(38)).current;
@@ -125,7 +126,7 @@ export default function DynamicIslandToast({
     >
       <Animated.View style={[styles.content, { opacity: contentOpacity }]}>
         <View style={styles.iconWrapper}>
-          <Feather name="check" size={16} color="#4ade80" />
+          <Feather name={isError ? 'x' : 'check'} size={16} color={isError ? '#f87171' : '#4ade80'} />
         </View>
         <Text style={styles.message} numberOfLines={1}>
           {message}

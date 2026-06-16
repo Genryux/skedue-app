@@ -11,6 +11,7 @@ import {
   Dimensions,
   Keyboard,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { insertTask, type TaskRecord } from '../../data/local/db';
@@ -192,9 +193,11 @@ export default function CreateTaskModal({ visible, onClose, onCreated, onError }
 
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 200 }]}>
-      <Animated.View style={[StyleSheet.absoluteFill, { opacity: opacityAnim, backgroundColor: 'rgba(5, 8, 7, 0.3)' }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={close} />
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: opacityAnim }]}>
+        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5, 8, 7, 0.2)' }]} />
       </Animated.View>
+      <Pressable style={StyleSheet.absoluteFill} onPress={close} />
 
       <Animated.View
         pointerEvents="box-none"
@@ -262,10 +265,12 @@ export default function CreateTaskModal({ visible, onClose, onCreated, onError }
       </Animated.View>
 
       {showReminder ? (
-        <View style={StyleSheet.absoluteFill}>
-          <Animated.View style={[StyleSheet.absoluteFill, { opacity: subOpacityAnim, backgroundColor: 'rgba(5, 8, 7, 0.3)' }]}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={closeReminder} />
+        <View style={[StyleSheet.absoluteFill, { zIndex: 210 }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: subOpacityAnim }]}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5, 8, 7, 0.2)' }]} />
           </Animated.View>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeReminder} />
           <Animated.View
             pointerEvents="box-none"
             style={[styles.subPanelWrapper, {
@@ -357,20 +362,24 @@ export default function CreateTaskModal({ visible, onClose, onCreated, onError }
                     { mins: 1440, label: '1 day before' },
                   ] as const).map((opt, i) => {
                     const selected = reminderMinutes === opt.mins;
+                    const disabled = opt.mins !== null && !dueDate;
                     return (
                       <View key={String(opt.mins)}>
                         {i > 0 && <View style={styles.separator} />}
                         <Pressable
                           style={[styles.compactRow, selected && { backgroundColor: '#eef2ec' }]}
-                          onPress={() => { setReminderMinutes(opt.mins); closeReminder(); }}
+                          onPress={disabled ? undefined : () => { setReminderMinutes(opt.mins); closeReminder(); }}
                         >
-                          <Text style={[styles.compactRowText, selected && { fontFamily: 'Manrope_700Bold' }]}>{opt.label}</Text>
+                          <Text style={[styles.compactRowText, selected && { fontFamily: 'Manrope_700Bold' }, disabled && { color: '#c9cdc9' }]}>{opt.label}</Text>
                           {selected && <Feather name="check" size={20} color="#0f2a24" />}
                         </Pressable>
                       </View>
                     );
                   })}
                 </View>
+                {!dueDate && (
+                  <Text style={{ fontFamily: 'Manrope_400Regular', fontSize: 13, color: '#8f968f', textAlign: 'center', marginTop: 10 }}>Set a date and time to enable reminders</Text>
+                )}
 
                 <Pressable style={styles.subModalBackRow} onPress={closeReminder}>
                   <Text style={styles.subModalBackText}>Back</Text>

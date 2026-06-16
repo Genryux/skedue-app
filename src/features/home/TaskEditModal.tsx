@@ -10,7 +10,9 @@ import {
   TextInput,
   Dimensions,
   Keyboard,
+  BackHandler,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { updateTask, type TaskRecord, type SubjectRecord } from '../../data/local/db';
@@ -62,6 +64,10 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
   const [repeatSubStep, setRepeatSubStep] = useState<'main' | 'weeklyDays' | 'dailySkip'>('main');
   const [skipWeekends, setSkipWeekends] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  const panelMaxHeight = keyboardHeight > 0
+    ? SCREEN_HEIGHT - keyboardHeight - 16 - 20
+    : SCREEN_HEIGHT * 0.9;
 
   useEffect(() => {
     if (visible && task) {
@@ -135,6 +141,19 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
       }
     });
   }, [subOpacityAnim, subSlideAnim]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (subView) {
+        closeSubView();
+        return true;
+      }
+      close();
+      return true;
+    });
+    return () => handler.remove();
+  }, [visible, subView, close, closeSubView]);
 
   const snapMainOpen = useCallback(() => {
     Animated.spring(slideAnim, { toValue: 1, ...springModalSlide }).start();
@@ -253,9 +272,11 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 200 }]}>
       {/* Main backdrop */}
-      <Animated.View style={[StyleSheet.absoluteFill, { opacity: opacityAnim, backgroundColor: 'rgba(5, 8, 7, 0.3)' }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={close} />
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: opacityAnim }]}>
+        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5, 8, 7, 0.2)' }]} />
       </Animated.View>
+      <Pressable style={StyleSheet.absoluteFill} onPress={close} />
 
       {/* Main panel */}
       <Animated.View
@@ -270,7 +291,7 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
           }],
         }]}
       >
-        <View style={styles.panel} {...mainPanResponder.panHandlers}>
+        <View style={[styles.panel, { maxHeight: panelMaxHeight }]} {...mainPanResponder.panHandlers}>
           <View style={styles.handle} />
           <ScrollView
             bounces={false}
@@ -315,8 +336,8 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                 <Pressable style={styles.editInfoRow} onPress={() => openSubView('subject')}>
                   <Feather name="book-open" size={16} color="#8f968f" style={{ marginRight: 10 }} />
                   <Text style={styles.editInfoInput}>Subject</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={styles.chipText} numberOfLines={1}>{selectedSubjectLabel}</Text>
+                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={[styles.chipText, { flexShrink: 1 }]} numberOfLines={1} ellipsizeMode="tail">{selectedSubjectLabel}</Text>
                     <Feather name="chevron-right" size={18} color="#9aa09a" />
                   </View>
                 </Pressable>
@@ -432,10 +453,12 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
 
       {/* Sub-modal backdrop + panel */}
       {subView ? (
-        <View style={StyleSheet.absoluteFill}>
-          <Animated.View style={[StyleSheet.absoluteFill, { opacity: subOpacityAnim, backgroundColor: 'rgba(5, 8, 7, 0.3)' }]}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={closeSubView} />
+        <View style={[StyleSheet.absoluteFill, { zIndex: 210 }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: subOpacityAnim }]}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5, 8, 7, 0.2)' }]} />
           </Animated.View>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeSubView} />
           <Animated.View
             pointerEvents="box-none"
             style={[styles.subPanelWrapper, {
@@ -473,7 +496,7 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                               >
                                 <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                                   <Feather name="book-open" size={16} color="#5c6762" />
-                                  <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold' }]}>
+                                  <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold' }]} numberOfLines={1} ellipsizeMode="tail">
                                     {s.title}{s.code ? ` (${s.code})` : ''}
                                   </Text>
                                 </View>
@@ -568,20 +591,24 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                           { mins: 1440, label: '1 day before' },
                         ] as const).map((opt, i) => {
                           const selected = reminderMinutes === opt.mins;
+                          const disabled = opt.mins !== null && !dueDate;
                           return (
                             <View key={String(opt.mins)}>
                               {i > 0 && <View style={styles.separator} />}
                               <Pressable
                                 style={[styles.editInfoRow, selected && { backgroundColor: '#eef2ec' }]}
-                                onPress={() => { setReminderMinutes(opt.mins); closeSubView(); }}
+                                onPress={disabled ? undefined : () => { setReminderMinutes(opt.mins); closeSubView(); }}
                               >
-                                <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold', flex: 1 }]}>{opt.label}</Text>
+                                <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold', flex: 1 }, disabled && { color: '#c9cdc9' }]}>{opt.label}</Text>
                                 {selected && <Feather name="check" size={20} color="#0f2a24" />}
                               </Pressable>
                             </View>
                           );
                         })}
                       </View>
+                      {!dueDate && (
+                        <Text style={{ fontFamily: 'Manrope_400Regular', fontSize: 13, color: '#8f968f', textAlign: 'center', marginTop: 10 }}>Set a date and time to enable reminders</Text>
+                      )}
                       <Pressable style={styles.subModalBackRow} onPress={closeSubView}>
                         <Text style={styles.subModalBackText}>Back</Text>
                       </Pressable>
@@ -600,7 +627,7 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                           { key: 'monthly', label: 'Monthly' },
                         ] as const).map((opt, i) => {
                           const selected = repeatType === opt.key;
-                          const isMonthlyDisabled = opt.key === 'monthly' && !dueDate;
+                          const isDisabled = opt.key !== 'none' && !dueDate;
                           return (
                             <View key={opt.key}>
                               {i > 0 && <View style={styles.separator} />}
@@ -608,9 +635,9 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                                 style={[
                                   styles.editInfoRow,
                                   selected && { backgroundColor: '#eef2ec' },
-                                  isMonthlyDisabled && { opacity: 0.35 },
+                                  isDisabled && { opacity: 0.35 },
                                 ]}
-                                disabled={isMonthlyDisabled}
+                                disabled={isDisabled}
                                 onPress={() => {
                                   setRepeatType(opt.key as any);
                                   if (opt.key === 'weekly') {
@@ -630,7 +657,7 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                         })}
                       </View>
                       {!dueDate && (
-                        <Text style={styles.subModalHint}>Set a due date first to enable monthly repeat</Text>
+                        <Text style={styles.subModalHint}>Set a date and time to enable repeats</Text>
                       )}
                       <Pressable style={styles.subModalBackRow} onPress={closeSubView}>
                         <Text style={styles.subModalBackText}>Back</Text>

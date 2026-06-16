@@ -22,7 +22,7 @@ import {
   View,
 } from 'react-native';
 import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
-import { getAllNotes, getAllTasks, getMetaValue, getNotesBySubjectId, getSubjects, insertSubject, insertNote, updateNote, deleteNote, deleteTask, insertTask, findRecentMatchingNote, setMetaValue, updateSubject, completeTaskOccurrence, getTaskCompletions, type SubjectRecord, type NoteRecord, type TaskRecord, type TaskCompletionRecord } from '../../data/local/db';
+import { getAllNotes, getAllTasks, getMetaValue, getNotesBySubjectId, getTasksBySubjectId, getSubjects, insertSubject, insertNote, updateNote, deleteNote, deleteTask, insertTask, findRecentMatchingNote, setMetaValue, updateSubject, completeTaskOccurrence, uncompleteTaskOccurrence, getTaskCompletions, deleteTaskOccurrence, type SubjectRecord, type NoteRecord, type TaskRecord, type TaskCompletionRecord } from '../../data/local/db';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
 import { calculateNextOccurrenceDate, isSameCalendarDay, END_OF_TIME } from '../../utils/recurrenceUtils';
@@ -163,8 +163,11 @@ const formatMinutesDiff = (minutes: number) => {
 
 export default function MainScreen() {
   const [activeTab, setActiveTab] = useState<'home' | 'schedule' | 'subjects'>('home');
+  const [navPillWidth, setNavPillWidth] = useState(0);
+  const tabIndicatorAnim = useRef(new Animated.Value(0)).current;
   const [dbSubjects, setDbSubjects] = useState<SubjectRecord[]>([]);
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
+  const [taskCounts, setTaskCounts] = useState<Record<string, number>>({});
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isAddSubjectOpen, setIsAddSubjectOpen] = useState(false);
   const [isSubjectDetailOpen, setIsSubjectDetailOpen] = useState(false);
@@ -179,9 +182,9 @@ export default function MainScreen() {
   const sheetTranslate = useRef(new Animated.Value(18)).current;
   const buttonRotate = useRef(new Animated.Value(0)).current;
   const buttonScale = useRef(new Animated.Value(0)).current;
+  const buttonAnims = useRef(Array.from({ length: 4 }, () => new Animated.Value(0))).current;
 
   // Transitions
-  const subjectSlideAnim = useRef(new Animated.Value(0)).current; // 0: hidden, 1: visible
   const subjectDetailSlideAnim = useRef(new Animated.Value(0)).current; // 0: offscreen, 1: onscreen
   const allQuickNotesSlideAnim = useRef(new Animated.Value(0)).current; // 0: offscreen, 1: onscreen
 
@@ -200,29 +203,63 @@ export default function MainScreen() {
 
   // Recent notes state (quick notes + subject notes)
   const [pendingTasks, setPendingTasks] = useState<TaskRecord[]>([]);
+  const [allLoadedTasks, setAllLoadedTasks] = useState<TaskRecord[]>([]);
   const [taskCompletions, setTaskCompletions] = useState<TaskCompletionRecord[]>([]);
   const [editingTaskForEdit, setEditingTaskForEdit] = useState<TaskRecord | null>(null);
   const [isTaskEditOpen, setIsTaskEditOpen] = useState(false);
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [detailTask, setDetailTask] = useState<TaskRecord | null>(null);
+  const [detailTaskOccurrenceDate, setDetailTaskOccurrenceDate] = useState<number | null>(null);
   const [isTaskDetailOpen, setIsTaskDetailOpen] = useState(false);
   const taskDetailSlide = useRef(new Animated.Value(0)).current;
   const taskDetailOpacity = useRef(new Animated.Value(0)).current;
+
+  // Refs for BackHandler to avoid re-registration ordering conflicts
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const isTaskDetailOpenRef = useRef(false);
+  isTaskDetailOpenRef.current = isTaskDetailOpen;
+  const isTaskEditOpenRef = useRef(false);
+  isTaskEditOpenRef.current = isTaskEditOpen;
+  const isCreateTaskOpenRef = useRef(false);
+  isCreateTaskOpenRef.current = isCreateTaskOpen;
+  const isAllQuickNotesOpenRef = useRef(false);
+  isAllQuickNotesOpenRef.current = isAllQuickNotesOpen;
+  const isAddSubjectOpenRef = useRef(false);
+  isAddSubjectOpenRef.current = isAddSubjectOpen;
+  const isActionSheetOpenRef = useRef(false);
+  isActionSheetOpenRef.current = isActionSheetOpen;
+  const isSubjectDetailOpenRef = useRef(false);
+  isSubjectDetailOpenRef.current = isSubjectDetailOpen;
+  const isFilterOpenRef = useRef(false);
+  isFilterOpenRef.current = isFilterOpen;
   const [recentNoteRecords, setRecentNoteRecords] = useState<NoteRecord[]>([]);
   const [selectedQuickNote, setSelectedQuickNote] = useState<NoteRecord | null>(null);
   const [noteEditorMode, setNoteEditorMode] = useState<'quick' | 'full'>('quick');
+  const [noteEditorSubjectId, setNoteEditorSubjectId] = useState('');
   const [allNotesSearch, setAllNotesSearch] = useState('');
   const [allNotesFilter, setAllNotesFilter] = useState<string | null>(null); // null = all, 'quick' = quick notes, subjectId = that subject
   const [isNoteFilterOpen, setIsNoteFilterOpen] = useState(false);
   const noteFilterSlide = useRef(new Animated.Value(0)).current;
   const noteFilterOpacity = useRef(new Animated.Value(0)).current;
+  const [allViewMode, setAllViewMode] = useState<'notes' | 'tasks'>('notes');
+  const [isAllViewModeSheetOpen, setIsAllViewModeSheetOpen] = useState(false);
+  const allViewModeSheetSlide = useRef(new Animated.Value(0)).current;
+  const isAllViewModeSheetOpenRef = useRef(false);
+  isAllViewModeSheetOpenRef.current = isAllViewModeSheetOpen;
+  const isNoteFilterOpenRef = useRef(false);
+  isNoteFilterOpenRef.current = isNoteFilterOpen;
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => ({ Overdue: true, Today: true, Future: false, Completed: false }));
+  const toggleSection = useCallback((title: string) => {
+    setExpandedSections(prev => ({ ...prev, [title]: !prev[title] }));
+  }, []);
 
   const loadRecentNotes = async () => {
     try {
       const notes = await getAllNotes();
       const activeSubjectIds = new Set(dbSubjects.filter((s) => !s.isArchived).map((s) => s.id));
       const filtered = notes.filter((n) => !n.subjectId || activeSubjectIds.has(n.subjectId));
-      setRecentNoteRecords(filtered);
+      setRecentNoteRecords(filtered.sort((a, b) => b.updatedAt - a.updatedAt));
     } catch (err) {
       console.warn('Failed to load notes', err);
     }
@@ -231,12 +268,13 @@ export default function MainScreen() {
   const loadPendingTasks = async () => {
     try {
       const tasks = await getAllTasks();
+      setAllLoadedTasks(tasks);
       const activeSubjectIds = new Set(dbSubjects.filter((s) => !s.isArchived).map((s) => s.id));
       const pending = tasks.filter(
-        (t) => t.nextOccurrenceDate < END_OF_TIME && activeSubjectIds.has(t.subjectId)
+        (t) => t.nextOccurrenceDate < END_OF_TIME && (!t.subjectId || activeSubjectIds.has(t.subjectId))
       ).sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate);
       setPendingTasks(pending);
-      const completions = await getTaskCompletions(pending.map((t) => t.id));
+      const completions = await getTaskCompletions(tasks.map((t) => t.id));
       setTaskCompletions(completions);
     } catch (err) {
       console.warn('Failed to load pending tasks', err);
@@ -251,6 +289,8 @@ export default function MainScreen() {
       }
       const occurrenceDate = task.nextOccurrenceDate;
       const next = calculateNextOccurrenceDate(task, occurrenceDate);
+      const completedAt = Date.now();
+      const updatedTask = { ...task, nextOccurrenceDate: next };
       await completeTaskOccurrence(task.id, occurrenceDate, next);
       setPendingTasks((current) =>
         current
@@ -258,13 +298,63 @@ export default function MainScreen() {
           .filter((t) => t.nextOccurrenceDate < END_OF_TIME)
           .sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate)
       );
+      setAllLoadedTasks((current) => {
+        const exists = current.some((t) => t.id === task.id);
+        if (!exists) return [...current, updatedTask];
+        return current.map((t) => (t.id === task.id ? updatedTask : t));
+      });
       setTaskCompletions((current) => [
         ...current,
-        { id: `${Date.now()}-${Math.round(Math.random() * 1e6)}`, taskId: task.id, occurrenceDate, completedAt: Date.now() },
+        { id: `${completedAt}-${Math.round(Math.random() * 1e6)}`, taskId: task.id, occurrenceDate, completedAt },
       ]);
     } catch (error) {
       console.warn('Failed to complete task', error);
       setToastMessage('Failed to complete task');
+      setToastVisible(true);
+    }
+  };
+
+  const completedOccurrences = useMemo(() => {
+    const taskMap = new Map(allLoadedTasks.map((t) => [t.id, t]));
+    const result: Array<{ task: TaskRecord; completion: TaskCompletionRecord }> = [];
+    for (const completion of taskCompletions) {
+      const task = taskMap.get(completion.taskId);
+      if (!task) continue;
+      result.push({ task, completion });
+    }
+    return result.sort((a, b) => b.completion.completedAt - a.completion.completedAt).slice(0, 20);
+  }, [allLoadedTasks, taskCompletions]);
+
+  const handleUncompleteTask = async (task: TaskRecord) => {
+    try {
+      const restoredDate = await uncompleteTaskOccurrence(task.id);
+      setPendingTasks((current) => {
+        const exists = current.find((t) => t.id === task.id);
+        if (exists) {
+          return current.map((t) =>
+            t.id === task.id ? { ...t, nextOccurrenceDate: restoredDate } : t
+          ).sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate);
+        }
+        return [...current, { ...task, nextOccurrenceDate: restoredDate }]
+          .sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate);
+      });
+      setAllLoadedTasks((current) =>
+        current.map((t) => (t.id === task.id ? { ...t, nextOccurrenceDate: restoredDate } : t))
+      );
+      setTaskCompletions((current) => {
+        const latestCompletion = current
+          .filter((c) => c.taskId === task.id)
+          .sort((a, b) => b.completedAt - a.completedAt)[0];
+        if (latestCompletion) {
+          return current.filter((c) => c.id !== latestCompletion.id);
+        }
+        return current;
+      });
+      setToastMessage('Task uncompleted');
+      setToastVisible(true);
+    } catch (error) {
+      console.warn('Failed to uncomplete task', error);
+      setToastMessage('Failed to uncomplete task');
       setToastVisible(true);
     }
   };
@@ -276,6 +366,10 @@ export default function MainScreen() {
   }, []);
 
   const handleTaskCreated = useCallback((task: TaskRecord) => {
+    setAllLoadedTasks((current) => {
+      const exists = current.some((t) => t.id === task.id);
+      return exists ? current.map((t) => (t.id === task.id ? task : t)) : [...current, task];
+    });
     setPendingTasks((current) => [...current, task].sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate));
     setToastMessage('Task created');
     setToastVisible(true);
@@ -292,6 +386,9 @@ export default function MainScreen() {
   }, []);
 
   const handleSaveTaskEdit = useCallback((saved: TaskRecord) => {
+    setAllLoadedTasks((current) =>
+      current.map((t) => (t.id === saved.id ? saved : t))
+    );
     setPendingTasks((current) =>
       current.map((t) => (t.id === saved.id ? saved : t)).sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate)
     );
@@ -299,8 +396,9 @@ export default function MainScreen() {
     setToastVisible(true);
   }, []);
 
-  const handleOpenTaskDetail = useCallback((task: TaskRecord) => {
+  const handleOpenTaskDetail = useCallback((task: TaskRecord, occurrenceDate?: number) => {
     setDetailTask(task);
+    setDetailTaskOccurrenceDate(occurrenceDate ?? task.nextOccurrenceDate);
     setIsTaskDetailOpen(true);
     taskDetailSlide.setValue(0);
     taskDetailOpacity.setValue(0);
@@ -322,6 +420,7 @@ export default function MainScreen() {
       if (finished) {
         setIsTaskDetailOpen(false);
         setDetailTask(null);
+        setDetailTaskOccurrenceDate(null);
       }
     });
   }, [taskDetailOpacity, taskDetailSlide]);
@@ -334,11 +433,41 @@ export default function MainScreen() {
     try {
       await deleteTask(taskId);
       setPendingTasks((current) => current.filter((t) => t.id !== taskId));
+      setAllLoadedTasks((current) => current.filter((t) => t.id !== taskId));
+      setTaskCompletions((current) => current.filter((c) => c.taskId !== taskId));
       setToastMessage('Task deleted');
       setToastVisible(true);
     } catch (error) {
       console.warn('Failed to delete task', error);
       setToastMessage('Failed to delete task');
+      setToastVisible(true);
+    }
+  };
+
+  const handleDeleteTaskOccurrence = async (task: TaskRecord, occurrenceDate: number) => {
+    try {
+      const nextDate = await deleteTaskOccurrence(task.id, occurrenceDate);
+      setTaskCompletions((current) =>
+        current.filter((c) => !(c.taskId === task.id && c.occurrenceDate === occurrenceDate))
+      );
+      setPendingTasks((current) => {
+        const idx = current.findIndex((t) => t.id === task.id);
+        if (idx === -1) return current;
+        const t = current[idx];
+        if (t.nextOccurrenceDate !== occurrenceDate) return current;
+        const updated = [...current];
+        updated[idx] = { ...t, nextOccurrenceDate: nextDate };
+        if (nextDate >= END_OF_TIME) return updated.filter((t) => t.nextOccurrenceDate < END_OF_TIME);
+        return updated.sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate);
+      });
+      setAllLoadedTasks((current) =>
+        current.map((t) => (t.id === task.id ? { ...t, nextOccurrenceDate: nextDate } : t))
+      );
+      setToastMessage('Occurrence deleted');
+      setToastVisible(true);
+    } catch (error) {
+      console.warn('Failed to delete occurrence', error);
+      setToastMessage('Failed to delete occurrence');
       setToastVisible(true);
     }
   };
@@ -355,6 +484,7 @@ export default function MainScreen() {
   const handleOpenDetailTaskSubject = useCallback((subject: SubjectRecord, _taskId: string) => {
     setIsTaskDetailOpen(false);
     setDetailTask(null);
+    setDetailTaskOccurrenceDate(null);
     setSelectedSubjectDetail(subject);
     setSubjectDetailInitialTab('tasks');
     setIsSubjectDetailOpen(true);
@@ -406,9 +536,35 @@ export default function MainScreen() {
     return [
       ...sortGroup(overdueTasks),
       ...sortGroup(todayTasks),
-      ...sortGroup(futureTasks),
     ].slice(0, 4);
-  }, [overdueTasks, todayTasks, futureTasks]);
+  }, [overdueTasks, todayTasks]);
+
+  const prioritySortFn = useCallback((p: string | null | undefined) => {
+    if (p === 'high') return 0;
+    if (p === 'low') return 1;
+    return 2;
+  }, []);
+
+  const overviewSortedOverdue = useMemo(() => {
+    if (allViewMode !== 'tasks') return overdueTasks;
+    const sorted = [...overdueTasks].sort((a, b) => prioritySortFn(a.priority) - prioritySortFn(b.priority));
+    if (!allNotesSearch.trim()) return sorted;
+    return sorted.filter((t) => t.title.toLowerCase().includes(allNotesSearch.toLowerCase()));
+  }, [overdueTasks, allViewMode, allNotesSearch, prioritySortFn]);
+
+  const overviewSortedToday = useMemo(() => {
+    if (allViewMode !== 'tasks') return todayTasks;
+    const sorted = [...todayTasks].sort((a, b) => prioritySortFn(a.priority) - prioritySortFn(b.priority));
+    if (!allNotesSearch.trim()) return sorted;
+    return sorted.filter((t) => t.title.toLowerCase().includes(allNotesSearch.toLowerCase()));
+  }, [todayTasks, allViewMode, allNotesSearch, prioritySortFn]);
+
+  const overviewSortedFuture = useMemo(() => {
+    if (allViewMode !== 'tasks') return futureTasks;
+    const sorted = [...futureTasks].sort((a, b) => prioritySortFn(a.priority) - prioritySortFn(b.priority));
+    if (!allNotesSearch.trim()) return sorted;
+    return sorted.filter((t) => t.title.toLowerCase().includes(allNotesSearch.toLowerCase()));
+  }, [futureTasks, allViewMode, allNotesSearch, prioritySortFn]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30000); // Update every 30s
@@ -486,6 +642,18 @@ export default function MainScreen() {
     loadNoteCounts();
   }, [activeSubjects]);
 
+  useEffect(() => {
+    const loadTaskCounts = async () => {
+      const counts: Record<string, number> = {};
+      for (const s of activeSubjects) {
+        const tasks = await getTasksBySubjectId(s.id);
+        counts[s.id] = tasks.length;
+      }
+      setTaskCounts(counts);
+    };
+    loadTaskCounts();
+  }, [activeSubjects]);
+
   // Load persisted filter
   useEffect(() => {
     (async () => {
@@ -561,6 +729,29 @@ export default function MainScreen() {
     noteFilterSlide,
     () => Animated.spring(noteFilterSlide, { toValue: 1, ...springModalSlide }).start(),
     handleCloseNoteFilter,
+  );
+
+  const handleOpenAllViewModeSheet = () => {
+    setIsAllViewModeSheetOpen(true);
+    Animated.spring(allViewModeSheetSlide, { toValue: 1, ...springModalSlide }).start();
+  };
+
+  const handleCloseAllViewModeSheet = () => {
+    Animated.timing(allViewModeSheetSlide, { toValue: 0, duration: 280, useNativeDriver: true }).start(({ finished }) => {
+      if (finished) setIsAllViewModeSheetOpen(false);
+    });
+  };
+
+  const handleSelectAllViewMode = (mode: 'notes' | 'tasks') => {
+    setAllViewMode(mode);
+    setAllNotesSearch('');
+    handleCloseAllViewModeSheet();
+  };
+
+  const { panResponder: allViewModeSheetPanResponder, scrollYRef: allViewModeSheetScrollYRef } = useDragToClose(
+    allViewModeSheetSlide,
+    () => Animated.spring(allViewModeSheetSlide, { toValue: 1, ...springModalSlide }).start(),
+    handleCloseAllViewModeSheet,
   );
 
   // Apply filter to subjects
@@ -643,48 +834,126 @@ export default function MainScreen() {
 
   const dynamicGreeting = useMemo(() => {
     const hour = now.getHours();
-    let timeGreeting = "Good Morning";
-    if (hour >= 12 && hour < 17) timeGreeting = "Good Afternoon";
-    if (hour >= 17 && hour < 22) timeGreeting = "Good Evening";
-    if (hour >= 22 || hour < 5) timeGreeting = "Working Late";
+    const timePeriod = hour >= 5 && hour < 12 ? 'morning' : hour >= 12 && hour < 17 ? 'afternoon' : 'evening';
 
     const todayDay = now.getDay();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    
     const todaySubjects = activeSubjects.filter(s => (s.days ?? []).some(d => DAY_MAP[d] === todayDay));
-    
+
+    const hasTasks = overdueTasks.length > 0 || todayTasks.length > 0;
+
+    let classStatus: string;
+    let classCount = 0;
     if (todaySubjects.length === 0) {
-      return `${timeGreeting}! No classes today.`;
+      classStatus = 'no_classes';
+    } else {
+      const remainingSubjects = todaySubjects.filter(s => {
+        const start = parseTimeToMinutes(s.startTime ?? null) ?? 0;
+        return start > nowMinutes;
+      });
+      const currentSubjects = todaySubjects.filter(s => {
+        const start = parseTimeToMinutes(s.startTime ?? null) ?? 0;
+        const end = parseTimeToMinutes(s.endTime ?? null) ?? (start + 60);
+        return nowMinutes >= start && nowMinutes < end;
+      });
+      if (currentSubjects.length > 0) {
+        classStatus = 'in_class';
+      } else if (remainingSubjects.length === 0) {
+        classStatus = 'all_done';
+      } else {
+        classCount = remainingSubjects.length;
+        classStatus = classCount === 1 ? 'one_left' : 'n_left';
+      }
     }
 
-    const remainingSubjects = todaySubjects.filter(s => {
-      const start = parseTimeToMinutes(s.startTime ?? null) ?? 0;
-      return start > nowMinutes;
-    });
+    const taskKey = hasTasks ? 'with_tasks' : 'no_tasks';
 
-    const currentSubjects = todaySubjects.filter(s => {
-      const start = parseTimeToMinutes(s.startTime ?? null) ?? 0;
-      const end = parseTimeToMinutes(s.endTime ?? null) ?? (start + 60);
-      return nowMinutes >= start && nowMinutes < end;
-    });
+    const GREETINGS: Record<string, Record<string, Record<string, string>>> = {
+      no_classes: {
+        no_tasks: {
+          morning: "No classes, nothing due. Did you accidentally become a free person?",
+          afternoon: "Nothing on the board. Genuinely nothing. Don't ruin it by being productive.",
+          evening: "All free tonight. Go touch grass or something.",
+        },
+        with_tasks: {
+          morning: "No class today. The tasks, however, did not get the memo.",
+          afternoon: "No classes, just tasks. Could be worse. Could also be better.",
+          evening: "No class tonight. Just you, the tasks, and whatever snack you're stress-eating.",
+        },
+      },
+      all_done: {
+        no_tasks: {
+          morning: "You're done. Nothing left. Are you even a student right now?",
+          afternoon: "All clear. Not a single thing to do. Sit with that. You earned it.",
+          evening: "All done, nothing left. Somewhere out there a procrastinator is crying; not you though.",
+        },
+        with_tasks: {
+          morning: "Classes: done. Tasks: still here, unfortunately. So close.",
+          afternoon: "Classes are cooked. Tasks are the only thing standing between you and freedom.",
+          evening: "Classes wrapped. Tasks remain. Finish them and you can finally exhale.",
+        },
+      },
+      one_left: {
+        no_tasks: {
+          morning: "One class. That's literally it. You could do this in your sleep.",
+          afternoon: "One class left and zero tasks. You're practically on vacation.",
+          evening: "One class standing between you and a free night. Don't let it win.",
+        },
+        with_tasks: {
+          morning: "One class and tasks. So close to freedom, yet here we are.",
+          afternoon: "One class left, tasks after. The finish line is right there and it's laughing at you.",
+          evening: "One class and tasks at this hour. Truly a villain arc.",
+        },
+      },
+      n_left: {
+        no_tasks: {
+          morning: "{n} classes today. No tasks at least, so the universe isn't completely against you.",
+          afternoon: "Still {n} classes to go. No tasks though; small win, take it.",
+          evening: "{n} classes left. No tasks after. Just get through them and you're free.",
+        },
+        with_tasks: {
+          morning: "{n} classes and tasks today. Whoever made this schedule was not your friend.",
+          afternoon: "Still {n} classes and tasks. At this point you're not a student, you're a hostage.",
+          evening: "{n} classes and tasks at this hour? The audacity of this day, honestly.",
+        },
+      },
+      in_class: {
+        no_tasks: {
+          morning: "You're in class right now. At least there's nothing waiting after; small mercy.",
+          afternoon: "Currently in class. No tasks though, so this is technically the hardest part of your day.",
+          evening: "In class at this hour with nothing due after. Respect, honestly.",
+        },
+        with_tasks: {
+          morning: "You're in class and tasks are already waiting outside like debt collectors.",
+          afternoon: "Currently in class, tasks pending. You're basically paying to suffer twice.",
+          evening: "In class at night with tasks after. Who hurt you? (Was it you?)",
+        },
+      },
+    };
 
-    if (currentSubjects.length > 0) {
-      return "You're in class right now.";
+    let greeting = GREETINGS[classStatus][taskKey][timePeriod];
+    if (classStatus === 'n_left') {
+      greeting = greeting.replace('{n}', String(classCount));
     }
 
-    if (remainingSubjects.length === 0) {
-      return "You're all done for today!";
-    }
+    return greeting;
+  }, [now, dbSubjects, overdueTasks, todayTasks]);
 
-    if (remainingSubjects.length === 1) {
-      return `${timeGreeting}! Just one more class.`;
-    }
-
-    return `${timeGreeting}! You have ${remainingSubjects.length} classes left.`;
-  }, [now, dbSubjects]);
+  const handleTabPress = (tab: 'home' | 'schedule' | 'subjects') => {
+    if (tab === activeTab) return;
+    const idx = tab === 'home' ? 0 : tab === 'schedule' ? 1 : 2;
+    Animated.spring(tabIndicatorAnim, {
+      toValue: idx,
+      friction: 9,
+      tension: 50,
+      useNativeDriver: true,
+    }).start();
+    setActiveTab(tab);
+  };
 
   const handleOpenActions = () => {
     setIsActionSheetOpen(true);
+    buttonAnims.forEach(a => a.setValue(0));
     Animated.parallel([
       Animated.timing(sheetOpacity, {
         toValue: 1,
@@ -715,6 +984,14 @@ export default function MainScreen() {
           useNativeDriver: true,
         }),
       ]),
+      Animated.stagger(80, [3, 2, 1, 0].map(i =>
+        Animated.spring(buttonAnims[i], {
+          toValue: 1,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 40,
+        })
+      )),
     ]).start();
   };
 
@@ -745,6 +1022,9 @@ export default function MainScreen() {
         friction: 7,
         tension: 40,
       }),
+      Animated.stagger(60, [0, 1, 2, 3].map(i =>
+        Animated.spring(buttonAnims[i], { toValue: 0, useNativeDriver: true, friction: 8, tension: 40 })
+      )),
     ]).start(({ finished }) => {
       if (finished) {
         setIsActionSheetOpen(false);
@@ -755,31 +1035,11 @@ export default function MainScreen() {
   const handleStartAddSubject = () => {
     resetPlusButton();
     setIsAddSubjectOpen(true);
-
-    Animated.spring(subjectSlideAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      damping: 22,
-      stiffness: 200,
-      mass: 1,
-    }).start(({ finished }) => {
-      if (finished) {
-        setIsActionSheetOpen(false);
-      }
-    });
+    setIsActionSheetOpen(false);
   };
 
   const handleCancelAddSubject = () => {
-    Animated.timing(subjectSlideAnim, {
-      toValue: 0,
-      duration: 250,
-      easing: Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) {
-        setIsAddSubjectOpen(false);
-      }
-    });
+    setIsAddSubjectOpen(false);
   };
 
   const handlePressSubject = (subject: any) => {
@@ -810,7 +1070,14 @@ export default function MainScreen() {
     }).start();
   };
 
+  const handleOpenAllQuickTasks = () => {
+    setAllViewMode('tasks');
+    handleOpenAllQuickNotes();
+  };
+
   const handleCloseAllQuickNotes = () => {
+    setAllViewMode('notes');
+    setExpandedSections({ Overdue: true, Today: true, Future: false, Completed: false });
     Animated.timing(allQuickNotesSlideAnim, {
       toValue: 0,
       duration: 350,
@@ -851,17 +1118,7 @@ export default function MainScreen() {
       const savedSubject = await insertSubject({ ...subjectData, isArchived: false, isPinned: false });
       setDbSubjects((prev) => [...prev, savedSubject]);
       resetPlusButton();
-      
-      Animated.timing(subjectSlideAnim, {
-        toValue: 0,
-        duration: 350,
-        easing: Easing.inOut(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) {
-          setIsAddSubjectOpen(false);
-        }
-      });
+      setIsAddSubjectOpen(false);
       
       // Trigger success toast
       setToastMessage(`${savedSubject.title} created successfully`);
@@ -874,12 +1131,23 @@ export default function MainScreen() {
   };
 
   const [isQuickNoteOpen, setIsQuickNoteOpen] = useState(false);
+  const isQuickNoteOpenRef = useRef(false);
+  isQuickNoteOpenRef.current = isQuickNoteOpen;
 
   const handleStartQuickNote = () => {
     resetPlusButton();
     setIsActionSheetOpen(false);
     setSelectedQuickNote(null);
     setNoteEditorMode('quick');
+    setIsQuickNoteOpen(true);
+  };
+
+  const handleStartSubjectNote = (subjectId: string, subjectTitle: string) => {
+    resetPlusButton();
+    setIsActionSheetOpen(false);
+    setSelectedQuickNote(null);
+    setNoteEditorMode('full');
+    setNoteEditorSubjectId(subjectId);
     setIsQuickNoteOpen(true);
   };
 
@@ -893,6 +1161,7 @@ export default function MainScreen() {
   const handleQuickNoteClose = () => {
     setIsQuickNoteOpen(false);
     setSelectedQuickNote(null);
+    setNoteEditorSubjectId('');
   };
 
   const handleQuickNoteSave = async (
@@ -928,38 +1197,62 @@ export default function MainScreen() {
     await loadPendingTasks();
   };
 
-  // Intercept hardware back to close overlays
+  // Intercept hardware back to close overlays and handle tab navigation
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (isAllQuickNotesOpen) {
-        handleCloseAllQuickNotes();
-        return true;
-      }
-      if (isQuickNoteOpen) {
-        handleQuickNoteClose();
-        return true;
-      }
-      if (isAddSubjectOpen) {
-        handleCancelAddSubject();
-        return true;
-      }
-      if (isTaskDetailOpen) {
+      if (isTaskDetailOpenRef.current) {
         closeTaskDetail();
         return true;
       }
-      if (isTaskEditOpen) {
+      if (isTaskEditOpenRef.current) {
         handleCloseTaskEdit();
         return true;
       }
-      if (isCreateTaskOpen) {
+      if (isCreateTaskOpenRef.current) {
         setIsCreateTaskOpen(false);
+        return true;
+      }
+      if (isAllQuickNotesOpenRef.current) {
+        handleCloseAllQuickNotes();
+        return true;
+      }
+      if (isQuickNoteOpenRef.current) {
+        handleQuickNoteClose();
+        return true;
+      }
+      if (isAddSubjectOpenRef.current) {
+        handleCancelAddSubject();
+        return true;
+      }
+      if (isActionSheetOpenRef.current) {
+        handleCloseActions();
+        return true;
+      }
+      if (isSubjectDetailOpenRef.current) {
+        handleCloseSubjectDetail();
+        return true;
+      }
+      if (isFilterOpenRef.current) {
+        handleCloseFilter();
+        return true;
+      }
+      if (isAllViewModeSheetOpenRef.current) {
+        handleCloseAllViewModeSheet();
+        return true;
+      }
+      if (isNoteFilterOpenRef.current) {
+        handleCloseNoteFilter();
+        return true;
+      }
+      // Tab navigation: schedule/subjects → home, home → close app
+      if (activeTabRef.current === 'schedule' || activeTabRef.current === 'subjects') {
+        setActiveTab('home');
         return true;
       }
       return false;
     });
     return () => handler.remove();
-  }, [isAllQuickNotesOpen, isQuickNoteOpen, isAddSubjectOpen, isTaskDetailOpen, isTaskEditOpen, isCreateTaskOpen,
-    handleCloseAllQuickNotes, handleQuickNoteClose, handleCancelAddSubject, closeTaskDetail, handleCloseTaskEdit]);
+  }, []);
 
   // Format subjects for the All Subjects tab
   const subjects = useMemo(() => {
@@ -979,10 +1272,10 @@ export default function MainScreen() {
       term: s.term ?? '',
       isArchived: s.isArchived,
       isPinned: s.isPinned,
-      tasksCount: 0,
+      tasksCount: taskCounts[s.id] ?? 0,
       notesCount: noteCounts[s.id] ?? 0,
     }));
-  }, [filteredDbSubjects, noteCounts]);
+  }, [filteredDbSubjects, noteCounts, taskCounts]);
 
   return (
     <View style={styles.container}>
@@ -991,8 +1284,8 @@ export default function MainScreen() {
         <View style={styles.headerRow}>
           <View style={styles.headerSpacer} />
           <View style={styles.headerIcons}>
-            <Pressable style={styles.headerIconButton}>
-              <Feather name="bell" size={18} color="#1e2b26" />
+            <Pressable style={styles.headerIconButton} onPress={handleOpenAllQuickTasks}>
+              <Feather name="grid" size={18} color="#1e2b26" />
             </Pressable>
             <Pressable style={styles.headerIconButton}>
               <Feather name="settings" size={18} color="#1e2b26" />
@@ -1025,12 +1318,31 @@ export default function MainScreen() {
           <ScheduleScreen
             subjects={activeSubjects}
             onToast={(msg) => { setToastMessage(msg); setToastVisible(true); }}
+            onOpenSubjectDetail={(subject) => {
+              const time = subject.startTime && subject.endTime
+                ? `${formatTime(subject.startTime)} - ${formatTime(subject.endTime)}`
+                : subject.startTime
+                  ? formatTime(subject.startTime)
+                  : '';
+              setSelectedSubjectDetail({ ...subject, time });
+              setSubjectDetailInitialTab('subject');
+              setIsSubjectDetailOpen(true);
+              Animated.timing(subjectDetailSlideAnim, {
+                toValue: 1,
+                duration: 400,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }).start();
+            }}
           />
         ) : (
           <>
             <View style={styles.titleBlock}>
-              <Text style={styles.dateText}>{dateLabel}</Text>
-              <Text style={styles.title}>{dynamicGreeting}</Text>
+              <View style={styles.greetingAccent} />
+              <View style={styles.greetingContent}>
+                <Text style={styles.dateText}>{dateLabel}</Text>
+                <Text style={styles.greetingLine2}>{dynamicGreeting}</Text>
+              </View>
             </View>
 
             <>
@@ -1086,7 +1398,12 @@ export default function MainScreen() {
                 </LinearGradient>
 
                 <View style={styles.urgentTasksSection}>
-                  <Text style={styles.sectionHeaderTitle}>Urgent Tasks</Text>
+                  <View style={styles.recentNotesHeaderRow}>
+                    <Text style={[styles.dateText, { fontSize: 13 }]}>URGENT TASKS</Text>
+                    <Pressable style={styles.headerIconButton} onPress={handleOpenAllQuickTasks} hitSlop={8}>
+                      <Feather name="arrow-right" size={16} color="#6d756f" />
+                    </Pressable>
+                  </View>
 
                   {urgentTasksPreview.length === 0 ? (
                     <View style={styles.sectionEmptyState}>
@@ -1103,6 +1420,7 @@ export default function MainScreen() {
                       const isRecurring = task.repeatType && task.repeatType !== 'none';
                       const canComplete = !isRecurring || (isSameCalendarDay(occDate, Date.now()) || occDate < Date.now());
                       const isTimeOverdue = task.startDate ? occDate < Date.now() : false;
+                      const subject = task.subjectId ? subjectLookup[task.subjectId] : null;
                       return (
                         <CardScale
                           key={task.id}
@@ -1139,6 +1457,12 @@ export default function MainScreen() {
                                 {task.reminderMinutes != null ? (
                                   <Feather name="bell" size={12} color="#8f968f" />
                                 ) : null}
+                                {subject ? (
+                                  <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 16, color: '#6b746f', marginLeft: 6, lineHeight: 12, marginRight: 6 }}>·</Text>
+                                ) : null}
+                                {subject ? (
+                                  <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 12, color: '#6b746f' }}>{subject.code ?? subject.title}</Text>
+                                ) : null}
                               </View>
                             </View>
                             ) : null}
@@ -1154,9 +1478,9 @@ export default function MainScreen() {
 
                 <View style={styles.recentNotesSection}>
                   <View style={styles.recentNotesHeaderRow}>
-                    <Text style={styles.recentNotesTitle}>Recent Notes</Text>
+                    <Text style={[styles.dateText, { fontSize: 13 }]}>RECENT NOTES</Text>
                     <Pressable style={styles.headerIconButton} onPress={handleOpenAllQuickNotes} hitSlop={8}>
-                      <Feather name="inbox" size={16} color="#6d756f" />
+                      <Feather name="arrow-right" size={16} color="#6d756f" />
                     </Pressable>
                   </View>
 
@@ -1194,21 +1518,30 @@ export default function MainScreen() {
       </ScrollView>
 
       <View style={styles.navDock}>
-        <View style={styles.navPill}>
-          <Pressable style={styles.navItem} onPress={() => setActiveTab('home')}>
-            <View style={[styles.navItemInner, activeTab === 'home' ? styles.navItemActive : null]}>
+        <View style={styles.navPill} onLayout={(e) => setNavPillWidth(e.nativeEvent.layout.width)}>
+          <Animated.View style={[styles.activeIndicator, {
+            transform: [{ translateX: tabIndicatorAnim.interpolate({
+              inputRange: [0, 1, 2],
+              outputRange: navPillWidth > 0
+                ? [8, 8 + (navPillWidth - 16) / 3, 8 + 2 * (navPillWidth - 16) / 3]
+                : [0, 0, 0],
+            }) }],
+            width: navPillWidth > 0 ? (navPillWidth - 16) / 3 : 0,
+          }]} />
+          <Pressable style={styles.navItem} onPress={() => handleTabPress('home')}>
+            <View style={styles.navItemInner}>
               <Feather name="home" size={18} color={activeTab === 'home' ? '#d7e4dd' : '#5c6762'} />
               <Text style={activeTab === 'home' ? styles.navLabelActive : styles.navLabel}>Home</Text>
             </View>
           </Pressable>
-          <Pressable style={styles.navItem} onPress={() => setActiveTab('schedule')}>
-            <View style={[styles.navItemInner, activeTab === 'schedule' ? styles.navItemActive : null]}>
+          <Pressable style={styles.navItem} onPress={() => handleTabPress('schedule')}>
+            <View style={styles.navItemInner}>
               <Feather name="calendar" size={18} color={activeTab === 'schedule' ? '#d7e4dd' : '#5c6762'} />
               <Text style={activeTab === 'schedule' ? styles.navLabelActive : styles.navLabel}>Schedule</Text>
             </View>
           </Pressable>
-          <Pressable style={styles.navItem} onPress={() => setActiveTab('subjects')}>
-            <View style={[styles.navItemInner, activeTab === 'subjects' ? styles.navItemActive : null]}>
+          <Pressable style={styles.navItem} onPress={() => handleTabPress('subjects')}>
+            <View style={styles.navItemInner}>
               <Feather name="book" size={18} color={activeTab === 'subjects' ? '#d7e4dd' : '#5c6762'} />
               <Text style={activeTab === 'subjects' ? styles.navLabelActive : styles.navLabel}>Subjects</Text>
             </View>
@@ -1221,10 +1554,10 @@ export default function MainScreen() {
         <View style={styles.actionSheetOverlay}>
           <Animated.View style={[StyleSheet.absoluteFill, { opacity: sheetOpacity }]}>
             <BlurView 
-              intensity={80} 
+              intensity={20} 
               tint="dark" 
               style={StyleSheet.absoluteFill}
-              experimentalBlurMethod="none" 
+              experimentalBlurMethod="dimezisBlurView" 
             />
             <View style={styles.actionSheetBackdrop} />
           </Animated.View>
@@ -1233,29 +1566,76 @@ export default function MainScreen() {
             style={[
               styles.actionSheetPanel,
               {
-                opacity: sheetOpacity,
                 transform: [{ translateY: sheetTranslate }],
               },
             ]}
           >
-            <Pressable style={styles.actionButton} onPress={handleStartAddSubject}>
-              <View style={styles.actionIconCircle}>
-                <Feather name="book-open" size={18} color="#1e2b26" />
-              </View>
-              <Text style={styles.actionText}>Add subject</Text>
-            </Pressable>
-            <Pressable style={styles.actionButton} onPress={handleStartQuickNote}>
-              <View style={styles.actionIconCircle}>
-                <Feather name="edit-3" size={18} color="#1e2b26" />
-              </View>
-              <Text style={styles.actionText}>Create quick note</Text>
-            </Pressable>
-            <Pressable style={styles.actionButton} onPress={handleStartAddTask}>
-              <View style={styles.actionIconCircle}>
-                <Feather name="check-circle" size={18} color="#1e2b26" />
-              </View>
-              <Text style={styles.actionText}>Add task</Text>
-            </Pressable>
+            <Animated.View style={{
+              opacity: buttonAnims[0],
+              transform: [{
+                translateY: buttonAnims[0].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [30, 0],
+                }),
+              }],
+            }}>
+              <Pressable style={styles.actionButton} onPress={handleStartAddSubject}>
+                <View style={styles.actionIconCircle}>
+                  <Feather name="book-open" size={18} color="#1e2b26" />
+                </View>
+                <Text style={styles.actionText}>Add subject</Text>
+              </Pressable>
+            </Animated.View>
+            <Animated.View style={{
+              opacity: buttonAnims[1],
+              transform: [{
+                translateY: buttonAnims[1].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [30, 0],
+                }),
+              }],
+            }}>
+              <Pressable style={styles.actionButton} onPress={handleStartAddTask}>
+                <View style={styles.actionIconCircle}>
+                  <Feather name="check-circle" size={18} color="#1e2b26" />
+                </View>
+                <Text style={styles.actionText}>Quick task</Text>
+              </Pressable>
+            </Animated.View>
+            <Animated.View style={{
+              opacity: buttonAnims[2],
+              transform: [{
+                translateY: buttonAnims[2].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [30, 0],
+                }),
+              }],
+            }}>
+              <Pressable style={styles.actionButton} onPress={handleStartQuickNote}>
+                <View style={styles.actionIconCircle}>
+                  <Feather name="edit-3" size={18} color="#1e2b26" />
+                </View>
+                <Text style={styles.actionText}>Quick note</Text>
+              </Pressable>
+            </Animated.View>
+            {nextClassState?.state === 'current' ? (
+              <Animated.View style={{
+                opacity: buttonAnims[3],
+                transform: [{
+                  translateY: buttonAnims[3].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [30, 0],
+                  }),
+                }],
+              }}>
+                <Pressable style={styles.actionButton} onPress={() => handleStartSubjectNote(nextClassState.classInfo.id, nextClassState.classInfo.title)}>
+                  <View style={styles.actionIconCircle}>
+                    <Feather name="edit-3" size={18} color="#1e2b26" />
+                  </View>
+                  <Text style={styles.actionText}>Take notes for {subjectLookup[nextClassState.classInfo.id]?.code ?? nextClassState.classInfo.title}</Text>
+                </Pressable>
+              </Animated.View>
+            ) : null}
           </Animated.View>
         </View>
       ) : null}
@@ -1284,21 +1664,7 @@ export default function MainScreen() {
 
       </View>
 
-      {isAddSubjectOpen && (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#f8f7f2', zIndex: 20 }]}>
-          <Animated.View style={{
-            flex: 1,
-            transform: [{
-              translateY: subjectSlideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [screenHeight, 0],
-              })
-            }]
-          }}>
-            <AddSubjectScreen onBack={handleCancelAddSubject} onSave={handleSaveSubject} />
-          </Animated.View>
-        </View>
-      )}
+      <AddSubjectScreen visible={isAddSubjectOpen} onClose={handleCancelAddSubject} onSave={handleSaveSubject} />
 
       {isSubjectDetailOpen && (
         <Animated.View
@@ -1350,9 +1716,13 @@ export default function MainScreen() {
 
       {/* Filter Modal */}
       {isFilterOpen ? (
-        <Animated.View style={[styles.filterBackdrop, { opacity: filterOpacity }]}>
+        <View style={[StyleSheet.absoluteFill, { zIndex: 99 }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: filterOpacity }]}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5, 8, 7, 0.2)' }]} />
+          </Animated.View>
           <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseFilter} />
-        </Animated.View>
+        </View>
       ) : null}
 
       {isFilterOpen ? (
@@ -1422,8 +1792,8 @@ export default function MainScreen() {
       {isQuickNoteOpen && (
         <View style={[StyleSheet.absoluteFill, { zIndex: 30 }]}>
           <QuickNoteEditor
-            subjectId={selectedQuickNote?.subjectId ?? ''}
-            subjectTitle={selectedQuickNote?.subjectId ? (subjectLookup[selectedQuickNote.subjectId]?.code ?? 'Subject') : 'Quick Note'}
+            subjectId={selectedQuickNote?.subjectId ?? noteEditorSubjectId}
+            subjectTitle={selectedQuickNote?.subjectId ? (subjectLookup[selectedQuickNote.subjectId]?.code ?? 'Subject') : noteEditorSubjectId ? (subjectLookup[noteEditorSubjectId]?.code ?? 'Subject') : 'Quick Note'}
             note={selectedQuickNote}
             folderOptions={[]}
             subjectOptions={activeSubjects.map((s) => ({ id: s.id, title: s.title, code: s.code ?? s.title.slice(0, 6).toUpperCase() }))}
@@ -1435,68 +1805,252 @@ export default function MainScreen() {
         </View>
       )}
 
-      {isAllQuickNotesOpen && (
-        <Animated.View
-          style={[
-            StyleSheet.absoluteFill,
-            {
-              backgroundColor: '#f8f7f2',
-              zIndex: 25,
-              transform: [{
-                translateX: allQuickNotesSlideAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [500, 0],
-                })
-              }]
-            }
-          ]}
-        >
+      <Animated.View
+        pointerEvents={isAllQuickNotesOpen ? 'auto' : 'none'}
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            backgroundColor: '#f8f7f2',
+            zIndex: 25,
+            transform: [{
+              translateX: allQuickNotesSlideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [500, 0],
+              })
+            }]
+          }
+        ]}
+      >
+        {isAllQuickNotesOpen && (
+        <>
           <View style={styles.allQuickNotesHeader}>
-            <Pressable onPress={handleCloseAllQuickNotes} hitSlop={8}>
-              <Feather name="arrow-left" size={26} color="#111111" />
+            <Pressable onPress={handleCloseAllQuickNotes} style={styles.backButton}>
+              <Feather name="arrow-left" size={18} color="#1e2b26" />
             </Pressable>
-            <Text style={styles.allQuickNotesTitle}>All Notes</Text>
+            <Pressable
+              style={[styles.backButton, { width: undefined, minWidth: 36, height: 40, flexDirection: 'row', gap: 4, paddingHorizontal: 12, borderRadius: 10 }]}
+              onPress={handleOpenAllViewModeSheet}
+            >
+              <Text style={styles.allQuickNotesTitle}>{allViewMode === 'notes' ? 'Notes' : 'Tasks'}</Text>
+              <Feather name="chevron-down" size={14} color="#111111" />
+            </Pressable>
             <View style={{ width: 26 }} />
           </View>
+          <Text style={{ fontFamily: 'Manrope_400Regular', fontSize: 13, color: '#6b746f', textAlign: 'center', paddingHorizontal: 18, paddingBottom: 14 }}>
+            {allViewMode === 'notes'
+              ? 'All of your notes in one place, search and filter by subject.'
+              : 'All of your tasks grouped by overdue, today, and future.'}
+          </Text>
 
           <ScrollView contentContainerStyle={styles.allQuickNotesList}>
-            {(() => {
-              const filtered = recentNoteRecords.filter((note) => {
-                if (allNotesFilter === 'quick' && note.subjectId) return false;
-                if (allNotesFilter && allNotesFilter !== 'quick' && note.subjectId !== allNotesFilter) return false;
-                if (allNotesSearch.trim()) {
-                  const q = allNotesSearch.toLowerCase();
-                  const matchTitle = note.title.toLowerCase().includes(q);
-                  const matchBody = note.contentText.toLowerCase().includes(q);
-                  if (!matchTitle && !matchBody) return false;
-                }
-                return true;
-              });
+            {allViewMode === 'notes' ? (
+              (() => {
+                const filtered = recentNoteRecords.filter((note) => {
+                  if (allNotesFilter === 'quick' && note.subjectId) return false;
+                  if (allNotesFilter && allNotesFilter !== 'quick' && note.subjectId !== allNotesFilter) return false;
+                  if (allNotesSearch.trim()) {
+                    const q = allNotesSearch.toLowerCase();
+                    const matchTitle = note.title.toLowerCase().includes(q);
+                    const matchBody = note.contentText.toLowerCase().includes(q);
+                    if (!matchTitle && !matchBody) return false;
+                  }
+                  return true;
+                });
 
-              if (filtered.length === 0) {
-                return (
-                  <View style={styles.allQuickNotesEmpty}>
-                    <Text style={styles.emptyTitle}>No notes found</Text>
-                    <Text style={styles.emptyBody}>Try adjusting your search or filter.</Text>
-                  </View>
-                );
-              }
-
-              return filtered.map((note) => {
-                const isQuick = !note.subjectId;
-                const subject = subjectLookup[note.subjectId];
-                return (
-                  <Pressable key={note.id} style={[styles.allQuickNoteCard, isQuick && styles.noteCardQuick]} onPress={() => { handleCloseAllQuickNotes(); handlePressQuickNote(note); }}>
-                    <Text style={styles.noteTitle}>{note.title || 'Untitled note'}</Text>
-                    <Text style={styles.noteBody} numberOfLines={1}>{note.contentText}</Text>
-                    <View style={styles.noteMetaRow}>
-                      <Text style={styles.noteDate}>{formatNoteDate(note.updatedAt)}</Text>
-                      <Text style={styles.noteOrigin}>{isQuick ? 'Quick note' : subject ? subject.code : 'Subject'}</Text>
+                if (filtered.length === 0) {
+                  return (
+                    <View style={styles.allQuickNotesEmpty}>
+                      <Text style={styles.emptyTitle}>No notes found</Text>
+                      <Text style={styles.emptyBody}>Try adjusting your search or filter.</Text>
                     </View>
-                  </Pressable>
+                  );
+                }
+
+                return filtered.map((note) => {
+                  const isQuick = !note.subjectId;
+                  const subject = subjectLookup[note.subjectId];
+                  return (
+                    <Pressable key={note.id} style={[styles.allQuickNoteCard, isQuick && styles.noteCardQuick]} onPress={() => { handleCloseAllQuickNotes(); handlePressQuickNote(note); }}>
+                      <Text style={styles.noteTitle}>{note.title || 'Untitled note'}</Text>
+                      <Text style={styles.noteBody} numberOfLines={1}>{note.contentText}</Text>
+                      <View style={styles.noteMetaRow}>
+                        <Text style={styles.noteDate}>{formatNoteDate(note.updatedAt)}</Text>
+                        <Text style={styles.noteOrigin}>{isQuick ? 'Quick note' : subject ? subject.code : 'Subject'}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                });
+              })()
+            ) : (
+              (() => {
+                const overdue = overviewSortedOverdue;
+                const today = overviewSortedToday;
+                const future = overviewSortedFuture;
+                const completed = allNotesSearch.trim() && allViewMode === 'tasks'
+                  ? completedOccurrences.filter(({ task }) => task.title.toLowerCase().includes(allNotesSearch.toLowerCase()))
+                  : completedOccurrences;
+                const hasAny = overdue.length > 0 || today.length > 0 || future.length > 0 || completed.length > 0;
+
+                if (!hasAny) {
+                  return (
+                    <View style={styles.allQuickNotesEmpty}>
+                      <Text style={styles.emptyTitle}>No tasks found</Text>
+                      <Text style={styles.emptyBody}>Complete all your pending tasks.</Text>
+                    </View>
+                  );
+                }
+
+                const renderTaskCard = (task: TaskRecord) => {
+                  const occDate = task.nextOccurrenceDate;
+                  const due = new Date(occDate);
+                  const dueLabel = due.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                  const isRecurring = task.repeatType && task.repeatType !== 'none';
+                  const canComplete = !isRecurring || (isSameCalendarDay(occDate, Date.now()) || occDate < Date.now());
+                  const isTimeOverdue = task.startDate ? occDate < Date.now() : false;
+                  const subject = task.subjectId ? subjectLookup[task.subjectId] : null;
+                  return (
+                    <CardScale
+                      key={task.id}
+                      onPress={() => handleOpenTaskEdit(task)}
+                      onLongPress={() => handleOpenTaskDetail(task)}
+                      style={styles.taskCard}
+                    >
+                      {canComplete ? (
+                        <Pressable
+                          style={styles.taskCheckbox}
+                          onPress={() => void handleCompleteTask(task)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <MaterialCommunityIcons name="circle-outline" size={22} color="#a0aba5" />
+                        </Pressable>
+                      ) : (
+                        <View style={styles.taskCheckbox}>
+                          <Feather name="lock" size={15} color="#c9cdc9" />
+                        </View>
+                      )}
+                      <View style={styles.taskTextWrapper}>
+                        <Text style={styles.taskTitle} numberOfLines={1}>{task.title}</Text>
+                        {task.startDate ? (
+                        <View style={styles.taskDueDateRow}>
+                          <Text style={[styles.taskDueDateText, isTimeOverdue && { color: '#BA1A1A' }]} numberOfLines={1}>
+                            {dueLabel}
+                          </Text>
+                          <View style={styles.repeatBadge}>
+                            {isRecurring ? (
+                              <Feather name="repeat" size={12} color="#8f968f" style={task.reminderMinutes != null ? { marginRight: 4 } : undefined} />
+                            ) : null}
+                            {task.reminderMinutes != null ? (
+                              <Feather name="bell" size={12} color="#8f968f" />
+                            ) : null}
+                            {subject ? (
+                              <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 16, color: '#6b746f', marginLeft: 6, lineHeight: 12, marginRight: 6 }}>·</Text>
+                            ) : null}
+                            {subject ? (
+                              <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 12, color: '#6b746f' }}>{subject.code ?? subject.title}</Text>
+                            ) : null}
+                          </View>
+                        </View>
+                        ) : null}
+                      </View>
+                      {task.priority ? (
+                        <MaterialIcons name="flag" size={22} color={task.priority === 'high' ? '#d1453b' : '#e88d3f'} style={{ marginLeft: 12 }} />
+                      ) : null}
+                    </CardScale>
+                  );
+                };
+
+                const renderSection = (title: string, tasks: TaskRecord[]) => {
+                  if (tasks.length === 0) return null;
+                  const isExpanded = expandedSections[title] ?? true;
+                  return (
+                    <View key={title} style={{ marginBottom: 8 }}>
+                      <Pressable onPress={() => toggleSection(title)} style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 4 }}>
+                        <Text style={[styles.filterSectionLabel, { color: title === 'Overdue' ? '#BA1A1A' : '#6b746f', flex: 1 }]}>{title}</Text>
+                        <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#6b746f" style={{ marginLeft: 6 }} />
+                      </Pressable>
+                      {isExpanded ? tasks.map(renderTaskCard) : null}
+                    </View>
+                  );
+                };
+
+                return (
+                  <>
+                    {renderSection('Overdue', overdue)}
+                    {renderSection('Today', today)}
+                    {renderSection('Future', future)}
+                    {completed.length > 0 && (() => {
+                      const isExpanded = expandedSections['Completed'] ?? false;
+                      return (
+                      <View style={{ marginBottom: 8 }}>
+                        <Pressable onPress={() => toggleSection('Completed')} style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 4 }}>
+                          <Text style={[styles.filterSectionLabel, { color: '#8f968f', flex: 1 }]}>COMPLETED</Text>
+                          <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#8f968f" style={{ marginLeft: 6 }} />
+                        </Pressable>
+                        {isExpanded ? completed.map(({ task, completion }) => {
+                          const isRecurring = task.repeatType && task.repeatType !== 'none';
+                          const canUncomplete = isSameCalendarDay(completion.completedAt, Date.now());
+                          const due = new Date(completion.occurrenceDate);
+                          const dueLabel = due.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                          const subject = task.subjectId ? subjectLookup[task.subjectId] : null;
+                          return (
+                            <CardScale
+                              key={completion.id}
+                              onPress={() => handleOpenTaskEdit(task)}
+                              onLongPress={() => handleOpenTaskDetail(task, completion.occurrenceDate)}
+                              style={[styles.taskCard, { opacity: 0.7 }]}
+                            >
+                              <View style={styles.taskCheckbox}>
+                                {canUncomplete ? (
+                                  <Pressable
+                                    onPress={() => void handleUncompleteTask(task)}
+                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                  >
+                                    <Feather name="rotate-ccw" size={16} color="#8f968f" />
+                                  </Pressable>
+                                ) : (
+                                  <Feather name="lock" size={14} color="#c9cdc9" />
+                                )}
+                              </View>
+                              <View style={styles.taskTextWrapper}>
+                                <Text style={[styles.taskTitle, { color: '#8f968f', textDecorationLine: 'line-through' }]} numberOfLines={1}>{task.title}</Text>
+                                {task.startDate ? (
+                                <View style={styles.taskDueDateRow}>
+                                  <Text style={[styles.taskDueDateText, { color: '#8f968f' }]} numberOfLines={1}>{dueLabel}</Text>
+                                  {isRecurring ? (
+                                    <Text style={[styles.taskDueDateText, { color: '#8f968f', marginLeft: 6 }]} numberOfLines={1}>
+                                      {canUncomplete ? '(Completed today)' : '(Completed)'}
+                                    </Text>
+                                  ) : null}
+                                  <View style={styles.repeatBadge}>
+                                    {isRecurring ? (
+                                      <Feather name="repeat" size={12} color="#8f968f" style={task.reminderMinutes != null ? { marginRight: 4 } : undefined} />
+                                    ) : null}
+                                    {task.reminderMinutes != null ? (
+                                      <Feather name="bell" size={12} color="#8f968f" />
+                                    ) : null}
+                                    {subject ? (
+                                      <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 16, color: '#8f968f', marginLeft: 6, lineHeight: 12, marginRight: 6 }}>·</Text>
+                                    ) : null}
+                                    {subject ? (
+                                      <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 12, color: '#8f968f' }}>{subject.code ?? subject.title}</Text>
+                                    ) : null}
+                                  </View>
+                                </View>
+                                ) : null}
+                              </View>
+                              {task.priority ? (
+                                <MaterialIcons name="flag" size={22} color={'#8f968f'} style={{ marginLeft: 12 }} />
+                              ) : null}
+                            </CardScale>
+                          );
+                        }) : null}
+                      </View>
+                    );
+                    })()}
+                  </>
                 );
-              });
-            })()}
+              })()
+            )}
           </ScrollView>
 
           <View style={[styles.allNotesSearchDock, { bottom: keyboardHeight > 0 ? keyboardHeight + 32 : (Platform.OS === 'ios' ? 34 : 20) }]}>
@@ -1505,7 +2059,7 @@ export default function MainScreen() {
               <TextInput
                 value={allNotesSearch}
                 onChangeText={setAllNotesSearch}
-                placeholder="Search notes..."
+                placeholder={allViewMode === 'notes' ? 'Search notes...' : 'Search tasks...'}
                 placeholderTextColor="rgba(238,246,241,0.5)"
                 style={styles.allNotesSearchInput}
                 returnKeyType="search"
@@ -1516,20 +2070,74 @@ export default function MainScreen() {
                 </Pressable>
               )}
             </View>
-            <Pressable
-              style={styles.allNotesFilterButton}
-              onPress={handleOpenNoteFilter}
-            >
-              <Feather name="sliders" size={18} color={allNotesFilter !== null ? '#FFD666' : '#eef6f1'} />
-            </Pressable>
+            {allViewMode === 'notes' && (
+              <Pressable
+                style={styles.allNotesFilterButton}
+                onPress={handleOpenNoteFilter}
+              >
+                <Feather name="sliders" size={18} color={allNotesFilter !== null ? '#FFD666' : '#eef6f1'} />
+              </Pressable>
+            )}
           </View>
-        </Animated.View>
-      )}
+        </>
+        )}
+      </Animated.View>
+
+      {isAllViewModeSheetOpen ? (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 161 }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: allViewModeSheetSlide.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }) }]}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5, 8, 7, 0.2)' }]} />
+          </Animated.View>
+          <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseAllViewModeSheet} />
+          <Animated.View
+            pointerEvents="box-none"
+            style={[
+              styles.taskFormPanelWrapper,
+              {
+                transform: [{
+                  translateY: allViewModeSheetSlide.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [screenHeight, 0],
+                  }),
+                }],
+              },
+            ]}
+          >
+            <View style={[styles.panel, { maxHeight: screenHeight * 0.5 }]} {...allViewModeSheetPanResponder.panHandlers}>
+              <View style={styles.handle} />
+              <View style={{ backgroundColor: '#ffffff', borderRadius: 20, overflow: 'hidden', ...shadowLg, marginBottom: 24 }}>
+                <Pressable
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
+                  onPress={() => handleSelectAllViewMode('notes')}
+                >
+                  <Feather name="file-text" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                  <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>Notes</Text>
+                  {allViewMode === 'notes' && <Feather name="check" size={20} color="#0f2a24" />}
+                </Pressable>
+                <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                <Pressable
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
+                  onPress={() => handleSelectAllViewMode('tasks')}
+                >
+                  <Feather name="check-square" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                  <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>Tasks</Text>
+                  {allViewMode === 'tasks' && <Feather name="check" size={20} color="#0f2a24" />}
+                </Pressable>
+              </View>
+            </View>
+          </Animated.View>
+        </View>
+      ) : null}
 
       {isNoteFilterOpen ? (
-        <Animated.View style={[styles.filterBackdrop, { opacity: noteFilterOpacity }]}>
+        <View style={[StyleSheet.absoluteFill, { zIndex: 99 }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: noteFilterOpacity }]}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5, 8, 7, 0.2)' }]} />
+          </Animated.View>
           <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseNoteFilter} />
-        </Animated.View>
+        </View>
       ) : null}
 
       {isNoteFilterOpen ? (
@@ -1618,10 +2226,12 @@ export default function MainScreen() {
       />
 
       {isTaskDetailOpen && detailTask ? (
-        <>
-          <Animated.View style={[styles.taskFormBackdrop, { opacity: taskDetailOpacity, zIndex: 160 }]}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={closeTaskDetail} />
+        <View style={[StyleSheet.absoluteFill, { zIndex: 161 }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: taskDetailOpacity }]}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5, 8, 7, 0.2)' }]} />
           </Animated.View>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeTaskDetail} />
           <Animated.View
             pointerEvents="box-none"
             style={[
@@ -1718,22 +2328,51 @@ export default function MainScreen() {
                       </View>
                     </>
                   ) : null}
-                  <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
-                  <Pressable
-                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
-                    onPress={() => {
-                      void handleDeleteTask(detailTask.id);
-                      closeTaskDetail();
-                    }}
-                  >
-                    <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
-                    <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 16, color: '#b42318' }}>Delete Task</Text>
-                  </Pressable>
+                  {detailTask.repeatType !== 'none' ? (
+                    <>
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <Pressable
+                        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
+                        onPress={() => {
+                          void handleDeleteTaskOccurrence(detailTask, detailTaskOccurrenceDate ?? detailTask.nextOccurrenceDate);
+                          closeTaskDetail();
+                        }}
+                      >
+                        <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
+                        <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 16, color: '#b42318' }}>Delete this occurrence only</Text>
+                      </Pressable>
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <Pressable
+                        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
+                        onPress={() => {
+                          void handleDeleteTask(detailTask.id);
+                          closeTaskDetail();
+                        }}
+                      >
+                        <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
+                        <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 16, color: '#b42318' }}>Delete entire series</Text>
+                      </Pressable>
+                    </>
+                  ) : (
+                    <>
+                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <Pressable
+                        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
+                        onPress={() => {
+                          void handleDeleteTask(detailTask.id);
+                          closeTaskDetail();
+                        }}
+                      >
+                        <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
+                        <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 16, color: '#b42318' }}>Delete Task</Text>
+                      </Pressable>
+                    </>
+                  )}
                 </View>
               </ScrollView>
             </View>
           </Animated.View>
-        </>
+        </View>
       ) : null}
 
       <DynamicIslandToast 
@@ -1800,13 +2439,26 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   titleBlock: {
-    gap: 6,
+    flexDirection: 'row',
+    gap: 12,
     marginBottom: 16,
   },
-  title: {
+  greetingAccent: {
+    width: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#5a8f78',
+    alignSelf: 'stretch',
+  },
+  greetingContent: {
+    flex: 1,
+    gap: 2,
+    justifyContent: 'center',
+  },
+  greetingLine2: {
     color: '#1e2b26',
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 24,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 16,
+    lineHeight: 21,
   },
   subtitle: {
     fontFamily: 'Manrope_400Regular',
@@ -1815,8 +2467,9 @@ const styles = StyleSheet.create({
   },
   nextClassCard: {
     borderRadius: 26,
-    paddingVertical: 28,
-    paddingHorizontal: 24,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    marginTop: 8,
     marginBottom: 28,
     ...shadowLg,
   },
@@ -1969,8 +2622,8 @@ const styles = StyleSheet.create({
     minHeight: 62,
   },
   allQuickNotesTitle: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 20,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 15,
     color: '#111111',
   },
   allQuickNotesDivider: {
@@ -2061,8 +2714,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#ffffff',
     borderRadius: 20,
-    padding: 14,
-    marginBottom: 12,
+    padding: 10,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: '#efede8',
     ...shadowLg,
@@ -2172,6 +2825,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
   },
+  activeIndicator: {
+    position: 'absolute',
+    left: 0,
+    top: 6,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#2c3b35',
+  },
   navItemActive: {
     backgroundColor: '#2c3b35',
   },
@@ -2213,7 +2874,7 @@ const styles = StyleSheet.create({
   },
   actionSheetBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(5, 8, 7, 0.4)',
+    backgroundColor: 'rgba(5, 8, 7, 0.2)',
   },
   actionSheetPressTarget: {
     ...StyleSheet.absoluteFillObject,
@@ -2352,5 +3013,15 @@ const styles = StyleSheet.create({
     top: 0,
     zIndex: 161,
     justifyContent: 'flex-end',
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fcfbfa',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#f2f1ee',
   },
 });

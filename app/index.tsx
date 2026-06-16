@@ -131,16 +131,13 @@ export default function IndexScreen() {
   };
 
   const handleCancelAddSubject = () => {
+    setOnboardingStep('home');
     Animated.timing(slideAnim, {
       toValue: 0,
       duration: 350,
       easing: Easing.inOut(Easing.cubic),
       useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) {
-        setOnboardingStep('home');
-      }
-    });
+    }).start();
   };
 
   const handleSkip = async () => {
@@ -250,23 +247,7 @@ export default function IndexScreen() {
                 />
               </Animated.View>
               
-              <Animated.View 
-                style={[
-                  styles.screenWrapper, 
-                  StyleSheet.absoluteFill,
-                  { 
-                    transform: [{
-                      translateY: slideAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1000, 0], 
-                      })
-                    }]
-                  }
-                ]}
-                pointerEvents={onboardingStep === 'add-subject' ? 'auto' : 'none'}
-              >
-                <AddSubjectScreen onBack={handleCancelAddSubject} onSave={handleSaveSubject} />
-              </Animated.View>
+              <AddSubjectScreen visible={onboardingStep === 'add-subject'} onClose={handleCancelAddSubject} onSave={handleSaveSubject} />
             </View>
           </Animated.View>
         ) : null}

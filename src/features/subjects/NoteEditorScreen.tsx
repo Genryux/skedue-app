@@ -1,3 +1,4 @@
+import { BlurView } from 'expo-blur';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { EnrichedTextInput, type EnrichedTextInputInstance } from 'react-native-enriched';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -1128,9 +1129,13 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
         </View>
 
         {isNoteSheetOpen ? (
-          <Animated.View style={[styles.noteSheetBackdrop, { opacity: noteSheetOpacity }]}>
+          <View style={[StyleSheet.absoluteFill, { zIndex: 99 }]}>
+            <Animated.View style={[StyleSheet.absoluteFill, { opacity: noteSheetOpacity }]}>
+              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5, 8, 7, 0.2)' }]} />
+            </Animated.View>
             <Pressable style={StyleSheet.absoluteFill} onPress={closeNoteSheet} />
-          </Animated.View>
+          </View>
         ) : null}
 
         {isNoteSheetOpen ? (

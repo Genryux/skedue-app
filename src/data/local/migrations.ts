@@ -214,4 +214,28 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 12,
+    up: async (db) => {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS task_occurrence_exceptions (
+          id TEXT PRIMARY KEY,
+          taskId TEXT NOT NULL,
+          occurrenceDate INTEGER NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('completed', 'deleted')),
+          completedAt INTEGER,
+          FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE,
+          UNIQUE(taskId, occurrenceDate)
+        );
+      `);
+      try {
+        await db.execAsync(`
+          INSERT OR IGNORE INTO task_occurrence_exceptions (id, taskId, occurrenceDate, status, completedAt)
+          SELECT id, taskId, occurrenceDate, 'completed', completedAt FROM task_completions;
+        `);
+      } catch {
+        // Non-critical: task_completions rows are best-effort migrated
+      }
+    },
+  },
 ];
