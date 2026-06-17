@@ -31,6 +31,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import DynamicIslandToast from '../../ui/DynamicIslandToast';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
+import { useTheme } from '../../ui/theme/ThemeContext';
 import { formatTimeDisplay, parseTimeToMinutes } from '../../utils/timeUtils';
 import { findTimeConflicts } from './conflictUtils';
 import { calculateNextOccurrenceDate, isSameCalendarDay, END_OF_TIME } from '../../utils/recurrenceUtils';
@@ -185,6 +186,7 @@ const DAYS = [
 const EXACT_ALARM_PROMPT_KEY = 'exact_alarm_prompted';
 
 export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelete, onArchive, onUnarchive, initialTab }: SubjectDetailScreenProps) {
+  const { isDark } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -277,10 +279,10 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     return (
       <View style={styles.repeatBadge}>
         {isRecurring ? (
-          <Feather name="repeat" size={12} color="#8f968f" style={hasReminder ? { marginRight: 4 } : undefined} />
+          <Feather name="repeat" size={12} color={isDark ? '#6e7b74' : '#8f968f'} style={hasReminder ? { marginRight: 4 } : undefined} />
         ) : null}
         {hasReminder ? (
-          <Feather name="bell" size={12} color="#8f968f" />
+          <Feather name="bell" size={12} color={isDark ? '#6e7b74' : '#8f968f'} />
         ) : null}
       </View>
     );
@@ -1439,18 +1441,19 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
   closeTaskDetailRef.current = closeTaskDetail;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isDark && styles.containerDark]}>
       {/* Header Bar - Safe from notification bar */}
       <Animated.View
         style={[
           styles.header,
+          isDark && styles.headerDark,
           {
             opacity: headerFadeAnim,
             paddingTop: Math.max(insets.top, Platform.OS === 'android' ? 12 : 8),
           },
         ]}
       >
-        <Pressable onPress={onBack} style={styles.backButton}>
+        <Pressable onPress={onBack} style={[styles.backButton, isDark && styles.backButtonDark]}>
           <Feather name="arrow-left" size={18} color="#ffffff" />
         </Pressable>
         
@@ -1527,14 +1530,14 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
             {/* Urgent Tasks Section */}
             <View style={styles.section}>
-              <Text style={styles.sectionHeaderTitle}>URGENT TASKS</Text>
+              <Text style={[styles.sectionHeaderTitle, isDark && styles.sectionHeaderTitleDark]}>URGENT TASKS</Text>
 
               {urgentTasksPreview.length === 0 ? (
-                <View style={styles.sectionEmptyState}>
-                  <View style={styles.sectionEmptyIconWrapper}>
-                    <Feather name="check-circle" size={18} color="#8f968f" />
+                <View style={[styles.sectionEmptyState, isDark && { backgroundColor: '#0f201b' }]}>
+                  <View style={[styles.sectionEmptyIconWrapper, isDark && { backgroundColor: '#2a3d36', borderColor: 'rgba(255,255,255,0.04)' }]}>
+                    <Feather name="check-circle" size={18} color={isDark ? '#6e7b74' : '#8f968f'} />
                   </View>
-                  <Text style={styles.sectionEmptyTitle}>No pending tasks</Text>
+                  <Text style={[styles.sectionEmptyTitle, isDark && { color: '#8f9b95' }]}>No pending tasks</Text>
                 </View>
               ) : (
                 urgentTasksPreview.map((task) => {
@@ -1549,7 +1552,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                       key={task.id}
                       onPress={() => openTaskForm(task)}
                       onLongPress={() => openTaskDetail(task)}
-                      style={styles.taskCard}
+                      style={[styles.taskCard, isDark && styles.taskCardDark]}
                     >
                       {canComplete ? (
                         <Pressable
@@ -1557,20 +1560,20 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                           onPress={() => void handleCompleteTask(task)}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <MaterialCommunityIcons name="circle-outline" size={22} color="#a0aba5" />
+                          <MaterialCommunityIcons name="circle-outline" size={22} color={isDark ? '#6e7b74' : '#a0aba5'} />
                         </Pressable>
                       ) : (
                         <View style={styles.taskCheckbox}>
-                          <Feather name="lock" size={15} color="#c9cdc9" />
+                          <Feather name="lock" size={15} color={isDark ? '#4a5a52' : '#c9cdc9'} />
                         </View>
                       )}
                       <View style={styles.taskTextWrapper}>
-                        <Text style={styles.taskTitle} numberOfLines={1}>
+                        <Text style={[styles.taskTitle, isDark && styles.taskTitleDark]} numberOfLines={1}>
                           {task.title}
                         </Text>
                         {task.startDate ? (
                         <View style={styles.taskDueDateRow}>
-                          <Text style={[styles.taskDueDateText, isTimeOverdue && { color: '#BA1A1A' }]} numberOfLines={1}>
+                          <Text style={[styles.taskDueDateText, isDark && styles.taskDueDateTextDark, isTimeOverdue && { color: '#BA1A1A' }]} numberOfLines={1}>
                             {dueLabel}
                           </Text>
                           {renderTaskBadges(task)}
@@ -1587,15 +1590,15 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
             {/* Recent Notes Section */}
             <View style={styles.section}>
-              <Text style={styles.sectionHeaderTitle}>RECENT NOTES</Text>
+              <Text style={[styles.sectionHeaderTitle, isDark && styles.sectionHeaderTitleDark]}>RECENT NOTES</Text>
 
               {recentNotes.length === 0 ? (
-                <View style={styles.recentNoteEmptyState}>
-                  <View style={styles.recentNoteEmptyIconWrapper}>
-                    <MaterialIcons name="note-alt" size={20} color="#8f968f" />
+                <View style={[styles.recentNoteEmptyState, isDark && { backgroundColor: '#0f201b' }]}>
+                  <View style={[styles.recentNoteEmptyIconWrapper, isDark && { backgroundColor: '#2a3d36', borderColor: 'rgba(255,255,255,0.04)' }]}>
+                    <MaterialIcons name="note-alt" size={20} color={isDark ? '#6e7b74' : '#8f968f'} />
                   </View>
-                  <Text style={styles.recentNoteEmptyTitle}>No recent notes</Text>
-                  <Text style={styles.recentNoteEmptyBody}>Notes you create or edit will show up here.</Text>
+                  <Text style={[styles.recentNoteEmptyTitle, isDark && { color: '#8f9b95' }]}>No recent notes</Text>
+                  <Text style={[styles.recentNoteEmptyBody, isDark && { color: '#6e7b74' }]}>Notes you create or edit will show up here.</Text>
                 </View>
               ) : recentNotes.map((note) => {
                 const folderLabel = note.folderId ? folders.find((f) => f.id === note.folderId)?.title ?? 'Unknown' : 'Loose notes';
@@ -1608,17 +1611,17 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                   : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` at ${timeStr}`;
 
                 return (
-                  <CardScale key={note.id} onPress={() => handleOpenNoteEditor(note)} style={styles.recentNoteCard}>
-                    <Text style={styles.recentNoteTitle} numberOfLines={1}>{note.title || 'Untitled note'}</Text>
-                    <Text style={styles.recentNoteBody} numberOfLines={3}>
+                  <CardScale key={note.id} onPress={() => handleOpenNoteEditor(note)} style={[styles.recentNoteCard, isDark && styles.recentNoteCardDark]}>
+                    <Text style={[styles.recentNoteTitle, isDark && styles.recentNoteTitleDark]} numberOfLines={1}>{note.title || 'Untitled note'}</Text>
+                    <Text style={[styles.recentNoteBody, isDark && styles.recentNoteBodyDark]} numberOfLines={3}>
                       {note.contentText || 'Tap to start writing.'}
                     </Text>
                     <View style={styles.recentNoteMetaRow}>
-                      <Feather name="clock" size={12} color="#8f968f" />
-                      <Text style={styles.recentNoteMetaText}>{dateStr}</Text>
+                      <Feather name="clock" size={12} color={isDark ? '#6e7b74' : '#8f968f'} />
+                      <Text style={[styles.recentNoteMetaText, isDark && styles.recentNoteMetaTextDark]}>{dateStr}</Text>
                       <View style={styles.recentNoteMetaDot} />
-                      <Feather name="folder" size={12} color="#8f968f" />
-                      <Text style={styles.recentNoteMetaText}>{folderLabel}</Text>
+                      <Feather name="folder" size={12} color={isDark ? '#6e7b74' : '#8f968f'} />
+                      <Text style={[styles.recentNoteMetaText, isDark && styles.recentNoteMetaTextDark]}>{folderLabel}</Text>
                     </View>
                   </CardScale>
                 );
@@ -1629,13 +1632,13 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
         {activeTab === 'tasks' && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeaderTitle}>TASKS</Text>
+            <Text style={[styles.sectionHeaderTitle, isDark && styles.sectionHeaderTitleDark]}>TASKS</Text>
 
             {/* OVERDUE SECTION */}
             {overdueTasks.length > 0 && (
               <>
                 <View style={styles.completedSectionHeader}>
-                  <Text style={styles.overdueSectionHeaderText}>OVERDUE</Text>
+                  <Text style={[styles.overdueSectionHeaderText, isDark && styles.overdueSectionHeaderTextDark]}>OVERDUE</Text>
                 </View>
                 {overdueTasks.map((task) => {
                   const occDate = task.nextOccurrenceDate;
@@ -1648,7 +1651,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                       key={task.id}
                       onPress={() => openTaskForm(task)}
                       onLongPress={() => openTaskDetail(task)}
-                      style={styles.taskCard}
+                      style={[styles.taskCard, isDark && styles.taskCardDark]}
                     >
                       {canComplete ? (
                         <Pressable
@@ -1656,23 +1659,23 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                           onPress={() => void handleCompleteTask(task)}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <MaterialCommunityIcons name="circle-outline" size={22} color="#a0aba5" />
+                          <MaterialCommunityIcons name="circle-outline" size={22} color={isDark ? '#6e7b74' : '#a0aba5'} />
                         </Pressable>
                       ) : (
                         <View style={styles.taskCheckbox}>
-                          <Feather name="lock" size={15} color="#c9cdc9" />
+                          <Feather name="lock" size={15} color={isDark ? '#4a5a52' : '#c9cdc9'} />
                         </View>
                       )}
                       <View style={styles.taskTextWrapper}>
-                        <Text style={styles.taskTitle} numberOfLines={1}>
+                        <Text style={[styles.taskTitle, isDark && styles.taskTitleDark]} numberOfLines={1}>
                           {task.title}
                         </Text>
                         {task.startDate ? (
                         <View style={styles.taskDueDateRow}>
-                          <Text style={[styles.taskDueDateText, { color: '#BA1A1A' }]} numberOfLines={1}>
+                          <Text style={[styles.taskDueDateText, isDark && styles.taskDueDateTextDark, { color: '#BA1A1A' }]} numberOfLines={1}>
                             {dueLabel}
                           </Text>
-                          <Text style={[styles.taskDueDateText, { color: '#BA1A1A', marginLeft: 6 }]} numberOfLines={1}>
+                          <Text style={[styles.taskDueDateText, isDark && styles.taskDueDateTextDark, { color: '#BA1A1A', marginLeft: 6 }]} numberOfLines={1}>
                             (Overdue)
                           </Text>
                           {renderTaskBadges(task)}
@@ -1705,7 +1708,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                       key={task.id}
                       onPress={() => openTaskForm(task)}
                       onLongPress={() => openTaskDetail(task)}
-                      style={styles.taskCard}
+                      style={[styles.taskCard, isDark && styles.taskCardDark]}
                     >
                       {canComplete ? (
                         <Pressable
@@ -1713,20 +1716,20 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                           onPress={() => void handleCompleteTask(task)}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <MaterialCommunityIcons name="circle-outline" size={22} color="#a0aba5" />
+                          <MaterialCommunityIcons name="circle-outline" size={22} color={isDark ? '#6e7b74' : '#a0aba5'} />
                         </Pressable>
                       ) : (
                         <View style={styles.taskCheckbox}>
-                          <Feather name="lock" size={15} color="#c9cdc9" />
+                          <Feather name="lock" size={15} color={isDark ? '#4a5a52' : '#c9cdc9'} />
                         </View>
                       )}
                       <View style={styles.taskTextWrapper}>
-                        <Text style={styles.taskTitle} numberOfLines={1}>
+                        <Text style={[styles.taskTitle, isDark && styles.taskTitleDark]} numberOfLines={1}>
                           {task.title}
                         </Text>
                         {task.startDate ? (
                         <View style={styles.taskDueDateRow}>
-                          <Text style={[styles.taskDueDateText, isTimeOverdue && { color: '#BA1A1A' }]} numberOfLines={1}>
+                          <Text style={[styles.taskDueDateText, isDark && styles.taskDueDateTextDark, isTimeOverdue && { color: '#BA1A1A' }]} numberOfLines={1}>
                             {dueLabel}
                           </Text>
                           {renderTaskBadges(task)}
@@ -1757,18 +1760,18 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                       key={task.id}
                       onPress={() => openTaskForm(task)}
                       onLongPress={() => openTaskDetail(task)}
-                      style={styles.taskCard}
+                      style={[styles.taskCard, isDark && styles.taskCardDark]}
                     >
                       <View style={styles.taskCheckbox}>
-                        <Feather name="lock" size={15} color="#c9cdc9" />
+                        <Feather name="lock" size={15} color={isDark ? '#4a5a52' : '#c9cdc9'} />
                       </View>
                       <View style={styles.taskTextWrapper}>
-                        <Text style={styles.taskTitle} numberOfLines={1}>
+                        <Text style={[styles.taskTitle, isDark && styles.taskTitleDark]} numberOfLines={1}>
                           {task.title}
                         </Text>
                         {task.startDate ? (
                         <View style={styles.taskDueDateRow}>
-                          <Text style={styles.taskDueDateText} numberOfLines={1}>
+                          <Text style={[styles.taskDueDateText, isDark && styles.taskDueDateTextDark]} numberOfLines={1}>
                             {dueLabel}
                           </Text>
                           {renderTaskBadges(task)}
@@ -1787,7 +1790,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
             {completedOccurrences.length > 0 && (
               <>
                 <View style={styles.completedSectionHeader}>
-                  <Text style={styles.completedSectionHeaderText}>COMPLETED</Text>
+                  <Text style={[styles.completedSectionHeaderText, isDark && styles.completedSectionHeaderTextDark]}>COMPLETED</Text>
                 </View>
                 {completedOccurrences.map(({ task, completion }) => {
                   const isRecurring = task.repeatType && task.repeatType !== 'none';
@@ -1799,7 +1802,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                       key={completion.id}
                       onPress={() => openTaskForm(task, true)}
                       onLongPress={() => openTaskDetail(task)}
-                      style={[styles.taskCard, styles.completedTaskCard]}
+                      style={[styles.taskCard, styles.completedTaskCard, isDark && styles.taskCardDark]}
                     >
                       <View style={styles.taskCheckbox}>
                         {canUncomplete ? (
@@ -1807,10 +1810,10 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                             onPress={() => void handleUncompleteTask(task)}
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           >
-                            <Feather name="rotate-ccw" size={16} color="#8f968f" />
+                            <Feather name="rotate-ccw" size={16} color={isDark ? '#6e7b74' : '#8f968f'} />
                           </Pressable>
                         ) : (
-                          <Feather name="lock" size={14} color="#c9cdc9" />
+                          <Feather name="lock" size={14} color={isDark ? '#4a5a52' : '#c9cdc9'} />
                         )}
                       </View>
                       <View style={styles.taskTextWrapper}>
@@ -1819,7 +1822,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                         </Text>
                         {task.startDate ? (
                         <View style={styles.taskDueDateRow}>
-                          <Text style={[styles.taskDueDateText, { color: '#8f968f' }]} numberOfLines={1}>
+                          <Text style={[styles.taskDueDateText, { color: isDark ? '#6e7b74' : '#8f968f' }]} numberOfLines={1}>
                             {dueLabel}
                           </Text>
                           {isRecurring ? (
@@ -1839,12 +1842,12 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
             )}
 
             {overdueTasks.length === 0 && todayTasks.length === 0 && futureTasks.length === 0 && completedOccurrences.length === 0 ? (
-              <View style={styles.looseNotesEmptyState}>
-                <View style={styles.looseNotesEmptyIconWrapper}>
-                  <Feather name="check-circle" size={18} color="#8f968f" />
+              <View style={[styles.looseNotesEmptyState, isDark && styles.looseNotesEmptyStateDark]}>
+                <View style={[styles.looseNotesEmptyIconWrapper, isDark && { backgroundColor: '#2a3d36', borderColor: 'rgba(255,255,255,0.04)' }]}>
+                  <Feather name="check-circle" size={18} color={isDark ? '#6e7b74' : '#8f968f'} />
                 </View>
-                <Text style={styles.looseNotesEmptyTitle}>No tasks yet</Text>
-                <Text style={styles.looseNotesEmptyBody}>
+                <Text style={[styles.looseNotesEmptyTitle, isDark && { color: '#8f9b95' }]}>No tasks yet</Text>
+                <Text style={[styles.looseNotesEmptyBody, isDark && { color: '#6e7b74' }]}>
                   Create a task to start tracking your to-dos.
                 </Text>
               </View>
@@ -1857,7 +1860,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
             {/* Workspace Section */}
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionHeaderTitle}>WORKSPACE</Text>
+                <Text style={[styles.sectionHeaderTitle, isDark && styles.sectionHeaderTitleDark]}>WORKSPACE</Text>
                 {remainingFolders.length > 0 ? (
                   <Pressable
                     onPress={handleToggleFolderExpansion}
@@ -1868,19 +1871,19 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                     <Feather
                       name={isFoldersExpanded ? 'minus' : 'plus'}
                       size={18}
-                      color="#1e2b26"
+                      color={isDark ? '#8f9b95' : '#1e2b26'}
                     />
                   </Pressable>
                 ) : null}
               </View>
 
               {folders.length === 0 ? (
-                <View style={styles.workspaceEmptyState}>
-                  <View style={styles.workspaceEmptyIconWrapper}>
-                    <Feather name="folder" size={22} color="#8f968f" />
+                <View style={[styles.workspaceEmptyState, isDark && styles.workspaceEmptyStateDark]}>
+                  <View style={[styles.workspaceEmptyIconWrapper, isDark && { backgroundColor: '#2a3d36', borderColor: 'rgba(255,255,255,0.04)' }]}>
+                    <Feather name="folder" size={22} color={isDark ? '#6e7b74' : '#8f968f'} />
                   </View>
-                  <Text style={styles.workspaceEmptyTitle}>No folders yet</Text>
-                  <Text style={styles.workspaceEmptyBody}>
+                  <Text style={[styles.workspaceEmptyTitle, isDark && { color: '#8f9b95' }]}>No folders yet</Text>
+                  <Text style={[styles.workspaceEmptyBody, isDark && { color: '#6e7b74' }]}>
                     Folders will appear here once you add them to this subject.
                   </Text>
                 </View>
@@ -2001,15 +2004,15 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
             >
               {/* Loose Notes Section */}
               <View style={styles.section}>
-                <Text style={styles.sectionHeaderTitle}>LOOSE NOTES</Text>
+                <Text style={[styles.sectionHeaderTitle, isDark && styles.sectionHeaderTitleDark]}>LOOSE NOTES</Text>
 
                 {looseNotes.length === 0 ? (
-                  <View style={styles.looseNotesEmptyState}>
-                    <View style={styles.looseNotesEmptyIconWrapper}>
-                    <Feather name="file-text" size={18} color="#8f968f" />
+                  <View style={[styles.looseNotesEmptyState, isDark && styles.looseNotesEmptyStateDark]}>
+                    <View style={[styles.looseNotesEmptyIconWrapper, isDark && { backgroundColor: '#2a3d36', borderColor: 'rgba(255,255,255,0.04)' }]}>
+                    <Feather name="file-text" size={18} color={isDark ? '#6e7b74' : '#8f968f'} />
                   </View>
-                  <Text style={styles.looseNotesEmptyTitle}>No loose notes yet</Text>
-                    <Text style={styles.looseNotesEmptyBody}>
+                  <Text style={[styles.looseNotesEmptyTitle, isDark && { color: '#8f9b95' }]}>No loose notes yet</Text>
+                    <Text style={[styles.looseNotesEmptyBody, isDark && { color: '#6e7b74' }]}>
                       Notes without a folder will appear here.
                     </Text>
                   </View>
@@ -2024,18 +2027,18 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                         : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` at ${timeStr}`;
 
                       return (
-                        <CardScale key={note.id} onPress={() => handleOpenNoteEditor(note)} style={styles.noteCard}>
+                        <CardScale key={note.id} onPress={() => handleOpenNoteEditor(note)} style={[styles.noteCard, isDark && styles.noteCardDark]}>
                           <View style={styles.noteCardTopRow}>
-                            <Text style={styles.noteCardTitle} numberOfLines={1}>
+                            <Text style={[styles.noteCardTitle, isDark && styles.noteCardTitleDark]} numberOfLines={1}>
                               {note.title || 'Untitled note'}
                             </Text>
                           </View>
-                          <Text style={styles.noteCardPreview} numberOfLines={2}>
+                          <Text style={[styles.noteCardPreview, isDark && styles.noteCardPreviewDark]} numberOfLines={2}>
                             {note.contentText || 'Tap to start your first draft.'}
                           </Text>
                           <View style={styles.noteCardDateRow}>
-                            <Feather name="clock" size={12} color="#8f968f" />
-                            <Text style={styles.noteCardDateText}>{dateStr}</Text>
+                            <Feather name="clock" size={12} color={isDark ? '#6e7b74' : '#8f968f'} />
+                            <Text style={[styles.noteCardDateText, isDark && styles.recentNoteMetaTextDark]}>{dateStr}</Text>
                             {note.isPinned ? <MaterialCommunityIcons name="bookmark" size={16} color="#FFD666" style={{ marginLeft: 'auto' }} /> : null}
                           </View>
                         </CardScale>
@@ -2084,11 +2087,11 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                 }),
               }],
             }}>
-              <Pressable style={styles.actionButton} onPress={() => openTaskForm()}>
-                <View style={styles.actionIconCircle}>
-                  <Feather name="check-square" size={18} color="#1e2b26" />
+              <Pressable style={[styles.actionButton, isDark && styles.actionButtonDark]} onPress={() => openTaskForm()}>
+                <View style={[styles.actionIconCircle, isDark && styles.actionIconCircleDark]}>
+                  <Feather name="check-square" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
                 </View>
-                <Text style={styles.actionText}>Add Task</Text>
+                <Text style={[styles.actionText, isDark && styles.actionTextDark]}>Add Task</Text>
               </Pressable>
             </Animated.View>
 
@@ -2103,17 +2106,17 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
               }],
             }}>
               <Pressable
-                style={styles.actionButton}
+                style={[styles.actionButton, isDark && styles.actionButtonDark]}
                 onPress={() => {
                   handleCloseActions();
                   setActiveTab('notes');
                   handleOpenNoteEditor();
                 }}
               >
-                <View style={styles.actionIconCircle}>
-                  <Feather name="file-text" size={18} color="#1e2b26" />
+                <View style={[styles.actionIconCircle, isDark && styles.actionIconCircleDark]}>
+                  <Feather name="file-text" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
                 </View>
-                <Text style={styles.actionText}>New Note</Text>
+                <Text style={[styles.actionText, isDark && styles.actionTextDark]}>New Note</Text>
               </Pressable>
             </Animated.View>
 
@@ -2127,11 +2130,11 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                 }),
               }],
             }}>
-              <Pressable style={styles.actionButton} onPress={handleOpenFolderForm}>
-                <View style={styles.actionIconCircle}>
-                  <Feather name="folder" size={18} color="#1e2b26" />
+              <Pressable style={[styles.actionButton, isDark && styles.actionButtonDark]} onPress={handleOpenFolderForm}>
+                <View style={[styles.actionIconCircle, isDark && styles.actionIconCircleDark]}>
+                  <Feather name="folder" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
                 </View>
-                <Text style={styles.actionText}>Create Folder</Text>
+                <Text style={[styles.actionText, isDark && styles.actionTextDark]}>Create Folder</Text>
               </Pressable>
             </Animated.View>
           </Animated.View>
@@ -2164,8 +2167,8 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
             },
           ]}
         >
-          <View style={[styles.folderFormPanel, { maxHeight: screenHeight * 0.8 }]} {...folderFormPanResponder.panHandlers}>
-            <View style={styles.folderFormHandle} />
+          <View style={[styles.folderFormPanel, isDark && styles.folderFormPanelDark, { maxHeight: screenHeight * 0.8 }]} {...folderFormPanResponder.panHandlers}>
+            <View style={[styles.folderFormHandle, isDark && styles.folderFormHandleDark]} />
 
             <ScrollView
               bounces={false}
@@ -2176,26 +2179,26 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
               onScroll={(e) => { folderFormScrollYRef.current = e.nativeEvent.contentOffset.y; }}
               scrollEventThrottle={16}
             >
-              <Text style={styles.folderFormTitle}>Create Folder</Text>
+              <Text style={[styles.folderFormTitle, isDark && styles.folderFormTitleDark]}>Create Folder</Text>
 
-              <View style={styles.folderFormCard}>
+              <View style={[styles.folderFormCard, isDark && styles.folderFormCardDark]}>
                 <View style={styles.folderFormActionRow}>
-                  <Feather name="folder" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                  <Feather name="folder" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
                   <TextInput
                     value={folderName}
                     onChangeText={setFolderName}
                     placeholder="Folder name"
-                    placeholderTextColor="#91948f"
-                    style={styles.folderFormInput}
+                    placeholderTextColor={isDark ? '#5a6b63' : '#91948f'}
+                    style={[styles.folderFormInput, isDark && styles.folderFormInputDark]}
                     autoCapitalize="words"
                     returnKeyType="done"
                   />
                 </View>
               </View>
 
-              <View style={[styles.folderFormCard, { marginTop: 16 }]}>
+              <View style={[styles.folderFormCard, isDark && styles.folderFormCardDark, { marginTop: 16 }]}>
                 <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 }}>
-                  <Text style={styles.folderFormLabel}>Folder Color</Text>
+                  <Text style={[styles.folderFormLabel, isDark && styles.folderFormLabelDark]}>Folder Color</Text>
                 </View>
                 <View style={styles.folderSwatchRow}>
                   {FOLDER_COLORS.map((color) => {
@@ -2219,7 +2222,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
               <View style={styles.folderFormFooter}>
                 <Pressable onPress={handleCloseFolderForm}>
-                  <Text style={styles.folderFormCancelText}>Cancel</Text>
+                  <Text style={[styles.folderFormCancelText, isDark && styles.folderFormCancelTextDark]}>Cancel</Text>
                 </Pressable>
                 <Pressable
                   style={[styles.folderFormSubmitButton, !folderName.trim() && styles.folderFormSubmitButtonDisabled]}
@@ -2260,8 +2263,8 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
             },
           ]}
         >
-          <View style={[styles.taskFormPanel, { maxHeight: screenHeight * 0.92 }]} {...taskFormPanResponder.panHandlers}>
-            <View style={styles.taskFormHandle} />
+          <View style={[styles.taskFormPanel, isDark && styles.taskFormPanelDark, { maxHeight: screenHeight * 0.92 }]} {...taskFormPanResponder.panHandlers}>
+            <View style={[styles.taskFormHandle, isDark && styles.taskFormHandleDark]} />
             <ScrollView
               bounces={false}
               showsVerticalScrollIndicator={false}
@@ -2272,75 +2275,75 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
               scrollEventThrottle={16}
             >
               <View style={styles.taskFormHeader}>
-                <Text style={styles.taskFormTitle}>{taskFormReadOnly ? 'Task' : editingTask ? 'Edit Task' : 'New Task'}</Text>
+                <Text style={[styles.taskFormTitle, isDark && styles.taskFormTitleDark]}>{taskFormReadOnly ? 'Task' : editingTask ? 'Edit Task' : 'New Task'}</Text>
               </View>
 
-              <View style={styles.editInfoCard}>
+              <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark]}>
                 <View style={styles.editInfoRow}>
-                  <Feather name="check-square" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                  <Feather name="check-square" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
                   <TextInput
                     value={taskTitle}
                     onChangeText={setTaskTitle}
                     placeholder="Task Name"
-                    placeholderTextColor="#91948f"
-                    style={styles.editInfoInput}
+                    placeholderTextColor={isDark ? '#5a6b63' : '#91948f'}
+                    style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}
                     returnKeyType="done"
                   />
                 </View>
-                <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                 <View style={[styles.editInfoRow, { minHeight: 88, alignItems: 'flex-start' }]}>
-                  <Feather name="align-left" size={16} color="#8f968f" style={{ marginRight: 10, marginTop: 16 }} />
+                  <Feather name="align-left" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10, marginTop: 16 }} />
                   <TextInput
                     value={taskDescription}
                     onChangeText={taskFormReadOnly ? undefined : setTaskDescription}
                     placeholder="Description (Optional)"
-                    placeholderTextColor="#91948f"
-                    style={[styles.editInfoInput, taskFormReadOnly && { color: '#8f968f' }]}
+                    placeholderTextColor={isDark ? '#5a6b63' : '#91948f'}
+                    style={[styles.editInfoInput, taskFormReadOnly && { color: isDark ? '#6e7b74' : '#8f968f' }]}
                     multiline
                     editable={!taskFormReadOnly}
                   />
                 </View>
               </View>
 
-              <View style={[styles.editInfoCard, { marginTop: 16, backgroundColor: '#f4f4f2' }]}>
+              <View style={[styles.editInfoCard, { marginTop: 16, backgroundColor: isDark ? '#0f201b' : '#f4f4f2' }]}>
                 <View style={styles.editInfoRow}>
-                  <Feather name="lock" size={14} color="#8f968f" />
-                  <Text style={[styles.editInfoInput, { flex: 1, paddingVertical: 0, marginLeft: 10, color: '#5c6762' }]} numberOfLines={1}>
+                  <Feather name="lock" size={14} color={isDark ? '#6e7b74' : '#8f968f'} />
+                  <Text style={[styles.editInfoInput, { flex: 1, paddingVertical: 0, marginLeft: 10, color: isDark ? '#8f9b95' : '#5c6762' }]} numberOfLines={1}>
                     {subject?.code?.trim() || subject?.title || 'Subject'}
                   </Text>
                 </View>
               </View>
 
-              <View style={[styles.editInfoCard, { marginTop: 16 }]}>
+              <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark, { marginTop: 16 }]}>
                 <View style={styles.editInfoRow}>
                   {taskFormReadOnly ? (
                     <>
                       {taskDueDate ? (
                         <>
-                          <Feather name="calendar" size={16} color="#b7bcb7" style={{ marginRight: 8 }} />
-                          <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#b7bcb7', marginRight: 24 }}>
+                          <Feather name="calendar" size={16} color={isDark ? '#6e7b74' : '#b7bcb7'} style={{ marginRight: 8 }} />
+                          <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#8f9b95' : '#b7bcb7', marginRight: 24 }}>
                             {taskDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </Text>
-                          <Feather name="clock" size={16} color="#b7bcb7" style={{ marginRight: 8 }} />
-                          <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#b7bcb7' }}>
+                          <Feather name="clock" size={16} color={isDark ? '#6e7b74' : '#b7bcb7'} style={{ marginRight: 8 }} />
+                          <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#8f9b95' : '#b7bcb7' }}>
                             {taskDueDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                           </Text>
                         </>
                       ) : (
-                        <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#b7bcb7' }}>No due date</Text>
+                        <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#6e7b74' : '#b7bcb7' }}>No due date</Text>
                       )}
                     </>
                   ) : (
                     <>
                       <Pressable onPress={() => { if (!taskDueDate) setTaskDueDate(new Date()); setShowTaskDueDatePicker(true); }} style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                        <Feather name="calendar" size={16} color="#8f968f" style={{ marginRight: 8 }} />
-                        <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: taskDueDate ? '#1e2b26' : '#b7bcb7' }}>
+                        <Feather name="calendar" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 8 }} />
+                        <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: taskDueDate ? (isDark ? '#d7e4dd' : '#1e2b26') : (isDark ? '#5a6b63' : '#b7bcb7') }}>
                           {taskDueDate ? taskDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Set date'}
                         </Text>
                       </Pressable>
                       <Pressable onPress={() => { if (!taskDueDate) setTaskDueDate(new Date()); setShowTaskDueTimePicker(true); }} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Feather name="clock" size={16} color="#8f968f" style={{ marginRight: 8 }} />
-                        <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: taskDueDate ? '#1e2b26' : '#b7bcb7' }}>
+                        <Feather name="clock" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 8 }} />
+                        <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: taskDueDate ? (isDark ? '#d7e4dd' : '#1e2b26') : (isDark ? '#5a6b63' : '#b7bcb7') }}>
                           {taskDueDate ? taskDueDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'Set time'}
                         </Text>
                       </Pressable>
@@ -2376,78 +2379,76 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                 ) : null}
               </View>
 
-              <View style={[styles.editInfoCard, { marginTop: 16 }]}>
-                  <>
-                    <Pressable style={styles.editInfoRow} onPress={() => openSubModal('priority')}>
-                      <Feather name="flag" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                      <Text style={styles.editInfoInput}>Priority</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        {taskPriority ? (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <MaterialIcons name="flag" size={14} color={taskPriority === 'high' ? '#d1453b' : '#e88d3f'} />
-                            <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>
-                              {taskPriority === 'high' ? 'High' : 'Low'}
-                            </Text>
-                          </View>
-                        ) : (
-                          <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>None</Text>
-                        )}
-                        <Feather name="chevron-right" size={18} color="#9aa09a" />
-                      </View>
-                    </Pressable>
-                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
-                    <Pressable style={styles.editInfoRow} onPress={() => openSubModal('category')}>
-                      <Feather name="folder" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                      <Text style={styles.editInfoInput}>Category</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        {taskCategory ? (
-                          <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>{taskCategory}</Text>
-                        ) : (
-                          <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>None</Text>
-                        )}
-                        <Feather name="chevron-right" size={18} color="#9aa09a" />
-                      </View>
-                    </Pressable>
-                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
-                    <Pressable style={styles.editInfoRow} onPress={() => openSubModal('reminder')}>
-                      <Feather name="bell" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                      <Text style={styles.editInfoInput}>Reminder</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        {taskReminderMinutes !== null ? (
-                          <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>
-                            {taskReminderMinutes === 0 ? 'At due time' : taskReminderMinutes === 5 ? '5 mins before' : taskReminderMinutes === 15 ? '15 mins before' : taskReminderMinutes === 30 ? '30 mins before' : taskReminderMinutes === 60 ? '1 hour before' : taskReminderMinutes === 1440 ? '1 day before' : ''}
+              <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark, { marginTop: 16 }]}>
+                  <Pressable style={styles.editInfoRow} onPress={() => openSubModal('priority')}>
+                    <Feather name="flag" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                    <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>Priority</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {taskPriority ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <MaterialIcons name="flag" size={14} color={taskPriority === 'high' ? '#d1453b' : '#e88d3f'} />
+                          <Text style={[styles.taskFormChipText, isDark && { color: '#8f9b95' }]}>
+                            {taskPriority === 'high' ? 'High' : 'Low'}
                           </Text>
-                        ) : (
-                          <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>None</Text>
-                        )}
-                        <Feather name="chevron-right" size={18} color="#9aa09a" />
-                      </View>
-                    </Pressable>
-                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
-                    <Pressable style={styles.editInfoRow} onPress={() => openSubModal('repeat')}>
-                      <Feather name="repeat" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                      <Text style={styles.editInfoInput}>Repeat</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        {taskRepeatType !== 'none' ? (
-                          <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>
-                            {taskRepeatType === 'daily' ? 'Daily' : taskRepeatType === 'weekly' ? `Weekly${taskRepeatDays.length > 0 ? ` (${taskRepeatDays.map((d) => DAYS.find((x) => x.value === d)?.label || d).join(', ')})` : ''}` : taskRepeatType === 'monthly' ? 'Monthly' : ''}
-                          </Text>
-                        ) : (
-                          <Text style={[styles.taskFormChipText, { color: '#8f968f' }]}>None</Text>
-                        )}
-                        <Feather name="chevron-right" size={18} color="#9aa09a" />
-                      </View>
-                    </Pressable>
-                  </>
+                        </View>
+                      ) : (
+                        <Text style={[styles.taskFormChipText, isDark && { color: '#6e7b74' }]}>None</Text>
+                      )}
+                      <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
+                    </View>
+                  </Pressable>
+                  <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
+                  <Pressable style={styles.editInfoRow} onPress={() => openSubModal('category')}>
+                    <Feather name="folder" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                    <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>Category</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {taskCategory ? (
+                        <Text style={[styles.taskFormChipText, isDark && { color: '#8f9b95' }]}>{taskCategory}</Text>
+                      ) : (
+                        <Text style={[styles.taskFormChipText, isDark && { color: '#6e7b74' }]}>None</Text>
+                      )}
+                      <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
+                    </View>
+                  </Pressable>
+                  <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
+                  <Pressable style={styles.editInfoRow} onPress={() => openSubModal('reminder')}>
+                    <Feather name="bell" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                    <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>Reminder</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {taskReminderMinutes !== null ? (
+                        <Text style={[styles.taskFormChipText, isDark && { color: '#8f9b95' }]}>
+                          {taskReminderMinutes === 0 ? 'At due time' : taskReminderMinutes === 5 ? '5 mins before' : taskReminderMinutes === 15 ? '15 mins before' : taskReminderMinutes === 30 ? '30 mins before' : taskReminderMinutes === 60 ? '1 hour before' : taskReminderMinutes === 1440 ? '1 day before' : ''}
+                        </Text>
+                      ) : (
+                        <Text style={[styles.taskFormChipText, isDark && { color: '#6e7b74' }]}>None</Text>
+                      )}
+                      <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
+                    </View>
+                  </Pressable>
+                  <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
+                  <Pressable style={styles.editInfoRow} onPress={() => openSubModal('repeat')}>
+                    <Feather name="repeat" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                    <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>Repeat</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {taskRepeatType !== 'none' ? (
+                        <Text style={[styles.taskFormChipText, isDark && { color: '#8f9b95' }]}>
+                          {taskRepeatType === 'daily' ? 'Daily' : taskRepeatType === 'weekly' ? `Weekly${taskRepeatDays.length > 0 ? ` (${taskRepeatDays.map((d) => DAYS.find((x) => x.value === d)?.label || d).join(', ')})` : ''}` : taskRepeatType === 'monthly' ? 'Monthly' : ''}
+                        </Text>
+                      ) : (
+                        <Text style={[styles.taskFormChipText, isDark && { color: '#6e7b74' }]}>None</Text>
+                      )}
+                      <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
+                    </View>
+                  </Pressable>
               </View>
 
               <View style={styles.editInfoActions}>
                 <Pressable onPress={closeTaskForm}>
-                  <Text style={styles.editInfoCancelText}>{taskFormReadOnly ? 'Close' : 'Cancel'}</Text>
+                  <Text style={[styles.editInfoCancelText, isDark && styles.editInfoCancelTextDark]}>{taskFormReadOnly ? 'Close' : 'Cancel'}</Text>
                 </Pressable>
                 {taskFormReadOnly ? null : (
                   <Pressable
-                    style={[styles.editInfoSaveButton, !taskTitle.trim() && styles.editInfoSaveButtonDisabled]}
+                    style={[styles.editInfoSaveButton, !taskTitle.trim() && styles.editInfoSaveButtonDisabled, isDark && { backgroundColor: '#1e5548' }]}
                     onPress={() => void handleSaveTask()}
                     disabled={!taskTitle.trim()}
                   >
@@ -2482,8 +2483,8 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
               },
             ]}
           >
-            <View style={[styles.taskFormPanel, { maxHeight: screenHeight * 0.8 }]} {...subModalPanResponder.panHandlers}>
-              <View style={styles.taskFormHandle} />
+            <View style={[styles.taskFormPanel, isDark && styles.taskFormPanelDark, { maxHeight: screenHeight * 0.8 }]} {...subModalPanResponder.panHandlers}>
+              <View style={[styles.taskFormHandle, isDark && styles.taskFormHandleDark]} />
               <ScrollView
                 bounces={false}
                 showsVerticalScrollIndicator={false}
@@ -2495,8 +2496,8 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
               >
                 {taskFormSubView === 'priority' && (
                   <>
-                    <Text style={styles.subModalTitle}>Priority</Text>
-                    <View style={styles.editInfoCard}>
+                    <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Priority</Text>
+                    <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark]}>
                       {[
                         { value: null, label: 'None', color: '#d4d8d4' },
                         { value: 'low', label: 'Low', color: '#e88d3f' },
@@ -2505,30 +2506,30 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                         const selected = taskPriority === opt.value;
                         return (
                           <View key={String(opt.value)}>
-                            {index > 0 && <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />}
+                            {index > 0 && <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />}
                             <Pressable
-                              style={[styles.editInfoRow, selected && { backgroundColor: '#eef2ec' }]}
+                              style={[styles.editInfoRow, selected && { backgroundColor: isDark ? '#2a3d36' : '#eef2ec' }]}
                               onPress={() => { setTaskPriority(opt.value); closeSubModal(); }}
                             >
                               <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                                 <MaterialIcons name="flag" size={16} color={opt.color} />
-                                <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold' }]}>{opt.label}</Text>
+                                <Text style={[styles.subModalOptionText, isDark && styles.subModalOptionTextDark, selected && { fontFamily: 'Manrope_700Bold' }]}>{opt.label}</Text>
                               </View>
-                              {selected && <Feather name="check" size={20} color="#0f2a24" />}
+                              {selected && <Feather name="check" size={20} color={isDark ? '#5da88b' : '#0f2a24'} />}
                             </Pressable>
                           </View>
                         );
                       })}
                     </View>
                     <Pressable style={styles.subModalBackRow} onPress={closeSubModal}>
-                      <Text style={styles.subModalBackText}>Back</Text>
+                      <Text style={[styles.subModalBackText, isDark && styles.subModalBackTextDark]}>Back</Text>
                     </Pressable>
                   </>
                 )}
                 {taskFormSubView === 'category' && (
                   <>
-                    <Text style={styles.subModalTitle}>Category</Text>
-                    <View style={styles.editInfoCard}>
+                    <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Category</Text>
+                    <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark]}>
                       {([
                         { key: 'Assignment', icon: 'file-text' as const },
                         { key: 'Quiz', icon: 'help-circle' as const },
@@ -2541,30 +2542,30 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                         const selected = taskCategory === cat.key;
                         return (
                           <View key={cat.key}>
-                            {index > 0 && <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />}
+                            {index > 0 && <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />}
                             <Pressable
-                              style={[styles.editInfoRow, selected && { backgroundColor: '#eef2ec' }]}
+                              style={[styles.editInfoRow, selected && { backgroundColor: isDark ? '#2a3d36' : '#eef2ec' }]}
                               onPress={() => { setTaskCategory(selected ? null : cat.key); closeSubModal(); }}
                             >
                               <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                                <Feather name={cat.icon} size={16} color="#5c6762" />
-                                <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold' }]}>{cat.key}</Text>
+                                <Feather name={cat.icon} size={16} color={isDark ? '#8f9b95' : '#5c6762'} />
+                                <Text style={[styles.subModalOptionText, isDark && styles.subModalOptionTextDark, selected && { fontFamily: 'Manrope_700Bold' }]}>{cat.key}</Text>
                               </View>
-                              {selected && <Feather name="check" size={20} color="#0f2a24" />}
+                              {selected && <Feather name="check" size={20} color={isDark ? '#5da88b' : '#0f2a24'} />}
                             </Pressable>
                           </View>
                         );
                       })}
                     </View>
                     <Pressable style={styles.subModalBackRow} onPress={closeSubModal}>
-                      <Text style={styles.subModalBackText}>Back</Text>
+                      <Text style={[styles.subModalBackText, isDark && styles.subModalBackTextDark]}>Back</Text>
                     </Pressable>
                   </>
                 )}
                 {taskFormSubView === 'reminder' && (
                   <>
-                    <Text style={styles.subModalTitle}>Reminder</Text>
-                    <View style={styles.editInfoCard}>
+                    <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Reminder</Text>
+                    <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark]}>
                       {([
                         { mins: null, label: 'None' },
                         { mins: 0, label: 'At due time' },
@@ -2578,30 +2579,30 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                         const disabled = opt.mins !== null && !taskDueDate;
                         return (
                           <View key={String(opt.mins)}>
-                            {index > 0 && <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />}
+                            {index > 0 && <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />}
                             <Pressable
-                              style={[styles.editInfoRow, selected && { backgroundColor: '#eef2ec' }]}
+                              style={[styles.editInfoRow, selected && { backgroundColor: isDark ? '#2a3d36' : '#eef2ec' }]}
                               onPress={disabled ? undefined : () => { setTaskReminderMinutes(opt.mins); closeSubModal(); }}
                             >
-                              <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold', flex: 1 }, disabled && { color: '#c9cdc9' }]}>{opt.label}</Text>
-                              {selected && <Feather name="check" size={20} color="#0f2a24" />}
+                              <Text style={[styles.subModalOptionText, isDark && styles.subModalOptionTextDark, selected && { fontFamily: 'Manrope_700Bold', flex: 1 }, disabled && { color: isDark ? '#4a5a52' : '#c9cdc9' }]}>{opt.label}</Text>
+                              {selected && <Feather name="check" size={20} color={isDark ? '#5da88b' : '#0f2a24'} />}
                             </Pressable>
                           </View>
                         );
                       })}
                     </View>
                     {!taskDueDate && (
-                      <Text style={styles.subModalHint}>Set a date and time to enable reminders</Text>
+                      <Text style={[styles.subModalHint, isDark && styles.subModalHintDark]}>Set a date and time to enable reminders</Text>
                     )}
                     <Pressable style={styles.subModalBackRow} onPress={closeSubModal}>
-                      <Text style={styles.subModalBackText}>Back</Text>
+                      <Text style={[styles.subModalBackText, isDark && styles.subModalBackTextDark]}>Back</Text>
                     </Pressable>
                   </>
                 )}
                 {taskFormSubView === 'repeat' && repeatSubStep === 'main' && (
                   <>
-                    <Text style={styles.subModalTitle}>Repeat</Text>
-                    <View style={styles.editInfoCard}>
+                    <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Repeat</Text>
+                    <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark]}>
                       {([
                         { key: 'none', label: 'None' },
                         { key: 'daily', label: 'Daily' },
@@ -2612,11 +2613,11 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                         const isDisabled = opt.key !== 'none' && !taskDueDate;
                         return (
                           <View key={opt.key}>
-                            {index > 0 && <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />}
+                            {index > 0 && <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />}
                             <Pressable
                               style={[
                                 styles.editInfoRow,
-                                selected && { backgroundColor: '#eef2ec' },
+                                selected && { backgroundColor: isDark ? '#2a3d36' : '#eef2ec' },
                                 isDisabled && { opacity: 0.35 },
                               ]}
                               disabled={isDisabled}
@@ -2631,24 +2632,24 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                                 }
                               }}
                             >
-                              <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold', flex: 1 }]}>{opt.label}</Text>
-                              {selected && <Feather name="check" size={20} color="#0f2a24" />}
+                              <Text style={[styles.subModalOptionText, isDark && styles.subModalOptionTextDark, selected && { fontFamily: 'Manrope_700Bold', flex: 1 }]}>{opt.label}</Text>
+                              {selected && <Feather name="check" size={20} color={isDark ? '#5da88b' : '#0f2a24'} />}
                             </Pressable>
                           </View>
                         );
                       })}
                     </View>
                     {!taskDueDate && (
-                      <Text style={styles.subModalHint}>Set a date and time to enable repeats</Text>
+                      <Text style={[styles.subModalHint, isDark && styles.subModalHintDark]}>Set a date and time to enable repeats</Text>
                     )}
                     <Pressable style={styles.subModalBackRow} onPress={closeSubModal}>
-                      <Text style={styles.subModalBackText}>Back</Text>
+                      <Text style={[styles.subModalBackText, isDark && styles.subModalBackTextDark]}>Back</Text>
                     </Pressable>
                   </>
                 )}
                 {taskFormSubView === 'repeat' && repeatSubStep === 'weeklyDays' && (
                   <>
-                    <Text style={styles.subModalTitle}>Repeat Days</Text>
+                    <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Repeat Days</Text>
                     <View style={styles.subModalDaysContainer}>
                       {DAYS.map((d) => {
                         const selected = taskRepeatDays.includes(d.value);
@@ -2658,6 +2659,8 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                             style={[
                               styles.taskFormChoiceChip,
                               selected && styles.taskFormChoiceChipSelected,
+                              isDark && styles.taskFormChoiceChipDark,
+                              selected && isDark && { backgroundColor: '#2a3d36', borderColor: '#2a3d36' },
                             ]}
                             onPress={() => {
                               setTaskRepeatDays((prev) =>
@@ -2667,7 +2670,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                               );
                             }}
                           >
-                            <Text style={[styles.taskFormChoiceChipText, selected && styles.taskFormChoiceChipTextSelected]}>
+                            <Text style={[styles.taskFormChoiceChipText, selected && styles.taskFormChoiceChipTextSelected, isDark && styles.taskFormChoiceChipTextDark]}>
                               {d.label}
                             </Text>
                           </Pressable>
@@ -2675,14 +2678,14 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                       })}
                     </View>
                     <Pressable style={styles.subModalBackRow} onPress={() => setRepeatSubStep('main')}>
-                      <Text style={styles.subModalBackText}>Back</Text>
+                      <Text style={[styles.subModalBackText, isDark && styles.subModalBackTextDark]}>Back</Text>
                     </Pressable>
                   </>
                 )}
                 {taskFormSubView === 'repeat' && repeatSubStep === 'dailySkip' && (
                   <>
-                    <Text style={styles.subModalTitle}>Daily Repeat</Text>
-                    <View style={styles.editInfoCard}>
+                    <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Daily Repeat</Text>
+                    <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark]}>
                       <View style={styles.editInfoRow}>
                         <Pressable
                           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
@@ -2694,20 +2697,20 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                               height: 20,
                               borderRadius: 6,
                               borderWidth: 2,
-                              borderColor: skipWeekends ? '#0f2a24' : '#c9cdc9',
-                              backgroundColor: skipWeekends ? '#0f2a24' : 'transparent',
+                              borderColor: skipWeekends ? (isDark ? '#5da88b' : '#0f2a24') : (isDark ? '#4a5a52' : '#c9cdc9'),
+                              backgroundColor: skipWeekends ? (isDark ? '#5da88b' : '#0f2a24') : 'transparent',
                               alignItems: 'center',
                               justifyContent: 'center',
                             }}
                           >
                             {skipWeekends && <Feather name="check" size={14} color="#ffffff" />}
                           </View>
-                          <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26' }}>Skip weekends</Text>
+                          <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#d7e4dd' : '#1e2b26' }}>Skip weekends</Text>
                         </Pressable>
                       </View>
                     </View>
                     <Pressable style={styles.subModalBackRow} onPress={() => setRepeatSubStep('main')}>
-                      <Text style={styles.subModalBackText}>Back</Text>
+                      <Text style={[styles.subModalBackText, isDark && styles.subModalBackTextDark]}>Back</Text>
                     </Pressable>
                   </>
                 )}
@@ -2741,8 +2744,8 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
               },
             ]}
           >
-            <View style={[styles.taskFormPanel, { maxHeight: screenHeight * 0.8 }]} {...taskDetailPanResponder.panHandlers}>
-              <View style={styles.taskFormHandle} />
+            <View style={[styles.taskFormPanel, isDark && styles.taskFormPanelDark, { maxHeight: screenHeight * 0.8 }]} {...taskDetailPanResponder.panHandlers}>
+              <View style={[styles.taskFormHandle, isDark && styles.taskFormHandleDark]} />
               <ScrollView
                 bounces={false}
                 showsVerticalScrollIndicator={false}
@@ -2750,26 +2753,26 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                 onScroll={(e) => { taskDetailScrollYRef.current = e.nativeEvent.contentOffset.y; }}
                 scrollEventThrottle={16}
               >
-                <View style={[styles.editInfoCard, { marginBottom: 20 }]}>
+                <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark]}>
                   <View style={styles.editInfoRow}>
-                    <Feather name="check-square" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                    <Text style={styles.editInfoInput}>{detailTask.title}</Text>
+                    <Feather name="check-square" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                    <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>{detailTask.title}</Text>
                   </View>
                   {detailTask.description ? (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <View style={[styles.editInfoRow, { minHeight: 88, alignItems: 'flex-start' }]}>
-                        <Feather name="align-left" size={16} color="#8f968f" style={{ marginRight: 10, marginTop: 16 }} />
-                        <Text style={styles.editInfoInput}>{detailTask.description}</Text>
+                        <Feather name="align-left" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10, marginTop: 16 }} />
+                        <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>{detailTask.description}</Text>
                       </View>
                     </>
                   ) : null}
                   {detailTask.startDate ? (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <View style={styles.editInfoRow}>
-                        <Feather name="calendar" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={styles.editInfoInput}>
+                        <Feather name="calendar" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>
                           {new Date(detailTask.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           {' '}
                           {new Date(detailTask.startDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
@@ -2779,10 +2782,10 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                   ) : null}
                   {detailTask.priority ? (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <View style={styles.editInfoRow}>
-                        <MaterialIcons name="flag" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={styles.editInfoInput}>
+                        <MaterialIcons name="flag" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>
                           {detailTask.priority === 'high' ? 'High' : 'Low'} Priority
                         </Text>
                       </View>
@@ -2790,19 +2793,19 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                   ) : null}
                   {detailTask.category ? (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <View style={styles.editInfoRow}>
-                        <Feather name="folder" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={styles.editInfoInput}>{detailTask.category}</Text>
+                        <Feather name="folder" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>{detailTask.category}</Text>
                       </View>
                     </>
                   ) : null}
                   {detailTask.repeatType !== 'none' ? (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <View style={styles.editInfoRow}>
-                        <Feather name="repeat" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={styles.editInfoInput}>
+                        <Feather name="repeat" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>
                           {detailTask.repeatType === 'daily' ? 'Daily' : detailTask.repeatType === 'weekly' ? `Weekly${detailTask.repeatDays && detailTask.repeatDays.length > 0 ? ` (${detailTask.repeatDays.join(', ')})` : ''}` : detailTask.repeatType === 'monthly' ? 'Monthly' : ''}
                         </Text>
                       </View>
@@ -2810,7 +2813,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                   ) : null}
                   {detailTask.repeatType !== 'none' ? (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <Pressable
                         style={styles.editInfoRow}
                         onPress={() => {
@@ -2823,7 +2826,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                         <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
                         <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 16, color: '#b42318' }}>Delete this occurrence only</Text>
                       </Pressable>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <Pressable
                         style={styles.editInfoRow}
                         onPress={() => {
@@ -2839,7 +2842,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                     </>
                   ) : (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <Pressable
                         style={styles.editInfoRow}
                         onPress={() => {
@@ -2944,11 +2947,11 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
           }]}
         >
           <View
-            style={[styles.subjectSheetPanel, { maxHeight: screenHeight * 0.8 }]}
+            style={[styles.subjectSheetPanel, isDark && styles.subjectSheetPanelDark, { maxHeight: screenHeight * 0.8 }]}
             {...subjectSheetPanResponder.panHandlers}
           >
             <View style={styles.subjectSheetHandleHitArea}>
-              <View style={styles.subjectSheetHandle} />
+              <View style={[styles.subjectSheetHandle, isDark && styles.subjectSheetHandleDark]} />
             </View>
             <ScrollView
               bounces={false}
@@ -2961,33 +2964,33 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
             >
               {subjectSheetView === 'main' && (
                 <>
-                  <Text style={styles.subjectSheetTitle}>Subject Actions</Text>
+                  <Text style={[styles.subjectSheetTitle, isDark && styles.subjectSheetTitleDark]}>Subject Actions</Text>
 
-                  <View style={[styles.editInfoCard, { marginBottom: 20 }]}>
+                  <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark]}>
                     <Pressable style={styles.editInfoRow} onPress={openEditInfo}>
-                      <Feather name="edit-3" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                      <Text style={[styles.editInfoInput, { color: '#1e2b26' }]}>Edit subject info</Text>
+                      <Feather name="edit-3" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                      <Text style={[styles.editInfoInput, { color: isDark ? '#d7e4dd' : '#1e2b26' }]}>Edit subject info</Text>
                       <Feather name="chevron-right" size={18} color="#9aa09a" />
                     </Pressable>
-                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                     <Pressable style={styles.editInfoRow} onPress={openEditSchedule}>
-                      <Feather name="calendar" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                      <Text style={[styles.editInfoInput, { color: '#1e2b26' }]}>Edit subject schedule</Text>
+                      <Feather name="calendar" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                      <Text style={[styles.editInfoInput, { color: isDark ? '#d7e4dd' : '#1e2b26' }]}>Edit subject schedule</Text>
                       <Feather name="chevron-right" size={18} color="#9aa09a" />
                     </Pressable>
-                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                     <Pressable style={styles.editInfoRow} onPress={() => void (subject?.isArchived ? handleUnarchiveSubject() : handleArchiveSubject())}>
-                      <Feather name={subject?.isArchived ? 'rotate-ccw' : 'archive'} size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                      <Text style={[styles.editInfoInput, { color: '#1e2b26' }]}>{subject?.isArchived ? 'Unarchive' : 'Archive'}</Text>
+                      <Feather name={subject?.isArchived ? 'rotate-ccw' : 'archive'} size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                      <Text style={[styles.editInfoInput, { color: isDark ? '#d7e4dd' : '#1e2b26' }]}>{subject?.isArchived ? 'Unarchive' : 'Archive'}</Text>
                       <Feather name="chevron-right" size={18} color="#9aa09a" />
                     </Pressable>
-                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                     <Pressable style={styles.editInfoRow} onPress={() => setSubjectSheetView('stats')}>
-                      <Feather name="bar-chart-2" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                      <Text style={[styles.editInfoInput, { color: '#1e2b26' }]}>View statistics</Text>
+                      <Feather name="bar-chart-2" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                      <Text style={[styles.editInfoInput, { color: isDark ? '#d7e4dd' : '#1e2b26' }]}>View statistics</Text>
                       <Feather name="chevron-right" size={18} color="#9aa09a" />
                     </Pressable>
-                    <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                    <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                     <Pressable
                       style={styles.editInfoRow}
                       onPress={() => { setDeleteConfirmInput(''); setSubjectSheetView('delete'); }}
@@ -3001,50 +3004,50 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
               {subjectSheetView === 'editInfo' && (
                 <Animated.View style={{ opacity: subViewOpacity, transform: [{ translateY: subViewSlide.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }}>
-                  <Text style={styles.subjectSheetTitle}>Edit Subject Info</Text>
+                  <Text style={[styles.subjectSheetTitle, isDark && styles.subjectSheetTitleDark]}>Edit Subject Info</Text>
 
-                  <View style={styles.editInfoCard}>
+                  <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark]}>
                     <View style={styles.editInfoRow}>
                       <TextInput
                         value={editTitle}
                         onChangeText={setEditTitle}
                         placeholder="Subject Title"
-                        placeholderTextColor="#91948f"
-                        style={styles.editInfoInput}
+                        placeholderTextColor={isDark ? '#5a6b63' : '#91948f'}
+                        style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}
                       />
                     </View>
-                    <View style={styles.editInfoSeparator} />
+                    <View style={[styles.editInfoSeparator, isDark && styles.editInfoSeparatorDark]} />
                     <View style={styles.editInfoRow}>
                       <TextInput
                         value={editCode}
                         onChangeText={setEditCode}
                         placeholder="Subject Code (Optional)"
-                        placeholderTextColor="#91948f"
-                        style={styles.editInfoInput}
+                        placeholderTextColor={isDark ? '#5a6b63' : '#91948f'}
+                        style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}
                       />
                     </View>
-                    <View style={styles.editInfoSeparator} />
+                    <View style={[styles.editInfoSeparator, isDark && styles.editInfoSeparatorDark]} />
                     <View style={styles.editInfoRow}>
                       <TextInput
                         value={editInstructor}
                         onChangeText={setEditInstructor}
                         placeholder="Instructor (Optional)"
-                        placeholderTextColor="#91948f"
-                        style={styles.editInfoInput}
+                        placeholderTextColor={isDark ? '#5a6b63' : '#91948f'}
+                        style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}
                       />
                     </View>
-                    <View style={styles.editInfoSeparator} />
+                    <View style={[styles.editInfoSeparator, isDark && styles.editInfoSeparatorDark]} />
                     <Pressable style={styles.editInfoRow} onPress={() => setSubjectSheetView('editTerm')}>
-                      <Text style={[styles.editInfoInput, !editTerm && { color: '#91948f' }]}>
+                      <Text style={[styles.editInfoInput, !editTerm && { color: isDark ? '#5a6b63' : '#91948f' }]}>
                         {editTerm || 'Academic Period (Optional)'}
                       </Text>
-                      <Feather name="chevron-right" size={20} color="#9aa09a" />
+                      <Feather name="chevron-right" size={20} color={isDark ? '#6e7b74' : '#9aa09a'} />
                     </Pressable>
                   </View>
 
                   <View style={styles.editInfoActions}>
                     <Pressable onPress={() => { subViewOpacity.setValue(0); subViewSlide.setValue(0); setSubjectSheetView('main'); }}>
-                      <Text style={styles.editInfoCancelText}>Cancel</Text>
+                      <Text style={[styles.editInfoCancelText, isDark && styles.editInfoCancelTextDark]}>Cancel</Text>
                     </Pressable>
                     <Pressable
                       style={[styles.editInfoSaveButton, !editTitle.trim() && styles.editInfoSaveButtonDisabled]}
@@ -3059,22 +3062,22 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
               {subjectSheetView === 'editTerm' && (
                 <>
-                  <Text style={styles.subjectSheetTitle}>Academic Period</Text>
+                  <Text style={[styles.subjectSheetTitle, isDark && styles.subjectSheetTitleDark]}>Academic Period</Text>
 
-                  <View style={styles.editInfoCard}>
+                  <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark]}>
                     {['1st Semester', '2nd Semester', 'Summer / Midyear', '1st Quarter', '2nd Quarter', '3rd Quarter', '4th Quarter'].map((option, index) => {
                       const selected = editTerm === option;
                       return (
                         <View key={option}>
-                          {index > 0 && <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />}
+                          {index > 0 && <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />}
                           <Pressable
-                            style={[styles.editInfoRow, selected && { backgroundColor: '#eef2ec' }]}
+                            style={[styles.editInfoRow, selected && { backgroundColor: isDark ? '#2a3d36' : '#eef2ec' }]}
                             onPress={() => { setEditTerm(option); setSubjectSheetView('editInfo'); }}
                           >
-                            <Text style={[styles.subModalOptionText, { flex: 1 }, selected && { fontFamily: 'Manrope_700Bold' }]}>
+                            <Text style={[styles.subModalOptionText, isDark && styles.subModalOptionTextDark, { flex: 1 }, selected && { fontFamily: 'Manrope_700Bold' }]}>
                               {option}
                             </Text>
-                            {selected && <Feather name="check" size={20} color="#0f2a24" />}
+                            {selected && <Feather name="check" size={20} color={isDark ? '#5da88b' : '#0f2a24'} />}
                           </Pressable>
                         </View>
                       );
@@ -3082,18 +3085,18 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                   </View>
 
                   <Pressable style={styles.subModalBackRow} onPress={() => setSubjectSheetView('editInfo')}>
-                    <Text style={styles.subModalBackText}>Back</Text>
+                    <Text style={[styles.subModalBackText, isDark && styles.subModalBackTextDark]}>Back</Text>
                   </Pressable>
                 </>
               )}
 
               {subjectSheetView === 'editSchedule' && (
                 <Animated.View style={{ opacity: subViewOpacity, transform: [{ translateY: subViewSlide.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }}>
-                  <Text style={styles.subjectSheetTitle}>Edit Schedule</Text>
+                  <Text style={[styles.subjectSheetTitle, isDark && styles.subjectSheetTitleDark]}>Edit Schedule</Text>
 
-                  <View style={styles.editInfoCard}>
+                  <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark]}>
                     <View style={styles.daysContainer}>
-                      <Text style={styles.rowLabel}>Days</Text>
+                      <Text style={[styles.rowLabel, isDark && styles.rowLabelDark]}>Days</Text>
                       <View style={styles.daysRow}>
                         {DAYS.map((day) => {
                           const isSelected = editDays.has(day.value);
@@ -3101,9 +3104,9 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                             <Pressable
                               key={day.value}
                               onPress={() => handleToggleEditDay(day.value)}
-                              style={[styles.dayCircle, isSelected && styles.dayCircleSelected]}
+                              style={[styles.dayCircle, isDark && styles.dayCircleDark, isSelected && styles.dayCircleSelected]}
                             >
-                              <Text style={[styles.dayCircleText, isSelected && styles.dayCircleTextSelected]}>
+                              <Text style={[styles.dayCircleText, isDark && styles.dayCircleTextDark, isSelected && styles.dayCircleTextSelected]}>
                                 {day.label}
                               </Text>
                             </Pressable>
@@ -3112,20 +3115,20 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                       </View>
                     </View>
                     
-                    <View style={styles.editInfoSeparator} />
+                    <View style={[styles.editInfoSeparator, isDark && styles.editInfoSeparatorDark]} />
                     
                     <View style={styles.timeGroupRow}>
                       <Pressable style={styles.timeAction} onPress={() => setShowStartPicker(true)}>
-                        <Text style={styles.timeActionLabel}>Start Time</Text>
+                        <Text style={[styles.timeActionLabel, isDark && styles.timeActionLabelDark]}>Start Time</Text>
                         <View style={styles.timeBadge}>
-                          <Text style={styles.timeBadgeText}>{formatTimeDisplay(editStartDate)}</Text>
+                          <Text style={[styles.timeBadgeText, isDark && styles.timeBadgeTextDark]}>{formatTimeDisplay(editStartDate)}</Text>
                         </View>
                       </Pressable>
-                      <View style={styles.verticalSeparator} />
+                      <View style={[styles.verticalSeparator, isDark && styles.verticalSeparatorDark]} />
                       <Pressable style={styles.timeAction} onPress={() => setShowEndPicker(true)}>
-                        <Text style={styles.timeActionLabel}>End Time</Text>
+                        <Text style={[styles.timeActionLabel, isDark && styles.timeActionLabelDark]}>End Time</Text>
                         <View style={styles.timeBadge}>
-                          <Text style={styles.timeBadgeText}>{formatTimeDisplay(editEndDate)}</Text>
+                          <Text style={[styles.timeBadgeText, isDark && styles.timeBadgeTextDark]}>{formatTimeDisplay(editEndDate)}</Text>
                         </View>
                       </Pressable>
                     </View>
@@ -3157,23 +3160,23 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
                     )}
               </View>
 
-              <View style={[styles.editInfoCard, { marginTop: 16 }]}>
+              <View style={[styles.editInfoCard, isDark && styles.editInfoCardDark, { marginTop: 16 }]}>
                 <View style={styles.editInfoRow}>
-                      <Feather name="map-pin" size={16} color="#1e2b26" style={{ marginRight: 10 }} />
+                      <Feather name="map-pin" size={16} color={isDark ? '#8f9b95' : '#1e2b26'} style={{ marginRight: 10 }} />
                       <TextInput
                         value={editLocation}
                         onChangeText={setEditLocation}
                         placeholder="Room, Building, or Online"
-                        placeholderTextColor="#91948f"
-                        style={styles.editInfoInput}
+                        placeholderTextColor={isDark ? '#5a6b63' : '#91948f'}
+                        style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}
                       />
                     </View>
                   </View>
 
                   {hasScheduleConflict ? (
-                    <View style={styles.conflictWarning}>
-                      <Feather name="alert-triangle" size={20} color="#991b1b" />
-                      <Text style={styles.conflictWarningBody}>
+                    <View style={[styles.conflictWarning, isDark && styles.conflictWarningDark]}>
+                      <Feather name="alert-triangle" size={20} color={isDark ? '#e85555' : '#991b1b'} />
+                      <Text style={[styles.conflictWarningBody, isDark && styles.conflictWarningBodyDark]}>
                         Conflicts with{' '}
                         <Text style={styles.conflictSubjectName}>
                           {scheduleConflicts[0].subject.title}
@@ -3187,7 +3190,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
                   <View style={styles.editInfoActions}>
                     <Pressable onPress={() => { subViewOpacity.setValue(0); subViewSlide.setValue(0); setSubjectSheetView('main'); }}>
-                      <Text style={styles.editInfoCancelText}>Cancel</Text>
+                      <Text style={[styles.editInfoCancelText, isDark && styles.editInfoCancelTextDark]}>Cancel</Text>
                     </Pressable>
                     <Pressable
                       style={styles.editInfoSaveButton}
@@ -3201,60 +3204,60 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
 
               {subjectSheetView === 'stats' && (
                 <>
-                  <Text style={styles.subjectSheetTitle}>Statistics</Text>
+                  <Text style={[styles.subjectSheetTitle, isDark && styles.subjectSheetTitleDark]}>Statistics</Text>
 
                   <View style={styles.statsGrid}>
-                    <View style={styles.statsCard}>
-                      <Text style={styles.statsNumber}>{totalNotes}</Text>
-                      <Text style={styles.statsLabel}>Total Notes</Text>
+                    <View style={[styles.statsCard, isDark && styles.statsCardDark]}>
+                      <Text style={[styles.statsNumber, isDark && styles.statsNumberDark]}>{totalNotes}</Text>
+                      <Text style={[styles.statsLabel, isDark && styles.statsLabelDark]}>Total Notes</Text>
                     </View>
-                    <View style={styles.statsCard}>
-                      <Text style={styles.statsNumber}>{totalFolders}</Text>
-                      <Text style={styles.statsLabel}>Folders</Text>
+                    <View style={[styles.statsCard, isDark && styles.statsCardDark]}>
+                      <Text style={[styles.statsNumber, isDark && styles.statsNumberDark]}>{totalFolders}</Text>
+                      <Text style={[styles.statsLabel, isDark && styles.statsLabelDark]}>Folders</Text>
                     </View>
-                    <View style={styles.statsCard}>
-                      <Text style={styles.statsNumber}>{looseNotes.length}</Text>
-                      <Text style={styles.statsLabel}>Loose Notes</Text>
+                    <View style={[styles.statsCard, isDark && styles.statsCardDark]}>
+                      <Text style={[styles.statsNumber, isDark && styles.statsNumberDark]}>{looseNotes.length}</Text>
+                      <Text style={[styles.statsLabel, isDark && styles.statsLabelDark]}>Loose Notes</Text>
                     </View>
-                    <View style={styles.statsCard}>
-                      <Text style={styles.statsNumber}>{tasks.length}</Text>
-                      <Text style={styles.statsLabel}>Tasks</Text>
+                    <View style={[styles.statsCard, isDark && styles.statsCardDark]}>
+                      <Text style={[styles.statsNumber, isDark && styles.statsNumberDark]}>{tasks.length}</Text>
+                      <Text style={[styles.statsLabel, isDark && styles.statsLabelDark]}>Tasks</Text>
                     </View>
                   </View>
 
-                  <View style={styles.statsInfoCard}>
+                  <View style={[styles.statsInfoCard, isDark && styles.statsInfoCardDark]}>
                     {lastActivity && (
                       <View style={styles.statsInfoRow}>
-                        <Feather name="clock" size={16} color="#5c6762" />
-                        <Text style={styles.statsInfoLabel}>Last activity</Text>
-                        <Text style={styles.statsInfoValue}>
+                        <Feather name="clock" size={16} color={isDark ? '#8f9b95' : '#5c6762'} />
+                        <Text style={[styles.statsInfoLabel, isDark && styles.statsInfoLabelDark]}>Last activity</Text>
+                        <Text style={[styles.statsInfoValue, isDark && styles.statsInfoValueDark]}>
                           {lastActivity.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </Text>
                       </View>
                     )}
                     {subject?.term && (
                       <View style={styles.statsInfoRow}>
-                        <Feather name="book" size={16} color="#5c6762" />
-                        <Text style={styles.statsInfoLabel}>Academic period</Text>
-                        <Text style={styles.statsInfoValue}>{subject.term}</Text>
+                        <Feather name="book" size={16} color={isDark ? '#8f9b95' : '#5c6762'} />
+                        <Text style={[styles.statsInfoLabel, isDark && styles.statsInfoLabelDark]}>Academic period</Text>
+                        <Text style={[styles.statsInfoValue, isDark && styles.statsInfoValueDark]}>{subject.term}</Text>
                       </View>
                     )}
                   </View>
 
                   <Pressable style={styles.statsBackButton} onPress={() => setSubjectSheetView('main')}>
-                    <Text style={styles.statsBackText}>Back</Text>
+                    <Text style={[styles.statsBackText, isDark && styles.statsBackTextDark]}>Back</Text>
                   </Pressable>
                 </>
               )}
 
               {subjectSheetView === 'delete' && (
                 <>
-                  <Text style={styles.subjectSheetTitle}>Delete subject?</Text>
-                  <Text style={styles.subjectSheetDeleteBody}>
+                  <Text style={[styles.subjectSheetTitle, isDark && styles.subjectSheetTitleDark]}>Delete subject?</Text>
+                  <Text style={[styles.subjectSheetDeleteBody, isDark && styles.subjectSheetDeleteBodyDark]}>
                     This action cannot be undone. The subject, all of its folders, and all of its notes will be permanently deleted.
                   </Text>
                   <TextInput
-                    style={styles.subjectSheetDeleteInput}
+                    style={[styles.subjectSheetDeleteInput, isDark && styles.subjectSheetDeleteInputDark]}
                     placeholder='Type "DELETE THIS SUBJECT" to confirm'
                     placeholderTextColor="#8f968f"
                     value={deleteConfirmInput}
@@ -4584,4 +4587,90 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 12,
   },
+  containerDark: { backgroundColor: '#0a1613' },
+  headerDark: { backgroundColor: '#0a1613' },
+  headerTitleDark: { color: '#d7e4dd' },
+  infoCardDark: { backgroundColor: '#0f201b' },
+  infoIconCircleDark: { backgroundColor: '#2a3d36' },
+  infoValueDark: { color: '#d7e4dd' },
+  infoLabelDark: { color: '#8f9b95' },
+  subNavItemDark: { color: '#6e7b74' },
+  subNavItemActiveDark: { color: '#d7e4dd' },
+  notesCardDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  notesTitleDark: { color: '#d7e4dd' },
+  notesBodyDark: { color: '#8f9b95' },
+  notesDateDark: { color: '#6e7b74' },
+  actionButtonDark: { backgroundColor: '#0f201b' },
+  actionIconCircleDark: { backgroundColor: '#2a3d36' },
+  actionTextDark: { color: '#d7e4dd' },
+  filterPanelDark: { backgroundColor: '#0a1613' },
+  filterHandleDark: { backgroundColor: '#2a3d36' },
+  filterTitleDark: { color: '#d7e4dd' },
+  filterChipDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  filterChipTextDark: { color: '#d7e4dd' },
+  statCardDark: { backgroundColor: '#0f201b' },
+  statValueDark: { color: '#d7e4dd' },
+  statLabelDark: { color: '#8f9b95' },
+  backButtonDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  noteCardDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  noteCardTitleDark: { color: '#d7e4dd' },
+  noteCardPreviewDark: { color: '#8f9b95' },
+  statsCardDark: { backgroundColor: '#0f201b' },
+  statsNumberDark: { color: '#d7e4dd' },
+  statsLabelDark: { color: '#8f9b95' },
+  sectionHeaderTitleDark: { color: '#8f9b95' },
+  taskCardDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  taskTitleDark: { color: '#d7e4dd' },
+  taskDueDateTextDark: { color: '#8f9b95' },
+  recentNoteCardDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  recentNoteTitleDark: { color: '#d7e4dd' },
+  recentNoteBodyDark: { color: '#8f9b95' },
+  recentNoteMetaTextDark: { color: '#6e7b74' },
+  editInfoCardDark: { backgroundColor: '#0f201b' },
+  editInfoInputDark: { color: '#d7e4dd' },
+  editInfoSeparatorDark: { backgroundColor: '#2a3d36' },
+  editInfoCancelTextDark: { color: '#6e7b74' },
+  folderFormPanelDark: { backgroundColor: '#0a1613' },
+  folderFormHandleDark: { backgroundColor: '#2a3d36' },
+  folderFormTitleDark: { color: '#d7e4dd' },
+  folderFormCardDark: { backgroundColor: '#0f201b' },
+  folderFormInputDark: { color: '#d7e4dd' },
+  folderFormLabelDark: { color: '#8f9b95' },
+  folderFormCancelTextDark: { color: '#6e7b74' },
+  taskFormPanelDark: { backgroundColor: '#0a1613' },
+  taskFormHandleDark: { backgroundColor: '#2a3d36' },
+  taskFormTitleDark: { color: '#d7e4dd' },
+  subjectSheetPanelDark: { backgroundColor: '#0a1613' },
+  subjectSheetHandleDark: { backgroundColor: '#2a3d36' },
+  subjectSheetTitleDark: { color: '#d7e4dd' },
+  subjectSheetDeleteBodyDark: { color: '#8f9b95' },
+  subjectSheetDeleteInputDark: { color: '#d7e4dd', backgroundColor: '#0f201b' },
+  subModalTitleDark: { color: '#d7e4dd' },
+  subModalOptionTextDark: { color: '#d7e4dd' },
+  subModalBackTextDark: { color: '#8f9b95' },
+  subModalHintDark: { color: '#6e7b74' },
+  conflictWarningDark: { backgroundColor: '#2a1a1a' },
+  conflictWarningBodyDark: { color: '#e85555' },
+  statsInfoCardDark: { backgroundColor: '#0f201b' },
+  statsInfoLabelDark: { color: '#8f9b95' },
+  statsInfoValueDark: { color: '#d7e4dd' },
+  statsBackTextDark: { color: '#8f9b95' },
+  rowLabelDark: { color: '#d7e4dd' },
+  dayCircleDark: { backgroundColor: '#0f201b' },
+  dayCircleTextDark: { color: '#6e7b74' },
+  timeActionLabelDark: { color: '#d7e4dd' },
+  timeBadgeTextDark: { color: '#5da88b' },
+  verticalSeparatorDark: { backgroundColor: '#2a3d36' },
+  overdueSectionHeaderTextDark: { color: '#e85555' },
+  completedSectionHeaderTextDark: { color: '#6e7b74' },
+  heroSubjectTitleDark: { color: '#d7e4dd' },
+  heroInstructorDark: { color: '#8f9b95' },
+  periodPillTextDark: { color: '#8f9b95' },
+  emptyStateTitleDark: { color: '#8f9b95' },
+  emptyStateBodyDark: { color: '#6e7b74' },
+  emptyIconWrapperDark: { backgroundColor: '#2a3d36', borderColor: 'rgba(255,255,255,0.04)' },
+  workspaceEmptyStateDark: { backgroundColor: '#0f201b' },
+  looseNotesEmptyStateDark: { backgroundColor: '#0f201b' },
+  taskFormChoiceChipDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  taskFormChoiceChipTextDark: { color: '#d7e4dd' },
 });

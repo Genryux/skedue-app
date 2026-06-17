@@ -19,6 +19,7 @@ import { getSubjects, type SubjectRecord } from '../../data/local/db';
 import { findTimeConflicts } from './conflictUtils';
 import { shadowLg } from '../../ui/tokens/shadows';
 import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
+import { useTheme } from '../../ui/theme/ThemeContext';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
@@ -49,6 +50,7 @@ const DAYS = [
 const DEFAULT_SELECTED_DAYS = new Set(['Mo', 'We', 'Fr']);
 
 export default function AddSubjectScreen({ visible, onClose, onSave }: AddSubjectScreenProps) {
+  const { isDark } = useTheme();
   const slideAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const termPickerSlideAnim = useRef(new Animated.Value(0)).current;
@@ -287,8 +289,8 @@ export default function AddSubjectScreen({ visible, onClose, onSave }: AddSubjec
           }],
         }]}
       >
-        <View style={[styles.panel, { maxHeight: panelMaxHeight }]} {...panResponder.panHandlers}>
-          <View style={styles.handle} />
+        <View style={[styles.panel, isDark && { backgroundColor: '#0a1613' }, { maxHeight: panelMaxHeight }]} {...panResponder.panHandlers}>
+          <View style={[styles.handle, isDark && { backgroundColor: '#2a3d36' }]} />
           <ScrollView
             bounces={false}
             showsVerticalScrollIndicator={false}
@@ -298,54 +300,54 @@ export default function AddSubjectScreen({ visible, onClose, onSave }: AddSubjec
             onScroll={(e) => { scrollYRef.current = e.nativeEvent.contentOffset.y; }}
             scrollEventThrottle={16}
           >
-            <Text style={styles.panelTitle}>New Subject</Text>
+            <Text style={[styles.panelTitle, isDark && { color: '#d7e4dd' }]}>New Subject</Text>
 
-            <View style={styles.card}>
+            <View style={[styles.card, isDark && { backgroundColor: '#0f201b' }]}>
               <View style={styles.row}>
-                <Feather name="hash" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                <Feather name="hash" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
                 <TextInput
                   value={code}
                   onChangeText={setCode}
                   placeholder="Subject Code (e.g., CS101)"
-                  placeholderTextColor="#91948f"
-                  style={styles.input}
+                  placeholderTextColor={isDark ? '#5a6b63' : '#91948f'}
+                  style={[styles.input, isDark && { color: '#d7e4dd' }]}
                 />
               </View>
-              <View style={styles.separator} />
+              <View style={[styles.separator, isDark && { backgroundColor: '#2a3d36' }]} />
               <View style={styles.row}>
-                <Feather name="book-open" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                <Feather name="book-open" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
                 <TextInput
                   value={title}
                   onChangeText={setTitle}
                   placeholder="Subject Title"
-                  placeholderTextColor="#91948f"
-                  style={styles.input}
+                  placeholderTextColor={isDark ? '#5a6b63' : '#91948f'}
+                  style={[styles.input, isDark && { color: '#d7e4dd' }]}
                 />
               </View>
-              <View style={styles.separator} />
+              <View style={[styles.separator, isDark && { backgroundColor: '#2a3d36' }]} />
               <View style={styles.row}>
-                <Feather name="user" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                <Feather name="user" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
                 <TextInput
                   value={instructor}
                   onChangeText={setInstructor}
                   placeholder="Instructor (Optional)"
-                  placeholderTextColor="#91948f"
-                  style={styles.input}
+                  placeholderTextColor={isDark ? '#5a6b63' : '#91948f'}
+                  style={[styles.input, isDark && { color: '#d7e4dd' }]}
                 />
               </View>
-              <View style={styles.separator} />
+              <View style={[styles.separator, isDark && { backgroundColor: '#2a3d36' }]} />
               <Pressable style={styles.row} onPress={openTermPicker}>
-                <Feather name="calendar" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                <Text style={[styles.input, !term && { color: '#91948f' }]}>
+                <Feather name="calendar" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                <Text style={[styles.input, !term && { color: isDark ? '#5a6b63' : '#91948f' }, term && isDark && { color: '#d7e4dd' }]}>
                   {term || 'Academic Period'}
                 </Text>
-                <Feather name="chevron-right" size={18} color="#9aa09a" />
+                <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
               </Pressable>
             </View>
 
-            <View style={[styles.card, { marginTop: 16 }]}>
+            <View style={[styles.card, isDark && { backgroundColor: '#0f201b' }, { marginTop: 16 }]}>
               <View style={styles.daysContainer}>
-                <Text style={styles.rowLabel}>Days</Text>
+                <Text style={[styles.rowLabel, isDark && { color: '#d7e4dd' }]}>Days</Text>
                 <View style={styles.daysRow}>
                   {DAYS.map((day) => {
                     const isSelected = selectedDays.has(day.value);
@@ -353,9 +355,9 @@ export default function AddSubjectScreen({ visible, onClose, onSave }: AddSubjec
                       <Pressable
                         key={day.value}
                         onPress={() => handleToggleDay(day.value)}
-                        style={[styles.dayCircle, isSelected && styles.dayCircleSelected]}
+                        style={[styles.dayCircle, isDark && { backgroundColor: '#0f201b' }, isSelected && styles.dayCircleSelected]}
                       >
-                        <Text style={[styles.dayCircleText, isSelected && styles.dayCircleTextSelected]}>
+                        <Text style={[styles.dayCircleText, isDark && { color: '#6e7b74' }, isSelected && styles.dayCircleTextSelected]}>
                           {day.label}
                         </Text>
                       </Pressable>
@@ -363,16 +365,16 @@ export default function AddSubjectScreen({ visible, onClose, onSave }: AddSubjec
                   })}
                 </View>
               </View>
-              <View style={styles.separator} />
+              <View style={[styles.separator, isDark && { backgroundColor: '#2a3d36' }]} />
               <View style={styles.row}>
-                <Feather name="clock" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                <Text style={styles.input}>Schedule</Text>
-                <Pressable style={styles.chip} onPress={() => setShowStartPicker(true)}>
-                  <Text style={styles.chipText}>{formatTime(startDate)}</Text>
+                <Feather name="clock" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                <Text style={[styles.input, isDark && { color: '#d7e4dd' }]}>Schedule</Text>
+                <Pressable style={[styles.chip, isDark && { backgroundColor: '#2a3d36' }]} onPress={() => setShowStartPicker(true)}>
+                  <Text style={[styles.chipText, isDark && { color: '#5da88b' }]}>{formatTime(startDate)}</Text>
                 </Pressable>
-                <Text style={styles.chipSeparator}>-</Text>
-                <Pressable style={styles.chip} onPress={() => setShowEndPicker(true)}>
-                  <Text style={styles.chipText}>{formatTime(endDate)}</Text>
+                <Text style={[styles.chipSeparator, isDark && { color: '#6e7b74' }]}>-</Text>
+                <Pressable style={[styles.chip, isDark && { backgroundColor: '#2a3d36' }]} onPress={() => setShowEndPicker(true)}>
+                  <Text style={[styles.chipText, isDark && { color: '#5da88b' }]}>{formatTime(endDate)}</Text>
                 </Pressable>
               </View>
             </View>
@@ -397,23 +399,23 @@ export default function AddSubjectScreen({ visible, onClose, onSave }: AddSubjec
               />
             )}
 
-            <View style={[styles.card, { marginTop: 16 }]}>
+            <View style={[styles.card, isDark && { backgroundColor: '#0f201b' }, { marginTop: 16 }]}>
               <View style={styles.row}>
-                <Feather name="map-pin" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                <Feather name="map-pin" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
                 <TextInput
                   value={location}
                   onChangeText={setLocation}
                   placeholder="Room, Building, or Online"
-                  placeholderTextColor="#91948f"
-                  style={styles.input}
+                  placeholderTextColor={isDark ? '#5a6b63' : '#91948f'}
+                  style={[styles.input, isDark && { color: '#d7e4dd' }]}
                 />
               </View>
             </View>
 
             {hasConflict && (
-              <View style={styles.conflictWarning}>
-                <Feather name="alert-triangle" size={20} color="#991b1b" />
-                <Text style={styles.conflictWarningBody}>
+              <View style={[styles.conflictWarning, isDark && { backgroundColor: '#2a1a1a' }]}>
+                <Feather name="alert-triangle" size={20} color={isDark ? '#e85555' : '#991b1b'} />
+                <Text style={[styles.conflictWarningBody, isDark && { color: '#e85555' }]}>
                   Conflicts with{' '}
                   <Text style={styles.conflictSubjectName}>
                     {conflicts[0].subject.title}
@@ -427,10 +429,10 @@ export default function AddSubjectScreen({ visible, onClose, onSave }: AddSubjec
 
             <View style={styles.actions}>
               <Pressable onPress={close}>
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={[styles.cancelText, isDark && { color: '#6e7b74' }]}>Cancel</Text>
               </Pressable>
               <Pressable
-                style={[styles.saveButton, isSaveDisabled && styles.saveButtonDisabled]}
+                style={[styles.saveButton, isSaveDisabled && styles.saveButtonDisabled, isDark && { backgroundColor: '#1e5548' }]}
                 onPress={handleSave}
                 disabled={isSaveDisabled}
               >
@@ -459,8 +461,8 @@ export default function AddSubjectScreen({ visible, onClose, onSave }: AddSubjec
               }],
             }]}
           >
-            <View style={styles.subPanel} {...termPickerPanResponder.panHandlers}>
-              <View style={styles.handle} />
+            <View style={[styles.subPanel, isDark && { backgroundColor: '#0a1613' }]} {...termPickerPanResponder.panHandlers}>
+              <View style={[styles.handle, isDark && { backgroundColor: '#2a3d36' }]} />
               <ScrollView
                 bounces={false}
                 showsVerticalScrollIndicator={false}
@@ -469,8 +471,8 @@ export default function AddSubjectScreen({ visible, onClose, onSave }: AddSubjec
                 onScroll={(e) => { termPickerScrollYRef.current = e.nativeEvent.contentOffset.y; }}
                 scrollEventThrottle={16}
               >
-                <Text style={styles.subModalTitle}>Academic Period</Text>
-                <View style={styles.card}>
+                <Text style={[styles.subModalTitle, isDark && { color: '#d7e4dd' }]}>Academic Period</Text>
+                <View style={[styles.card, isDark && { backgroundColor: '#0f201b' }]}>
                   {[
                     '1st Semester',
                     '2nd Semester',
@@ -481,25 +483,25 @@ export default function AddSubjectScreen({ visible, onClose, onSave }: AddSubjec
                     '4th Quarter'
                   ].map((option, index) => (
                     <View key={option}>
-                      {index > 0 && <View style={styles.separator} />}
+                      {index > 0 && <View style={[styles.separator, isDark && { backgroundColor: '#2a3d36' }]} />}
                       <Pressable
-                        style={[styles.row, term === option && { backgroundColor: '#eef2ec' }]}
+                        style={[styles.row, term === option && { backgroundColor: isDark ? '#1a2b25' : '#eef2ec' }]}
                         onPress={() => {
                           setTerm(option);
                           closeTermPicker();
                         }}
                       >
                         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                          <Feather name="calendar" size={16} color="#5c6762" />
-                          <Text style={[styles.subModalOptionText, term === option && { fontFamily: 'Manrope_700Bold' }]}>{option}</Text>
+                          <Feather name="calendar" size={16} color={isDark ? '#6e7b74' : '#5c6762'} />
+                          <Text style={[styles.subModalOptionText, term === option && { fontFamily: 'Manrope_700Bold' }, isDark && { color: '#d7e4dd' }]}>{option}</Text>
                         </View>
-                        {term === option && <Feather name="check" size={20} color="#0f2a24" />}
+                        {term === option && <Feather name="check" size={20} color={isDark ? '#5da88b' : '#0f2a24'} />}
                       </Pressable>
                     </View>
                   ))}
                 </View>
                 <Pressable style={styles.subModalBackRow} onPress={closeTermPicker}>
-                  <Text style={styles.subModalBackText}>Back</Text>
+                  <Text style={[styles.subModalBackText, isDark && { color: '#6e7b74' }]}>Back</Text>
                 </Pressable>
               </ScrollView>
             </View>

@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import DynamicIslandToast from '../../ui/DynamicIslandToast';
+import { useTheme } from '../../ui/theme/ThemeContext';
 import { shadowLg } from '../../ui/tokens/shadows';
 import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
 import type { NoteRecord } from '../../data/local/db';
@@ -161,6 +162,7 @@ const normalizeTextForCompare = (value: string) =>
 
 export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaultFolderId, folderOptions, subjectOptions, mode = 'full', onClose, onSave, onDelete }: NoteEditorScreenProps) {
   const isQuick = mode === 'quick';
+  const { isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const editorRef = useRef<EnrichedTextInputInstance>(null);
   const historyRef = useRef<{ entries: NoteSnapshot[]; index: number }>({
@@ -971,41 +973,40 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
   };
 
   return (
-    <View style={[styles.rootWrapper, isQuick && styles.rootQuick]}>
-    <SafeAreaView style={[styles.safeArea, isQuick && styles.safeQuick]} edges={['top', 'left', 'right', 'bottom']}>
-      <StatusBar barStyle="dark-content" />
-      <View style={[styles.screen, isQuick && styles.screenQuick]}>
+    <View style={[styles.rootWrapper, isQuick && styles.rootQuick, isDark && styles.rootDark]}>
+    <SafeAreaView style={[styles.safeArea, isQuick && styles.safeQuick, isDark && styles.safeDark]} edges={['top', 'left', 'right', 'bottom']}>
+      <View style={[styles.screen, isQuick && styles.screenQuick, isDark && styles.screenDark]}>
         <View style={styles.header}>
           <Pressable style={styles.headerIconButton} onPress={() => void requestClose()} hitSlop={8}>
-            <Feather name="arrow-left" size={26} color="#111111" />
+            <Feather name="arrow-left" size={26} color={isDark ? '#d7e4dd' : '#111111'} />
           </Pressable>
 
           <View style={styles.headerCenterControls}>
-            <Pressable style={[styles.historyButton, isQuick && styles.historyButtonQuick, !canUndo && styles.historyButtonDisabled]} onPress={handleUndo} disabled={!canUndo} hitSlop={8}>
-              <Feather name="corner-down-left" size={18} color={canUndo ? '#111111' : '#b3b0a7'} />
+            <Pressable style={[styles.historyButton, isQuick && styles.historyButtonQuick, isDark && styles.historyButtonDark, !canUndo && styles.historyButtonDisabled]} onPress={handleUndo} disabled={!canUndo} hitSlop={8}>
+              <Feather name="corner-down-left" size={18} color={canUndo ? (isDark ? '#d7e4dd' : '#111111') : (isDark ? '#4a5a52' : '#b3b0a7')} />
             </Pressable>
-            <Pressable style={[styles.historyButton, isQuick && styles.historyButtonQuick, !canRedo && styles.historyButtonDisabled]} onPress={handleRedo} disabled={!canRedo} hitSlop={8}>
-              <Feather name="corner-down-right" size={18} color={canRedo ? '#111111' : '#b3b0a7'} />
+            <Pressable style={[styles.historyButton, isQuick && styles.historyButtonQuick, isDark && styles.historyButtonDark, !canRedo && styles.historyButtonDisabled]} onPress={handleRedo} disabled={!canRedo} hitSlop={8}>
+              <Feather name="corner-down-right" size={18} color={canRedo ? (isDark ? '#d7e4dd' : '#111111') : (isDark ? '#4a5a52' : '#b3b0a7')} />
             </Pressable>
           </View>
 
           <Pressable style={styles.headerIconButton} onPress={openNoteSheet} hitSlop={8}>
-            <Feather name="more-horizontal" size={24} color="#111111" />
+            <Feather name="more-horizontal" size={24} color={isDark ? '#d7e4dd' : '#111111'} />
           </Pressable>
         </View>
 
-        <View style={styles.divider} />
+        <View style={[styles.divider, isDark && styles.dividerDark]} />
 
         <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: 180 + keyboardHeight + insets.bottom }]} keyboardShouldPersistTaps="handled">
           <View style={styles.breadcrumbRow}>
             <View style={styles.breadcrumbTextWrap}>
               {isQuick && !pendingSubjectId ? (
-                <Text style={styles.breadcrumbSubject} numberOfLines={1}>Quick note</Text>
+                <Text style={[styles.breadcrumbSubject, isDark && styles.breadcrumbTextDark]} numberOfLines={1}>Quick note</Text>
               ) : (
                 <>
-                  <Text style={styles.breadcrumbSubject} numberOfLines={1}>{pendingSubjectId ? (subjectOptions?.find((s) => s.id === pendingSubjectId)?.code ?? 'Subject') : subjectTitle}</Text>
-                  <Feather name="chevron-right" size={15} color="#8a9088" />
-                  <Text style={styles.breadcrumbFolder} numberOfLines={1}>{folderId ? folderLabel : 'Loose notes'}</Text>
+                  <Text style={[styles.breadcrumbSubject, isDark && styles.breadcrumbTextDark]} numberOfLines={1}>{pendingSubjectId ? (subjectOptions?.find((s) => s.id === pendingSubjectId)?.code ?? 'Subject') : subjectTitle}</Text>
+                  <Feather name="chevron-right" size={15} color={isDark ? '#6e7b74' : '#8a9088'} />
+                  <Text style={[styles.breadcrumbFolder, isDark && styles.breadcrumbTextDark]} numberOfLines={1}>{folderId ? folderLabel : 'Loose notes'}</Text>
                 </>
               )}
             </View>
@@ -1015,18 +1016,18 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
             value={title}
             onChangeText={handleTitleChange}
             placeholder="Note title"
-            placeholderTextColor="#a7a7a1"
+            placeholderTextColor={isDark ? '#5a6b63' : '#a7a7a1'}
             autoCapitalize="sentences"
-            style={styles.titleInput}
+            style={[styles.titleInput, isDark && styles.titleInputDark]}
             multiline
           />
 
-          <View style={styles.titleDivider} />
+          <View style={[styles.titleDivider, isDark && styles.titleDividerDark]} />
 
           <View style={styles.metaRow}>
-            <Text style={styles.metaText}>{displayMeta.updatedLabel}</Text>
-            <Text style={styles.metaDot}>•</Text>
-            <Text style={styles.metaText}>{displayMeta.wordCount} words</Text>
+            <Text style={[styles.metaText, isDark && styles.metaTextDark]}>{displayMeta.updatedLabel}</Text>
+            <Text style={[styles.metaDot, isDark && styles.metaTextDark]}>•</Text>
+            <Text style={[styles.metaText, isDark && styles.metaTextDark]}>{displayMeta.wordCount} words</Text>
           </View>
 
           <View style={styles.bodyWrap}>
@@ -1034,7 +1035,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
               ref={editorRef}
               defaultValue={note?.contentHtml ?? ''}
               placeholder="Start writing your note..."
-              placeholderTextColor="#10141366"
+              placeholderTextColor={isDark ? '#4a5a52' : '#10141366'}
               autoCapitalize="sentences"
               scrollEnabled={false}
               onFocus={() => {
@@ -1049,15 +1050,15 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
               onChangeText={(event) => handleChangeText(event.nativeEvent.value)}
               onChangeHtml={(event) => handleChangeHtml(event.nativeEvent.value)}
               onChangeState={(event) => handleChangeState(event.nativeEvent)}
-              style={styles.bodyInput}
-              htmlStyle={styles.bodyHtmlStyle}
+              style={[styles.bodyInput, isDark && styles.bodyInputDark]}
+              htmlStyle={isDark ? { ...styles.bodyHtmlStyle, ...styles.bodyHtmlStyleDark } : styles.bodyHtmlStyle}
               returnKeyType="default"
               submitBehavior="newline"
             />
           </View>
         </ScrollView>
 
-        <View style={[styles.toolbarDock, isQuick && styles.toolbarDockQuick, { bottom: keyboardHeight > 0 ? keyboardHeight : 0 }]}>
+        <View style={[styles.toolbarDock, isQuick && styles.toolbarDockQuick, isDark && styles.toolbarDockDark, { bottom: keyboardHeight > 0 ? keyboardHeight : 0 }]}>
           {!isQuick && isBlockMenuOpen ? (
             <View style={styles.blockMenuCard}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.blockMenuRow}>
@@ -1074,17 +1075,17 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
                   return (
                     <Pressable
                       key={item.key}
-                      style={[styles.blockMenuButton, active && styles.blockMenuButtonActive]}
+                      style={[styles.blockMenuButton, isDark && !active && styles.blockMenuButtonDark, active && styles.blockMenuButtonActive]}
                       onPress={() => handleBlockAction(item.action)}
                     >
                       <View style={[styles.blockMenuIconWrap, active && styles.blockMenuIconWrapActive]}>
                         {item.key === 'h1' || item.key === 'h2' ? (
-                          <Text style={[styles.blockMenuIconText, active && styles.blockMenuIconTextActive]}>{item.key.toUpperCase()}</Text>
+                          <Text style={[styles.blockMenuIconText, isDark && !active && styles.blockMenuIconTextDark, active && styles.blockMenuIconTextActive]}>{item.key.toUpperCase()}</Text>
                         ) : (
-                          <Feather name={item.icon as any} size={17} color={active ? '#ffffff' : '#1f3b34'} />
+                          <Feather name={item.icon as any} size={17} color={active ? '#ffffff' : isDark ? '#d7e4dd' : '#1f3b34'} />
                         )}
                       </View>
-                      <Text style={[styles.blockMenuButtonText, active && styles.blockMenuButtonTextActive]}>{item.label}</Text>
+                      <Text style={[styles.blockMenuButtonText, isDark && !active && styles.blockMenuButtonTextDark, active && styles.blockMenuButtonTextActive]}>{item.label}</Text>
                     </Pressable>
                   );
                 })}
@@ -1092,11 +1093,11 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
             </View>
           ) : null}
 
-          <View style={[styles.toolbarDivider, isQuick && styles.toolbarDividerQuick]} />
+          <View style={[styles.toolbarDivider, isQuick && styles.toolbarDividerQuick, isDark && styles.toolbarDividerDark]} />
           <View style={styles.toolbarRow}>
             {!isQuick && (
               <Pressable style={styles.plusButton} onPress={() => setIsBlockMenuOpen((current) => !current)}>
-                <Feather name="plus" size={22} color="#111111" />
+                <Feather name="plus" size={22} color={isDark ? '#d7e4dd' : '#111111'} />
               </Pressable>
             )}
 
@@ -1121,6 +1122,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
                     underline={item.key === 'underline'}
                     strike={item.key === 'strikethrough'}
                     quick={isQuick}
+                    isDark={isDark}
                   />
                 );
               })}
@@ -1131,7 +1133,7 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
         {isNoteSheetOpen ? (
           <View style={[StyleSheet.absoluteFill, { zIndex: 99 }]}>
             <Animated.View style={[StyleSheet.absoluteFill, { opacity: noteSheetOpacity }]}>
-              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
+              <BlurView intensity={20} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} experimentalBlurMethod="dimezisBlurView" />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5, 8, 7, 0.2)' }]} />
             </Animated.View>
             <Pressable style={StyleSheet.absoluteFill} onPress={closeNoteSheet} />
@@ -1150,35 +1152,35 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
               }],
             }]}
           >
-            <View style={styles.noteSheetPanel} {...noteSheetDrag.panResponder.panHandlers}>
-              <View style={styles.noteSheetHandle} />
+            <View style={[styles.noteSheetPanel, isDark && styles.noteSheetPanelDark]} {...noteSheetDrag.panResponder.panHandlers}>
+              <View style={[styles.noteSheetHandle, isDark && styles.noteSheetHandleDark]} />
               <ScrollView bounces={false} showsVerticalScrollIndicator={false}
                 onScroll={(e) => { noteSheetDrag.scrollYRef.current = e.nativeEvent.contentOffset.y; }}
                 scrollEventThrottle={16}
               >
                 {noteSheetView === 'main' && (
                   <>
-                    <Text style={styles.noteSheetTitle}>Note Actions</Text>
+                    <Text style={[styles.noteSheetTitle, isDark && styles.noteSheetTitleDark]}>Note Actions</Text>
 
-                    <View style={styles.noteSheetCard}>
+                    <View style={[styles.noteSheetCard, isDark && styles.noteSheetCardDark]}>
                       <Pressable style={styles.noteSheetActionRow} onPress={togglePinned}>
-                        <MaterialCommunityIcons name={isPinned ? 'bookmark' : 'bookmark-outline'} size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={styles.noteSheetActionLabel}>{isPinned ? 'Unpin' : 'Pin'}</Text>
-                        {isPinned ? <Feather name="check" size={18} color="#0f2a24" /> : <Feather name="chevron-right" size={18} color="#9aa09a" />}
+                        <MaterialCommunityIcons name={isPinned ? 'bookmark' : 'bookmark-outline'} size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={[styles.noteSheetActionLabel, isDark && styles.noteSheetActionLabelDark]}>{isPinned ? 'Unpin' : 'Pin'}</Text>
+                        {isPinned ? <Feather name="check" size={18} color={isDark ? '#5da88b' : '#0f2a24'} /> : <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />}
                       </Pressable>
-                      <View style={styles.noteSheetDivider} />
+                      <View style={[styles.noteSheetDivider, isDark && styles.noteSheetDividerDark]} />
                       <Pressable style={styles.noteSheetActionRow} onPress={() => void handleExportNote()}>
-                        <Feather name="share-2" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={styles.noteSheetActionLabel}>Export</Text>
-                        <Feather name="chevron-right" size={18} color="#9aa09a" />
+                        <Feather name="share-2" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={[styles.noteSheetActionLabel, isDark && styles.noteSheetActionLabelDark]}>Export</Text>
+                        <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
                       </Pressable>
-                      <View style={styles.noteSheetDivider} />
+                      <View style={[styles.noteSheetDivider, isDark && styles.noteSheetDividerDark]} />
                       <Pressable style={styles.noteSheetActionRow} onPress={() => setNoteSheetView(isQuick ? 'subjects' : 'folders')}>
-                        <Feather name={isQuick ? 'book' : 'folder'} size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={styles.noteSheetActionLabel}>{isQuick ? 'Move to subject...' : 'Move to folder...'}</Text>
-                        <Feather name="chevron-right" size={18} color="#9aa09a" />
+                        <Feather name={isQuick ? 'book' : 'folder'} size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={[styles.noteSheetActionLabel, isDark && styles.noteSheetActionLabelDark]}>{isQuick ? 'Move to subject...' : 'Move to folder...'}</Text>
+                        <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
                       </Pressable>
-                      <View style={styles.noteSheetDivider} />
+                      <View style={[styles.noteSheetDivider, isDark && styles.noteSheetDividerDark]} />
                       <Pressable style={styles.noteSheetActionRow} onPress={handleDeleteNote}>
                         <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
                         <Text style={[styles.noteSheetActionLabel, { color: '#b42318' }]}>Delete</Text>
@@ -1189,14 +1191,14 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
 
                 {noteSheetView === 'delete' && (
                   <>
-                    <Text style={styles.noteSheetTitle}>Delete note?</Text>
-                    <Text style={styles.noteSheetDeleteBody}>
+                    <Text style={[styles.noteSheetTitle, isDark && styles.noteSheetTitleDark]}>Delete note?</Text>
+                    <Text style={[styles.noteSheetDeleteBody, isDark && styles.noteSheetDeleteBodyDark]}>
                       This will permanently remove the note from your device.
                     </Text>
 
                     <View style={styles.noteSheetDeleteActions}>
                       <Pressable onPress={cancelDelete}>
-                        <Text style={styles.noteSheetCancelText}>Cancel</Text>
+                        <Text style={[styles.noteSheetCancelText, isDark && styles.noteSheetCancelTextDark]}>Cancel</Text>
                       </Pressable>
                       <Pressable style={styles.noteSheetDeleteButton} onPress={confirmDelete}>
                         <Text style={styles.noteSheetDeleteText}>Delete</Text>
@@ -1209,26 +1211,26 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
                   <>
                     <View style={styles.noteSheetFolderHeader}>
                       <Pressable onPress={() => setNoteSheetView('main')} hitSlop={8}>
-                        <Feather name="arrow-left" size={22} color="#111111" />
+                        <Feather name="arrow-left" size={22} color={isDark ? '#d7e4dd' : '#111111'} />
                       </Pressable>
-                      <Text style={styles.noteSheetFolderTitle}>Move to folder</Text>
+                      <Text style={[styles.noteSheetFolderTitle, isDark && styles.noteSheetFolderTitleDark]}>Move to folder</Text>
                       <View style={{ width: 22 }} />
                     </View>
 
-                    <View style={styles.noteSheetCard}>
+                    <View style={[styles.noteSheetCard, isDark && styles.noteSheetCardDark]}>
                       <Pressable style={styles.noteSheetActionRow} onPress={() => handleFolderSelect(null)}>
-                        <Feather name="file-text" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={styles.noteSheetActionLabel}>Loose notes</Text>
-                        {!folderId ? <Feather name="check" size={18} color="#0f2a24" /> : null}
+                        <Feather name="file-text" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={[styles.noteSheetActionLabel, isDark && styles.noteSheetActionLabelDark]}>Loose notes</Text>
+                        {!folderId ? <Feather name="check" size={18} color={isDark ? '#5da88b' : '#0f2a24'} /> : null}
                       </Pressable>
 
                       {folderOptions.map((folder, index) => (
                         <View key={folder.id}>
-                          <View style={styles.noteSheetDivider} />
+                          <View style={[styles.noteSheetDivider, isDark && styles.noteSheetDividerDark]} />
                           <Pressable style={styles.noteSheetActionRow} onPress={() => handleFolderSelect(folder.id)}>
                             <Feather name="folder" size={16} color={folder.color} style={{ marginRight: 10 }} />
-                            <Text style={styles.noteSheetActionLabel}>{folder.title}</Text>
-                            {folder.id === folderId ? <Feather name="check" size={18} color="#0f2a24" /> : null}
+                            <Text style={[styles.noteSheetActionLabel, isDark && styles.noteSheetActionLabelDark]}>{folder.title}</Text>
+                            {folder.id === folderId ? <Feather name="check" size={18} color={isDark ? '#5da88b' : '#0f2a24'} /> : null}
                           </Pressable>
                         </View>
                       ))}
@@ -1240,22 +1242,22 @@ export default function NoteEditorScreen({ subjectId, subjectTitle, note, defaul
                   <>
                     <View style={styles.noteSheetFolderHeader}>
                       <Pressable onPress={() => setNoteSheetView('main')} hitSlop={8}>
-                        <Feather name="arrow-left" size={22} color="#111111" />
+                        <Feather name="arrow-left" size={22} color={isDark ? '#d7e4dd' : '#111111'} />
                       </Pressable>
-                      <Text style={styles.noteSheetFolderTitle}>Move to subject</Text>
+                      <Text style={[styles.noteSheetFolderTitle, isDark && styles.noteSheetFolderTitleDark]}>Move to subject</Text>
                       <View style={{ width: 22 }} />
                     </View>
 
-                    <View style={styles.noteSheetCard}>
+                    <View style={[styles.noteSheetCard, isDark && styles.noteSheetCardDark]}>
                       {(subjectOptions ?? []).map((subject, index) => {
                         const isSelected = (pendingSubjectId ?? subjectId) === subject.id;
                         return (
                           <View key={subject.id}>
-                            {index > 0 && <View style={styles.noteSheetDivider} />}
+                            {index > 0 && <View style={[styles.noteSheetDivider, isDark && styles.noteSheetDividerDark]} />}
                             <Pressable style={styles.noteSheetActionRow} onPress={() => handleSubjectSelect(subject.id)}>
-                              <Feather name="book" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                              <Text style={styles.noteSheetActionLabel}>{subject.code} — {subject.title}</Text>
-                              {isSelected ? <Feather name="check" size={18} color="#0f2a24" /> : null}
+                              <Feather name="book" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                              <Text style={[styles.noteSheetActionLabel, isDark && styles.noteSheetActionLabelDark]}>{subject.code} — {subject.title}</Text>
+                              {isSelected ? <Feather name="check" size={18} color={isDark ? '#5da88b' : '#0f2a24'} /> : null}
                             </Pressable>
                           </View>
                         );
@@ -1291,6 +1293,7 @@ const ToolbarButton = ({
   underline,
   strike,
   quick,
+  isDark: dark,
 }: {
   label: string;
   active: boolean;
@@ -1299,11 +1302,13 @@ const ToolbarButton = ({
   underline?: boolean;
   strike?: boolean;
   quick?: boolean;
+  isDark?: boolean;
 }) => (
-  <Pressable style={[styles.toolbarButton, active && (quick ? styles.toolbarButtonActiveQuick : styles.toolbarButtonActive)]} onPress={onPress}>
+  <Pressable style={[styles.toolbarButton, active && (quick ? styles.toolbarButtonActiveQuick : (dark ? styles.toolbarButtonActiveDark : styles.toolbarButtonActive))]} onPress={onPress}>
     <Text
       style={[
         styles.toolbarButtonLabel,
+        dark && styles.toolbarButtonLabelDark,
         italic && styles.toolbarButtonLabelItalic,
         underline && styles.toolbarButtonLabelUnderline,
         strike && styles.toolbarButtonLabelStrike,
@@ -1732,4 +1737,47 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#ffffff',
   },
+  rootDark: { backgroundColor: '#0a1613' },
+  safeDark: { backgroundColor: '#0a1613' },
+  screenDark: { backgroundColor: '#0a1613' },
+  headerIconDark: { color: '#d7e4dd' },
+  headerIconDisabledDark: { color: '#4a5a52' },
+  historyButtonDark: { backgroundColor: '#2a3d36' },
+  dividerDark: { backgroundColor: '#2a3d36' },
+  breadcrumbTextDark: { color: '#8f9b95' },
+  chevronDark: { color: '#6e7b74' },
+  titleInputDark: { color: '#d7e4dd' },
+  titleDividerDark: { backgroundColor: '#2a3d36' },
+  metaTextDark: { color: '#8f9b95' },
+  bodyInputDark: { color: '#d7e4dd' },
+  bodyHtmlStyleDark: {
+    p: { color: '#d7e4dd' },
+    h1: { color: '#d7e4dd' },
+    h2: { color: '#d7e4dd' },
+    h3: { color: '#d7e4dd' },
+    ul: { bulletColor: '#d7e4dd' },
+    ol: { markerColor: '#d7e4dd' },
+    ulCheckbox: { boxColor: '#d7e4dd' },
+    code: { backgroundColor: '#2a3d36', color: '#d7e4dd' },
+    codeblock: { backgroundColor: '#2a3d36', color: '#d7e4dd' },
+    blockquote: { borderColor: '#3a4f47', color: '#d7e4dd' },
+    a: { color: '#5da88b' },
+  },
+  toolbarDockDark: { backgroundColor: '#0a1613' },
+  toolbarDividerDark: { backgroundColor: '#2a3d36' },
+  toolbarButtonActiveDark: { backgroundColor: '#2a3d36' },
+  toolbarButtonLabelDark: { color: '#d7e4dd' },
+  blockMenuButtonDark: { backgroundColor: '#0f201b' },
+  blockMenuButtonTextDark: { color: '#d7e4dd' },
+  blockMenuIconTextDark: { color: '#d7e4dd' },
+  plusButtonDark: { color: '#d7e4dd' },
+  noteSheetPanelDark: { backgroundColor: '#0a1613' },
+  noteSheetHandleDark: { backgroundColor: '#2a3d36' },
+  noteSheetCardDark: { backgroundColor: '#0f201b' },
+  noteSheetTitleDark: { color: '#d7e4dd' },
+  noteSheetActionLabelDark: { color: '#d7e4dd' },
+  noteSheetDividerDark: { backgroundColor: '#2a3d36' },
+  noteSheetFolderTitleDark: { color: '#d7e4dd' },
+  noteSheetDeleteBodyDark: { color: '#8f9b95' },
+  noteSheetCancelTextDark: { color: '#6e7b74' },
 });

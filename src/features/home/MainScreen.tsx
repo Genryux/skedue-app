@@ -1,3 +1,4 @@
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,6 +25,7 @@ import {
 import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
 import { getAllNotes, getAllTasks, getMetaValue, getNotesBySubjectId, getTasksBySubjectId, getSubjects, insertSubject, insertNote, updateNote, deleteNote, deleteTask, insertTask, findRecentMatchingNote, setMetaValue, updateSubject, completeTaskOccurrence, uncompleteTaskOccurrence, getTaskCompletions, deleteTaskOccurrence, type SubjectRecord, type NoteRecord, type TaskRecord, type TaskCompletionRecord } from '../../data/local/db';
 import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
+import { useTheme } from '../../ui/theme/ThemeContext';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
 import { calculateNextOccurrenceDate, isSameCalendarDay, END_OF_TIME } from '../../utils/recurrenceUtils';
 import ScheduleScreen from '../schedule/ScheduleScreen';
@@ -162,6 +164,8 @@ const formatMinutesDiff = (minutes: number) => {
 };
 
 export default function MainScreen() {
+  const router = useRouter();
+  const { isDark } = useTheme();
   const [activeTab, setActiveTab] = useState<'home' | 'schedule' | 'subjects'>('home');
   const [navPillWidth, setNavPillWidth] = useState(0);
   const tabIndicatorAnim = useRef(new Animated.Value(0)).current;
@@ -666,6 +670,15 @@ export default function MainScreen() {
       } catch {}
     })();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+      loadRecentNotes();
+      loadPendingTasks();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+  );
 
   // Collect unique terms from subjects for filter options
   const availableTerms = useMemo(() => {
@@ -1279,16 +1292,16 @@ export default function MainScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.mainContent}
+      <View style={[styles.mainContent, isDark && styles.mainContentDark]}
       >
-        <View style={styles.headerRow}>
+        <View style={[styles.headerRow, isDark && styles.headerRowDark]}>
           <View style={styles.headerSpacer} />
           <View style={styles.headerIcons}>
-            <Pressable style={styles.headerIconButton} onPress={handleOpenAllQuickTasks}>
-              <Feather name="grid" size={18} color="#1e2b26" />
+            <Pressable style={[styles.headerIconButton, isDark && styles.headerIconButtonDark]} onPress={handleOpenAllQuickTasks}>
+              <Feather name="grid" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
             </Pressable>
-            <Pressable style={styles.headerIconButton}>
-              <Feather name="settings" size={18} color="#1e2b26" />
+            <Pressable style={[styles.headerIconButton, isDark && styles.headerIconButtonDark]} onPress={() => router.push('/settings')}>
+              <Feather name="settings" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
             </Pressable>
           </View>
         </View>
@@ -1340,8 +1353,8 @@ export default function MainScreen() {
             <View style={styles.titleBlock}>
               <View style={styles.greetingAccent} />
               <View style={styles.greetingContent}>
-                <Text style={styles.dateText}>{dateLabel}</Text>
-                <Text style={styles.greetingLine2}>{dynamicGreeting}</Text>
+                <Text style={[styles.dateText, isDark && styles.dateTextDark]}>{dateLabel}</Text>
+                <Text style={[styles.greetingLine2, isDark && styles.greetingLine2Dark]}>{dynamicGreeting}</Text>
               </View>
             </View>
 
@@ -1399,18 +1412,18 @@ export default function MainScreen() {
 
                 <View style={styles.urgentTasksSection}>
                   <View style={styles.recentNotesHeaderRow}>
-                    <Text style={[styles.dateText, { fontSize: 13 }]}>URGENT TASKS</Text>
-                    <Pressable style={styles.headerIconButton} onPress={handleOpenAllQuickTasks} hitSlop={8}>
-                      <Feather name="arrow-right" size={16} color="#6d756f" />
+                    <Text style={[styles.dateText, isDark && styles.dateTextDark, { fontSize: 13 }]}>URGENT TASKS</Text>
+                    <Pressable style={[styles.headerIconButton, isDark && styles.headerIconButtonDark]} onPress={handleOpenAllQuickTasks} hitSlop={8}>
+                      <Feather name="arrow-right" size={16} color={isDark ? '#8f9b95' : '#6d756f'} />
                     </Pressable>
                   </View>
 
                   {urgentTasksPreview.length === 0 ? (
-                    <View style={styles.sectionEmptyState}>
-                      <View style={styles.sectionEmptyIconWrapper}>
-                        <Feather name="check-circle" size={18} color="#8f968f" />
+                    <View style={[styles.sectionEmptyState, isDark && styles.sectionEmptyStateDark]}>
+                      <View style={[styles.sectionEmptyIconWrapper, isDark && styles.sectionEmptyIconWrapperDark]}>
+                        <Feather name="check-circle" size={18} color={isDark ? '#6e7b74' : '#8f968f'} />
                       </View>
-                      <Text style={styles.sectionEmptyTitle}>No urgent tasks</Text>
+                      <Text style={[styles.sectionEmptyTitle, isDark && styles.sectionEmptyTitleDark]}>No urgent tasks</Text>
                     </View>
                   ) : (
                     urgentTasksPreview.map((task) => {
@@ -1426,7 +1439,7 @@ export default function MainScreen() {
                           key={task.id}
                           onPress={() => handleOpenTaskEdit(task)}
                           onLongPress={() => handleOpenTaskDetail(task)}
-                          style={styles.taskCard}
+                          style={[styles.taskCard, isDark && styles.taskCardDark]}
                         >
                           {canComplete ? (
                             <Pressable
@@ -1434,34 +1447,34 @@ export default function MainScreen() {
                               onPress={() => void handleCompleteTask(task)}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
-                              <MaterialCommunityIcons name="circle-outline" size={22} color="#a0aba5" />
+                              <MaterialCommunityIcons name="circle-outline" size={22} color={isDark ? '#6e7b74' : '#a0aba5'} />
                             </Pressable>
                           ) : (
                             <View style={styles.taskCheckbox}>
-                              <Feather name="lock" size={15} color="#c9cdc9" />
+                              <Feather name="lock" size={15} color={isDark ? '#4a5a52' : '#c9cdc9'} />
                             </View>
                           )}
                           <View style={styles.taskTextWrapper}>
-                            <Text style={styles.taskTitle} numberOfLines={1}>
+                            <Text style={[styles.taskTitle, isDark && styles.taskTitleDark]} numberOfLines={1}>
                               {task.title}
                             </Text>
                             {task.startDate ? (
                             <View style={styles.taskDueDateRow}>
-                              <Text style={[styles.taskDueDateText, isTimeOverdue && { color: '#BA1A1A' }]} numberOfLines={1}>
+                              <Text style={[styles.taskDueDateText, isDark && styles.taskDueDateTextDark, isTimeOverdue && { color: '#BA1A1A' }]} numberOfLines={1}>
                                 {dueLabel}
                               </Text>
                               <View style={styles.repeatBadge}>
                                 {isRecurring ? (
-                                  <Feather name="repeat" size={12} color="#8f968f" style={task.reminderMinutes != null ? { marginRight: 4 } : undefined} />
+                                  <Feather name="repeat" size={12} color={isDark ? '#6e7b74' : '#8f968f'} style={task.reminderMinutes != null ? { marginRight: 4 } : undefined} />
                                 ) : null}
                                 {task.reminderMinutes != null ? (
-                                  <Feather name="bell" size={12} color="#8f968f" />
+                                  <Feather name="bell" size={12} color={isDark ? '#6e7b74' : '#8f968f'} />
                                 ) : null}
                                 {subject ? (
-                                  <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 16, color: '#6b746f', marginLeft: 6, lineHeight: 12, marginRight: 6 }}>·</Text>
+                                  <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 16, color: isDark ? '#6e7b74' : '#6b746f', marginLeft: 6, lineHeight: 12, marginRight: 6 }}>·</Text>
                                 ) : null}
                                 {subject ? (
-                                  <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 12, color: '#6b746f' }}>{subject.code ?? subject.title}</Text>
+                                  <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 12, color: isDark ? '#6e7b74' : '#6b746f' }}>{subject.code ?? subject.title}</Text>
                                 ) : null}
                               </View>
                             </View>
@@ -1478,18 +1491,18 @@ export default function MainScreen() {
 
                 <View style={styles.recentNotesSection}>
                   <View style={styles.recentNotesHeaderRow}>
-                    <Text style={[styles.dateText, { fontSize: 13 }]}>RECENT NOTES</Text>
-                    <Pressable style={styles.headerIconButton} onPress={handleOpenAllQuickNotes} hitSlop={8}>
-                      <Feather name="arrow-right" size={16} color="#6d756f" />
+                    <Text style={[styles.dateText, isDark && styles.dateTextDark, { fontSize: 13 }]}>RECENT NOTES</Text>
+                    <Pressable style={[styles.headerIconButton, isDark && styles.headerIconButtonDark]} onPress={handleOpenAllQuickNotes} hitSlop={8}>
+                      <Feather name="arrow-right" size={16} color={isDark ? '#8f9b95' : '#6d756f'} />
                     </Pressable>
                   </View>
 
                   {recentNoteRecords.length === 0 ? (
-                    <View style={styles.sectionEmptyState}>
-                      <View style={styles.sectionEmptyIconWrapper}>
-                        <Feather name="file-text" size={18} color="#8f968f" />
+                    <View style={[styles.sectionEmptyState, isDark && styles.sectionEmptyStateDark]}>
+                      <View style={[styles.sectionEmptyIconWrapper, isDark && styles.sectionEmptyIconWrapperDark]}>
+                        <Feather name="file-text" size={18} color={isDark ? '#6e7b74' : '#8f968f'} />
                       </View>
-                      <Text style={styles.sectionEmptyTitle}>No notes yet</Text>
+                      <Text style={[styles.sectionEmptyTitle, isDark && styles.sectionEmptyTitleDark]}>No notes yet</Text>
                     </View>
                   ) : (
                     recentNoteRecords.slice(0, 4).map((note) => {
@@ -1498,14 +1511,14 @@ export default function MainScreen() {
                       return (
                         <Pressable
                           key={note.id}
-                          style={[styles.noteCard, isQuick && styles.noteCardQuick]}
+                          style={[styles.noteCard, isQuick && styles.noteCardQuick, !isQuick && isDark && styles.noteCardDark, isQuick && isDark && { backgroundColor: '#2a3d36', borderColor: '#3a4f47' }]}
                           onPress={() => handlePressQuickNote(note)}
                         >
-                          <Text style={styles.noteTitle}>{note.title || 'Untitled note'}</Text>
-                          <Text style={styles.noteBody} numberOfLines={1}>{note.contentText}</Text>
+                          <Text style={[styles.noteTitle, isDark && styles.noteTitleDark]}>{note.title || 'Untitled note'}</Text>
+                          <Text style={[styles.noteBody, isDark && styles.noteBodyDark]} numberOfLines={1}>{note.contentText}</Text>
                           <View style={styles.noteMetaRow}>
-                            <Text style={styles.noteDate}>{formatNoteDate(note.updatedAt)}</Text>
-                            <Text style={styles.noteOrigin}>{isQuick ? 'Quick note' : subject ? subject.code : 'Subject'}</Text>
+                            <Text style={[styles.noteDate, isDark && styles.noteDateDark]}>{formatNoteDate(note.updatedAt)}</Text>
+                            <Text style={[styles.noteOrigin, isDark && styles.noteOriginDark]}>{isQuick ? 'Quick note' : subject ? subject.code : 'Subject'}</Text>
                           </View>
                         </Pressable>
                       );
@@ -1530,20 +1543,20 @@ export default function MainScreen() {
           }]} />
           <Pressable style={styles.navItem} onPress={() => handleTabPress('home')}>
             <View style={styles.navItemInner}>
-              <Feather name="home" size={18} color={activeTab === 'home' ? '#d7e4dd' : '#5c6762'} />
-              <Text style={activeTab === 'home' ? styles.navLabelActive : styles.navLabel}>Home</Text>
+              <Feather name="home" size={18} color={activeTab === 'home' ? '#d7e4dd' : isDark ? '#6e7b74' : '#5c6762'} />
+              <Text style={activeTab === 'home' ? styles.navLabelActive : [styles.navLabel, isDark && { color: '#6e7b74' }]}>Home</Text>
             </View>
           </Pressable>
           <Pressable style={styles.navItem} onPress={() => handleTabPress('schedule')}>
             <View style={styles.navItemInner}>
-              <Feather name="calendar" size={18} color={activeTab === 'schedule' ? '#d7e4dd' : '#5c6762'} />
-              <Text style={activeTab === 'schedule' ? styles.navLabelActive : styles.navLabel}>Schedule</Text>
+              <Feather name="calendar" size={18} color={activeTab === 'schedule' ? '#d7e4dd' : isDark ? '#6e7b74' : '#5c6762'} />
+              <Text style={activeTab === 'schedule' ? styles.navLabelActive : [styles.navLabel, isDark && { color: '#6e7b74' }]}>Schedule</Text>
             </View>
           </Pressable>
           <Pressable style={styles.navItem} onPress={() => handleTabPress('subjects')}>
             <View style={styles.navItemInner}>
-              <Feather name="book" size={18} color={activeTab === 'subjects' ? '#d7e4dd' : '#5c6762'} />
-              <Text style={activeTab === 'subjects' ? styles.navLabelActive : styles.navLabel}>Subjects</Text>
+              <Feather name="book" size={18} color={activeTab === 'subjects' ? '#d7e4dd' : isDark ? '#6e7b74' : '#5c6762'} />
+              <Text style={activeTab === 'subjects' ? styles.navLabelActive : [styles.navLabel, isDark && { color: '#6e7b74' }]}>Subjects</Text>
             </View>
           </Pressable>
         </View>
@@ -1579,11 +1592,11 @@ export default function MainScreen() {
                 }),
               }],
             }}>
-              <Pressable style={styles.actionButton} onPress={handleStartAddSubject}>
-                <View style={styles.actionIconCircle}>
-                  <Feather name="book-open" size={18} color="#1e2b26" />
+              <Pressable style={[styles.actionButton, isDark && styles.actionButtonDark]} onPress={handleStartAddSubject}>
+                <View style={[styles.actionIconCircle, isDark && styles.actionIconCircleDark]}>
+                  <Feather name="book-open" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
                 </View>
-                <Text style={styles.actionText}>Add subject</Text>
+                <Text style={[styles.actionText, isDark && styles.actionTextDark]}>Add subject</Text>
               </Pressable>
             </Animated.View>
             <Animated.View style={{
@@ -1595,11 +1608,11 @@ export default function MainScreen() {
                 }),
               }],
             }}>
-              <Pressable style={styles.actionButton} onPress={handleStartAddTask}>
-                <View style={styles.actionIconCircle}>
-                  <Feather name="check-circle" size={18} color="#1e2b26" />
+              <Pressable style={[styles.actionButton, isDark && styles.actionButtonDark]} onPress={handleStartAddTask}>
+                <View style={[styles.actionIconCircle, isDark && styles.actionIconCircleDark]}>
+                  <Feather name="check-circle" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
                 </View>
-                <Text style={styles.actionText}>Quick task</Text>
+                <Text style={[styles.actionText, isDark && styles.actionTextDark]}>Quick task</Text>
               </Pressable>
             </Animated.View>
             <Animated.View style={{
@@ -1611,11 +1624,11 @@ export default function MainScreen() {
                 }),
               }],
             }}>
-              <Pressable style={styles.actionButton} onPress={handleStartQuickNote}>
-                <View style={styles.actionIconCircle}>
-                  <Feather name="edit-3" size={18} color="#1e2b26" />
+              <Pressable style={[styles.actionButton, isDark && styles.actionButtonDark]} onPress={handleStartQuickNote}>
+                <View style={[styles.actionIconCircle, isDark && styles.actionIconCircleDark]}>
+                  <Feather name="edit-3" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
                 </View>
-                <Text style={styles.actionText}>Quick note</Text>
+                <Text style={[styles.actionText, isDark && styles.actionTextDark]}>Quick note</Text>
               </Pressable>
             </Animated.View>
             {nextClassState?.state === 'current' ? (
@@ -1628,11 +1641,11 @@ export default function MainScreen() {
                   }),
                 }],
               }}>
-                <Pressable style={styles.actionButton} onPress={() => handleStartSubjectNote(nextClassState.classInfo.id, nextClassState.classInfo.title)}>
-                  <View style={styles.actionIconCircle}>
-                    <Feather name="edit-3" size={18} color="#1e2b26" />
+                <Pressable style={[styles.actionButton, isDark && styles.actionButtonDark]} onPress={() => handleStartSubjectNote(nextClassState.classInfo.id, nextClassState.classInfo.title)}>
+                  <View style={[styles.actionIconCircle, isDark && styles.actionIconCircleDark]}>
+                    <Feather name="edit-3" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
                   </View>
-                  <Text style={styles.actionText}>Take notes for {subjectLookup[nextClassState.classInfo.id]?.code ?? nextClassState.classInfo.title}</Text>
+                  <Text style={[styles.actionText, isDark && styles.actionTextDark]}>Take notes for {subjectLookup[nextClassState.classInfo.id]?.code ?? nextClassState.classInfo.title}</Text>
                 </Pressable>
               </Animated.View>
             ) : null}
@@ -1737,8 +1750,8 @@ export default function MainScreen() {
             }],
           }]}
         >
-          <View style={[styles.filterPanel, { maxHeight: screenHeight * 0.8 }]} {...filterPanResponder.panHandlers}>
-            <View style={styles.filterHandle} />
+          <View style={[styles.filterPanel, isDark && styles.filterPanelDark, { maxHeight: screenHeight * 0.8 }]} {...filterPanResponder.panHandlers}>
+            <View style={[styles.filterHandle, isDark && styles.filterHandleDark]} />
 
             <ScrollView
               bounces={false}
@@ -1746,9 +1759,9 @@ export default function MainScreen() {
               onScroll={(e) => { filterScrollYRef.current = e.nativeEvent.contentOffset.y; }}
               scrollEventThrottle={16}
             >
-              <Text style={styles.filterTitle}>Filter Subjects</Text>
+              <Text style={[styles.filterTitle, isDark && styles.filterTitleDark]}>Filter Subjects</Text>
 
-              <Text style={styles.filterSectionLabel}>Status</Text>
+              <Text style={[styles.filterSectionLabel, isDark && styles.filterSectionLabelDark]}>Status</Text>
               <View style={styles.filterOptionsRow}>
                 {(['active', 'archived', 'all'] as const).map((type) => {
                   const label = { active: 'Active', archived: 'Archived', all: 'All' }[type];
@@ -1756,10 +1769,10 @@ export default function MainScreen() {
                   return (
                     <Pressable
                       key={type}
-                      style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+                      style={[styles.filterChip, isDark && styles.filterChipDark, isSelected && styles.filterChipSelected]}
                       onPress={() => handleSelectFilter({ type, term: null })}
                     >
-                      <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>{label}</Text>
+                      <Text style={[styles.filterChipText, isDark && styles.filterChipTextDark, isSelected && styles.filterChipTextSelected]}>{label}</Text>
                     </Pressable>
                   );
                 })}
@@ -1767,17 +1780,17 @@ export default function MainScreen() {
 
               {availableTerms.length > 0 && (
                 <>
-                  <Text style={styles.filterSectionLabel}>Academic Term</Text>
+                  <Text style={[styles.filterSectionLabel, isDark && styles.filterSectionLabelDark]}>Academic Term</Text>
                   <View style={styles.filterOptionsRow}>
                     {availableTerms.map((term) => {
                       const isSelected = subjectFilter.term === term;
                       return (
                         <Pressable
                           key={term}
-                          style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+                          style={[styles.filterChip, isDark && styles.filterChipDark, isSelected && styles.filterChipSelected]}
                           onPress={() => handleSelectFilter({ type: subjectFilter.type, term })}
                         >
-                          <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>{term}</Text>
+                          <Text style={[styles.filterChipText, isDark && styles.filterChipTextDark, isSelected && styles.filterChipTextSelected]}>{term}</Text>
                         </Pressable>
                       );
                     })}
@@ -1823,20 +1836,20 @@ export default function MainScreen() {
       >
         {isAllQuickNotesOpen && (
         <>
-          <View style={styles.allQuickNotesHeader}>
-            <Pressable onPress={handleCloseAllQuickNotes} style={styles.backButton}>
-              <Feather name="arrow-left" size={18} color="#1e2b26" />
+          <View style={[styles.allQuickNotesHeader, isDark && { backgroundColor: '#0a1613' }]}>
+            <Pressable onPress={handleCloseAllQuickNotes} style={[styles.backButton, isDark && styles.backButtonDark]}>
+              <Feather name="arrow-left" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
             </Pressable>
             <Pressable
-              style={[styles.backButton, { width: undefined, minWidth: 36, height: 40, flexDirection: 'row', gap: 4, paddingHorizontal: 12, borderRadius: 10 }]}
+              style={[styles.backButton, isDark && styles.backButtonDark, { width: undefined, minWidth: 36, height: 40, flexDirection: 'row', gap: 4, paddingHorizontal: 12, borderRadius: 10 }]}
               onPress={handleOpenAllViewModeSheet}
             >
-              <Text style={styles.allQuickNotesTitle}>{allViewMode === 'notes' ? 'Notes' : 'Tasks'}</Text>
-              <Feather name="chevron-down" size={14} color="#111111" />
+              <Text style={[styles.allQuickNotesTitle, isDark && styles.allQuickNotesTitleDark]}>{allViewMode === 'notes' ? 'Notes' : 'Tasks'}</Text>
+              <Feather name="chevron-down" size={14} color={isDark ? '#d7e4dd' : '#111111'} />
             </Pressable>
             <View style={{ width: 26 }} />
           </View>
-          <Text style={{ fontFamily: 'Manrope_400Regular', fontSize: 13, color: '#6b746f', textAlign: 'center', paddingHorizontal: 18, paddingBottom: 14 }}>
+          <Text style={{ fontFamily: 'Manrope_400Regular', fontSize: 13, color: isDark ? '#8f9b95' : '#6b746f', textAlign: 'center', paddingHorizontal: 18, paddingBottom: 14 }}>
             {allViewMode === 'notes'
               ? 'All of your notes in one place, search and filter by subject.'
               : 'All of your tasks grouped by overdue, today, and future.'}
@@ -1860,8 +1873,8 @@ export default function MainScreen() {
                 if (filtered.length === 0) {
                   return (
                     <View style={styles.allQuickNotesEmpty}>
-                      <Text style={styles.emptyTitle}>No notes found</Text>
-                      <Text style={styles.emptyBody}>Try adjusting your search or filter.</Text>
+                      <Text style={[styles.emptyTitle, isDark && styles.emptyTitleDark]}>No notes found</Text>
+                      <Text style={[styles.emptyBody, isDark && styles.emptyBodyDark]}>Try adjusting your search or filter.</Text>
                     </View>
                   );
                 }
@@ -1870,12 +1883,12 @@ export default function MainScreen() {
                   const isQuick = !note.subjectId;
                   const subject = subjectLookup[note.subjectId];
                   return (
-                    <Pressable key={note.id} style={[styles.allQuickNoteCard, isQuick && styles.noteCardQuick]} onPress={() => { handleCloseAllQuickNotes(); handlePressQuickNote(note); }}>
-                      <Text style={styles.noteTitle}>{note.title || 'Untitled note'}</Text>
-                      <Text style={styles.noteBody} numberOfLines={1}>{note.contentText}</Text>
+                    <Pressable key={note.id} style={[styles.allQuickNoteCard, isDark && styles.allQuickNoteCardDark, isQuick && styles.noteCardQuick, isQuick && isDark && { backgroundColor: '#2a3d36', borderColor: '#3a4f47' }]} onPress={() => { handleCloseAllQuickNotes(); handlePressQuickNote(note); }}>
+                      <Text style={[styles.noteTitle, isDark && styles.noteTitleDark]}>{note.title || 'Untitled note'}</Text>
+                      <Text style={[styles.noteBody, isDark && styles.noteBodyDark]} numberOfLines={1}>{note.contentText}</Text>
                       <View style={styles.noteMetaRow}>
-                        <Text style={styles.noteDate}>{formatNoteDate(note.updatedAt)}</Text>
-                        <Text style={styles.noteOrigin}>{isQuick ? 'Quick note' : subject ? subject.code : 'Subject'}</Text>
+                        <Text style={[styles.noteDate, isDark && styles.noteDateDark]}>{formatNoteDate(note.updatedAt)}</Text>
+                        <Text style={[styles.noteOrigin, isDark && styles.noteOriginDark]}>{isQuick ? 'Quick note' : subject ? subject.code : 'Subject'}</Text>
                       </View>
                     </Pressable>
                   );
@@ -1894,8 +1907,8 @@ export default function MainScreen() {
                 if (!hasAny) {
                   return (
                     <View style={styles.allQuickNotesEmpty}>
-                      <Text style={styles.emptyTitle}>No tasks found</Text>
-                      <Text style={styles.emptyBody}>Complete all your pending tasks.</Text>
+                      <Text style={[styles.emptyTitle, isDark && styles.emptyTitleDark]}>No tasks found</Text>
+                      <Text style={[styles.emptyBody, isDark && styles.emptyBodyDark]}>Complete all your pending tasks.</Text>
                     </View>
                   );
                 }
@@ -1913,7 +1926,7 @@ export default function MainScreen() {
                       key={task.id}
                       onPress={() => handleOpenTaskEdit(task)}
                       onLongPress={() => handleOpenTaskDetail(task)}
-                      style={styles.taskCard}
+                      style={[styles.taskCard, isDark && styles.taskCardDark]}
                     >
                       {canComplete ? (
                         <Pressable
@@ -1921,32 +1934,32 @@ export default function MainScreen() {
                           onPress={() => void handleCompleteTask(task)}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <MaterialCommunityIcons name="circle-outline" size={22} color="#a0aba5" />
+                          <MaterialCommunityIcons name="circle-outline" size={22} color={isDark ? '#6e7b74' : '#a0aba5'} />
                         </Pressable>
                       ) : (
                         <View style={styles.taskCheckbox}>
-                          <Feather name="lock" size={15} color="#c9cdc9" />
+                          <Feather name="lock" size={15} color={isDark ? '#4a5a52' : '#c9cdc9'} />
                         </View>
                       )}
                       <View style={styles.taskTextWrapper}>
-                        <Text style={styles.taskTitle} numberOfLines={1}>{task.title}</Text>
+                        <Text style={[styles.taskTitle, isDark && styles.taskTitleDark]} numberOfLines={1}>{task.title}</Text>
                         {task.startDate ? (
                         <View style={styles.taskDueDateRow}>
-                          <Text style={[styles.taskDueDateText, isTimeOverdue && { color: '#BA1A1A' }]} numberOfLines={1}>
+                          <Text style={[styles.taskDueDateText, isDark && styles.taskDueDateTextDark, isTimeOverdue && { color: '#BA1A1A' }]} numberOfLines={1}>
                             {dueLabel}
                           </Text>
                           <View style={styles.repeatBadge}>
                             {isRecurring ? (
-                              <Feather name="repeat" size={12} color="#8f968f" style={task.reminderMinutes != null ? { marginRight: 4 } : undefined} />
+                              <Feather name="repeat" size={12} color={isDark ? '#6e7b74' : '#8f968f'} style={task.reminderMinutes != null ? { marginRight: 4 } : undefined} />
                             ) : null}
                             {task.reminderMinutes != null ? (
-                              <Feather name="bell" size={12} color="#8f968f" />
+                              <Feather name="bell" size={12} color={isDark ? '#6e7b74' : '#8f968f'} />
                             ) : null}
                             {subject ? (
-                              <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 16, color: '#6b746f', marginLeft: 6, lineHeight: 12, marginRight: 6 }}>·</Text>
+                              <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 16, color: isDark ? '#6e7b74' : '#6b746f', marginLeft: 6, lineHeight: 12, marginRight: 6 }}>·</Text>
                             ) : null}
                             {subject ? (
-                              <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 12, color: '#6b746f' }}>{subject.code ?? subject.title}</Text>
+                              <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 12, color: isDark ? '#6e7b74' : '#6b746f' }}>{subject.code ?? subject.title}</Text>
                             ) : null}
                           </View>
                         </View>
@@ -1965,8 +1978,8 @@ export default function MainScreen() {
                   return (
                     <View key={title} style={{ marginBottom: 8 }}>
                       <Pressable onPress={() => toggleSection(title)} style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 4 }}>
-                        <Text style={[styles.filterSectionLabel, { color: title === 'Overdue' ? '#BA1A1A' : '#6b746f', flex: 1 }]}>{title}</Text>
-                        <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#6b746f" style={{ marginLeft: 6 }} />
+                        <Text style={[styles.filterSectionLabel, isDark && styles.filterSectionLabelDark, { color: title === 'Overdue' ? '#BA1A1A' : isDark ? '#8f9b95' : '#6b746f', flex: 1 }]}>{title}</Text>
+                        <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={isDark ? '#6e7b74' : '#6b746f'} style={{ marginLeft: 6 }} />
                       </Pressable>
                       {isExpanded ? tasks.map(renderTaskCard) : null}
                     </View>
@@ -1983,8 +1996,8 @@ export default function MainScreen() {
                       return (
                       <View style={{ marginBottom: 8 }}>
                         <Pressable onPress={() => toggleSection('Completed')} style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 4 }}>
-                          <Text style={[styles.filterSectionLabel, { color: '#8f968f', flex: 1 }]}>COMPLETED</Text>
-                          <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#8f968f" style={{ marginLeft: 6 }} />
+                          <Text style={[styles.filterSectionLabel, isDark && styles.filterSectionLabelDark, { color: isDark ? '#6e7b74' : '#8f968f', flex: 1 }]}>COMPLETED</Text>
+                          <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginLeft: 6 }} />
                         </Pressable>
                         {isExpanded ? completed.map(({ task, completion }) => {
                           const isRecurring = task.repeatType && task.repeatType !== 'none';
@@ -1997,7 +2010,7 @@ export default function MainScreen() {
                               key={completion.id}
                               onPress={() => handleOpenTaskEdit(task)}
                               onLongPress={() => handleOpenTaskDetail(task, completion.occurrenceDate)}
-                              style={[styles.taskCard, { opacity: 0.7 }]}
+                              style={[styles.taskCard, isDark && styles.taskCardDark, { opacity: 0.7 }]}
                             >
                               <View style={styles.taskCheckbox}>
                                 {canUncomplete ? (
@@ -2005,41 +2018,41 @@ export default function MainScreen() {
                                     onPress={() => void handleUncompleteTask(task)}
                                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                                   >
-                                    <Feather name="rotate-ccw" size={16} color="#8f968f" />
+                                    <Feather name="rotate-ccw" size={16} color={isDark ? '#6e7b74' : '#8f968f'} />
                                   </Pressable>
                                 ) : (
-                                  <Feather name="lock" size={14} color="#c9cdc9" />
+                                  <Feather name="lock" size={14} color={isDark ? '#4a5a52' : '#c9cdc9'} />
                                 )}
                               </View>
                               <View style={styles.taskTextWrapper}>
-                                <Text style={[styles.taskTitle, { color: '#8f968f', textDecorationLine: 'line-through' }]} numberOfLines={1}>{task.title}</Text>
+                                <Text style={[styles.taskTitle, { color: isDark ? '#6e7b74' : '#8f968f', textDecorationLine: 'line-through' }]} numberOfLines={1}>{task.title}</Text>
                                 {task.startDate ? (
                                 <View style={styles.taskDueDateRow}>
-                                  <Text style={[styles.taskDueDateText, { color: '#8f968f' }]} numberOfLines={1}>{dueLabel}</Text>
+                                  <Text style={[styles.taskDueDateText, { color: isDark ? '#6e7b74' : '#8f968f' }]} numberOfLines={1}>{dueLabel}</Text>
                                   {isRecurring ? (
-                                    <Text style={[styles.taskDueDateText, { color: '#8f968f', marginLeft: 6 }]} numberOfLines={1}>
+                                    <Text style={[styles.taskDueDateText, { color: isDark ? '#6e7b74' : '#8f968f', marginLeft: 6 }]} numberOfLines={1}>
                                       {canUncomplete ? '(Completed today)' : '(Completed)'}
                                     </Text>
                                   ) : null}
                                   <View style={styles.repeatBadge}>
                                     {isRecurring ? (
-                                      <Feather name="repeat" size={12} color="#8f968f" style={task.reminderMinutes != null ? { marginRight: 4 } : undefined} />
+                                      <Feather name="repeat" size={12} color={isDark ? '#6e7b74' : '#8f968f'} style={task.reminderMinutes != null ? { marginRight: 4 } : undefined} />
                                     ) : null}
                                     {task.reminderMinutes != null ? (
-                                      <Feather name="bell" size={12} color="#8f968f" />
+                                      <Feather name="bell" size={12} color={isDark ? '#6e7b74' : '#8f968f'} />
                                     ) : null}
                                     {subject ? (
-                                      <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 16, color: '#8f968f', marginLeft: 6, lineHeight: 12, marginRight: 6 }}>·</Text>
+                                      <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 16, color: isDark ? '#6e7b74' : '#8f968f', marginLeft: 6, lineHeight: 12, marginRight: 6 }}>·</Text>
                                     ) : null}
                                     {subject ? (
-                                      <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 12, color: '#8f968f' }}>{subject.code ?? subject.title}</Text>
+                                      <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 12, color: isDark ? '#6e7b74' : '#8f968f' }}>{subject.code ?? subject.title}</Text>
                                     ) : null}
                                   </View>
                                 </View>
                                 ) : null}
                               </View>
                               {task.priority ? (
-                                <MaterialIcons name="flag" size={22} color={'#8f968f'} style={{ marginLeft: 12 }} />
+                                <MaterialIcons name="flag" size={22} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginLeft: 12 }} />
                               ) : null}
                             </CardScale>
                           );
@@ -2104,25 +2117,25 @@ export default function MainScreen() {
               },
             ]}
           >
-            <View style={[styles.panel, { maxHeight: screenHeight * 0.5 }]} {...allViewModeSheetPanResponder.panHandlers}>
-              <View style={styles.handle} />
-              <View style={{ backgroundColor: '#ffffff', borderRadius: 20, overflow: 'hidden', ...shadowLg, marginBottom: 24 }}>
+            <View style={[styles.panel, isDark && styles.panelDark, { maxHeight: screenHeight * 0.5 }]} {...allViewModeSheetPanResponder.panHandlers}>
+              <View style={[styles.handle, isDark && styles.handleDark]} />
+              <View style={{ backgroundColor: isDark ? '#0f201b' : '#ffffff', borderRadius: 20, overflow: 'hidden', ...shadowLg, marginBottom: 24 }}>
                 <Pressable
                   style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
                   onPress={() => handleSelectAllViewMode('notes')}
                 >
-                  <Feather name="file-text" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                  <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>Notes</Text>
-                  {allViewMode === 'notes' && <Feather name="check" size={20} color="#0f2a24" />}
+                  <Feather name="file-text" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                  <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#d7e4dd' : '#1e2b26', paddingVertical: 14 }}>Notes</Text>
+                  {allViewMode === 'notes' && <Feather name="check" size={20} color="#3d6657" />}
                 </Pressable>
-                <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                 <Pressable
                   style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
                   onPress={() => handleSelectAllViewMode('tasks')}
                 >
-                  <Feather name="check-square" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                  <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>Tasks</Text>
-                  {allViewMode === 'tasks' && <Feather name="check" size={20} color="#0f2a24" />}
+                  <Feather name="check-square" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                  <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#d7e4dd' : '#1e2b26', paddingVertical: 14 }}>Tasks</Text>
+                  {allViewMode === 'tasks' && <Feather name="check" size={20} color="#3d6657" />}
                 </Pressable>
               </View>
             </View>
@@ -2152,8 +2165,8 @@ export default function MainScreen() {
             }],
           }]}
         >
-          <View style={[styles.filterPanel, { maxHeight: screenHeight * 0.6 }]} {...noteFilterPanResponder.panHandlers}>
-            <View style={styles.filterHandle} />
+          <View style={[styles.filterPanel, isDark && styles.filterPanelDark, { maxHeight: screenHeight * 0.6 }]} {...noteFilterPanResponder.panHandlers}>
+            <View style={[styles.filterHandle, isDark && styles.filterHandleDark]} />
 
             <ScrollView
               bounces={false}
@@ -2161,9 +2174,9 @@ export default function MainScreen() {
               onScroll={(e) => { noteFilterScrollYRef.current = e.nativeEvent.contentOffset.y; }}
               scrollEventThrottle={16}
             >
-              <Text style={styles.filterTitle}>Filter Notes</Text>
+              <Text style={[styles.filterTitle, isDark && styles.filterTitleDark]}>Filter Notes</Text>
 
-              <Text style={styles.filterSectionLabel}>Type</Text>
+              <Text style={[styles.filterSectionLabel, isDark && styles.filterSectionLabelDark]}>Type</Text>
               <View style={styles.filterOptionsRow}>
                 {(['all', 'quick'] as const).map((type) => {
                   const label = { all: 'All Notes', quick: 'Quick notes' }[type];
@@ -2171,10 +2184,10 @@ export default function MainScreen() {
                   return (
                     <Pressable
                       key={type}
-                      style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+                      style={[styles.filterChip, isDark && styles.filterChipDark, isSelected && styles.filterChipSelected]}
                       onPress={() => handleSelectNoteFilter(type === 'all' ? null : type)}
                     >
-                      <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>{label}</Text>
+                      <Text style={[styles.filterChipText, isDark && styles.filterChipTextDark, isSelected && styles.filterChipTextSelected]}>{label}</Text>
                     </Pressable>
                   );
                 })}
@@ -2186,17 +2199,17 @@ export default function MainScreen() {
                 if (subjects.length === 0) return null;
                 return (
                   <>
-                    <Text style={styles.filterSectionLabel}>Subject</Text>
+                    <Text style={[styles.filterSectionLabel, isDark && styles.filterSectionLabelDark]}>Subject</Text>
                     <View style={styles.filterOptionsRow}>
                       {subjects.map(({ id, info }) => {
                         const isSelected = allNotesFilter === id;
                         return (
                           <Pressable
                             key={id}
-                            style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+                            style={[styles.filterChip, isDark && styles.filterChipDark, isSelected && styles.filterChipSelected]}
                             onPress={() => handleSelectNoteFilter(isSelected ? null : id)}
                           >
-                            <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>{info.code}</Text>
+                            <Text style={[styles.filterChipText, isDark && styles.filterChipTextDark, isSelected && styles.filterChipTextSelected]}>{info.code}</Text>
                           </Pressable>
                         );
                       })}
@@ -2247,8 +2260,8 @@ export default function MainScreen() {
               },
             ]}
           >
-            <View style={[styles.panel, { maxHeight: screenHeight * 0.8 }]} {...taskDetailPanResponder.panHandlers}>
-              <View style={styles.handle} />
+            <View style={[styles.panel, isDark && styles.panelDark, { maxHeight: screenHeight * 0.8 }]} {...taskDetailPanResponder.panHandlers}>
+              <View style={[styles.handle, isDark && styles.handleDark]} />
               <ScrollView
                 bounces={false}
                 showsVerticalScrollIndicator={false}
@@ -2256,12 +2269,12 @@ export default function MainScreen() {
                 onScroll={(e) => { taskDetailScrollYRef.current = e.nativeEvent.contentOffset.y; }}
                 scrollEventThrottle={16}
               >
-                  <View style={{ backgroundColor: '#ffffff', borderRadius: 20, overflow: 'hidden', ...shadowLg, marginBottom: 20 }}>
+                  <View style={{ backgroundColor: isDark ? '#0f201b' : '#ffffff', borderRadius: 20, overflow: 'hidden', ...shadowLg, marginBottom: 20 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}>
-                    <Feather name="check-square" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                    <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>{detailTask.title}</Text>
+                    <Feather name="check-square" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                    <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#d7e4dd' : '#1e2b26', paddingVertical: 14 }}>{detailTask.title}</Text>
                   </View>
-                  <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                  <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                   <Pressable
                     style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
                     onPress={() => {
@@ -2269,27 +2282,27 @@ export default function MainScreen() {
                       if (sub) handleOpenDetailTaskSubject(sub, detailTask.id);
                     }}
                   >
-                    <Feather name="book-open" size={16} color="#5c6762" style={{ marginRight: 10 }} />
-                    <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#5c6762', paddingVertical: 14 }}>
+                    <Feather name="book-open" size={16} color={isDark ? '#6e7b74' : '#5c6762'} style={{ marginRight: 10 }} />
+                    <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#6e7b74' : '#5c6762', paddingVertical: 14 }}>
                       {dbSubjects.find((s) => s.id === detailTask.subjectId)?.title ?? 'Unknown'}
                     </Text>
-                    <Feather name="arrow-right" size={18} color="#9aa09a" />
+                    <Feather name="arrow-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
                   </Pressable>
                   {detailTask.description ? (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, minHeight: 88 }}>
-                        <Feather name="align-left" size={16} color="#8f968f" style={{ marginRight: 10, marginTop: 16 }} />
-                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>{detailTask.description}</Text>
+                        <Feather name="align-left" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10, marginTop: 16 }} />
+                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#d7e4dd' : '#1e2b26', paddingVertical: 14 }}>{detailTask.description}</Text>
                       </View>
                     </>
                   ) : null}
                   {detailTask.startDate ? (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}>
-                        <Feather name="calendar" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>
+                        <Feather name="calendar" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#d7e4dd' : '#1e2b26', paddingVertical: 14 }}>
                           {new Date(detailTask.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           {' '}
                           {new Date(detailTask.startDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
@@ -2299,10 +2312,10 @@ export default function MainScreen() {
                   ) : null}
                   {detailTask.priority ? (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}>
-                        <MaterialIcons name="flag" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>
+                        <MaterialIcons name="flag" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#d7e4dd' : '#1e2b26', paddingVertical: 14 }}>
                           {detailTask.priority === 'high' ? 'High' : 'Low'} Priority
                         </Text>
                       </View>
@@ -2310,19 +2323,19 @@ export default function MainScreen() {
                   ) : null}
                   {detailTask.category ? (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}>
-                        <Feather name="folder" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>{detailTask.category}</Text>
+                        <Feather name="folder" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#d7e4dd' : '#1e2b26', paddingVertical: 14 }}>{detailTask.category}</Text>
                       </View>
                     </>
                   ) : null}
                   {detailTask.repeatType !== 'none' ? (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}>
-                        <Feather name="repeat" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26', paddingVertical: 14 }}>
+                        <Feather name="repeat" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={{ flex: 1, fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#d7e4dd' : '#1e2b26', paddingVertical: 14 }}>
                           {detailTask.repeatType === 'daily' ? 'Daily' : detailTask.repeatType === 'weekly' ? `Weekly${detailTask.repeatDays && detailTask.repeatDays.length > 0 ? ` (${detailTask.repeatDays.join(', ')})` : ''}` : detailTask.repeatType === 'monthly' ? 'Monthly' : ''}
                         </Text>
                       </View>
@@ -2330,7 +2343,7 @@ export default function MainScreen() {
                   ) : null}
                   {detailTask.repeatType !== 'none' ? (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <Pressable
                         style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
                         onPress={() => {
@@ -2341,7 +2354,7 @@ export default function MainScreen() {
                         <Feather name="trash-2" size={16} color="#b42318" style={{ marginRight: 10 }} />
                         <Text style={{ fontFamily: 'Manrope_600SemiBold', fontSize: 16, color: '#b42318' }}>Delete this occurrence only</Text>
                       </Pressable>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <Pressable
                         style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
                         onPress={() => {
@@ -2355,7 +2368,7 @@ export default function MainScreen() {
                     </>
                   ) : (
                     <>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={{ height: 1, backgroundColor: isDark ? '#2a3d36' : '#f0f0ed' }} />
                       <Pressable
                         style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52 }}
                         onPress={() => {
@@ -3024,4 +3037,50 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#f2f1ee',
   },
+  mainContentDark: {
+    backgroundColor: '#0a1613',
+  },
+  headerRowDark: {
+    backgroundColor: '#0a1613',
+  },
+  headerIconButtonDark: {
+    backgroundColor: '#0f201b',
+    borderColor: '#2a3d36',
+  },
+  greetingLine2Dark: { color: '#d7e4dd' },
+  subtitleDark: { color: '#8f9b95' },
+  dateTextDark: { color: '#8f9b95' },
+  sectionHeaderTitleDark: { color: '#d7e4dd' },
+  cardDark: { backgroundColor: '#0f201b' },
+  sectionEmptyStateDark: { backgroundColor: '#0f201b' },
+  sectionEmptyIconWrapperDark: { backgroundColor: '#2a3d36', borderColor: 'rgba(255,255,255,0.04)' },
+  sectionEmptyTitleDark: { color: '#7a8a82' },
+  sectionEmptyBodyDark: { color: '#6e7b74' },
+  emptyTitleDark: { color: '#d7e4dd' },
+  emptyBodyDark: { color: '#8f9b95' },
+  quickNoteButtonDark: { backgroundColor: '#0f201b' },
+  quickNoteButtonTextDark: { color: '#8f9b95' },
+  taskCardDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  taskTitleDark: { color: '#d7e4dd' },
+  taskDueDateTextDark: { color: '#8f9b95' },
+  noteCardDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  noteTitleDark: { color: '#d7e4dd' },
+  noteBodyDark: { color: '#8f9b95' },
+  noteDateDark: { color: '#6e7b74' },
+  noteOriginDark: { color: '#6e7b74' },
+  actionButtonDark: { backgroundColor: '#0f201b' },
+  actionIconCircleDark: { backgroundColor: '#2a3d36' },
+  actionTextDark: { color: '#d7e4dd' },
+  filterPanelDark: { backgroundColor: '#0a1613' },
+  filterHandleDark: { backgroundColor: '#2a3d36' },
+  filterTitleDark: { color: '#d7e4dd' },
+  filterSectionLabelDark: { color: '#8f9b95' },
+  filterChipDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  filterChipTextDark: { color: '#d7e4dd' },
+  panelDark: { backgroundColor: '#0a1613' },
+  handleDark: { backgroundColor: '#2a3d36' },
+  allQuickNotesTitleDark: { color: '#d7e4dd' },
+  allQuickNotesDividerDark: { backgroundColor: '#2a3d36' },
+  allQuickNoteCardDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  backButtonDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
 });

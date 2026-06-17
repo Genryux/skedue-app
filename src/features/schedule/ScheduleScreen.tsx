@@ -1,5 +1,6 @@
 import { BlurView } from 'expo-blur';
 import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import { useTheme } from '../../ui/theme/ThemeContext';
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { Animated, Dimensions, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { SubjectRecord } from '../../data/local/db';
@@ -93,6 +94,7 @@ const buildMonthGrid = (year: number, month: number) => {
 };
 
 export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail }: ScheduleScreenProps) {
+  const { isDark } = useTheme();
   const today = new Date();
   const todayKey = getLocalDateKey(today);
 
@@ -531,9 +533,9 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
   }, [selectedEntries, scheduleFilter]);
 
   const renderDots = (count: number, isToday?: boolean) => {
-    if (count <= 0) return <View style={[styles.dot, isToday ? styles.dotToday : styles.dotMuted]} />;
+    if (count <= 0) return <View style={[styles.dot, isToday ? styles.dotToday : (isDark ? styles.dotMutedDark : styles.dotMuted)]} />;
     return Array.from({ length: Math.min(count, 3) }).map((_, index) => (
-      <View key={index} style={[styles.dot, isToday && styles.dotToday]} />
+      <View key={index} style={[styles.dot, isDark && !isToday && styles.dotDark, isToday && styles.dotToday]} />
     ));
   };
 
@@ -553,39 +555,39 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
   return (
     <View style={styles.container}>
       <View style={styles.titleBlock}>
-        <Text style={styles.headerTitle}>My Schedule</Text>
-        <Pressable style={styles.filterButton} onPress={handleOpenFilter} hitSlop={8}>
+        <Text style={[styles.headerTitle, isDark && styles.headerTitleDark]}>My Schedule</Text>
+        <Pressable style={[styles.filterButton, isDark && styles.filterButtonDark]} onPress={handleOpenFilter} hitSlop={8}>
           {scheduleFilter.subjects !== scheduleFilter.tasks ? (
             <MaterialCommunityIcons name="filter-variant" size={16} color="#4d7e6a" />
           ) : (
-            <Feather name="filter" size={16} color="#1e2b26" />
+            <Feather name="filter" size={16} color={isDark ? '#d7e4dd' : '#1e2b26'} />
           )}
         </Pressable>
       </View>
+      <View style={[styles.weekCard, isDark && styles.weekCardDark]}>
 
-      <View style={styles.weekCard}>
-        {isMonthView ? (
-          <>
-            <View style={styles.monthHeader}>
-              <Text style={styles.monthLabel}>
+          {isMonthView ? (
+            <>
+              <View style={styles.monthHeader}>
+                <Text style={[styles.monthLabel, isDark && styles.monthLabelDark]}>
                 {MONTH_NAMES[monthDate.getMonth()]} {monthDate.getFullYear()}
               </Text>
               <View style={styles.headerRightGroup}>
-                <Pressable style={styles.calendarToggle} onPress={toggleCalendarView} hitSlop={8}>
-                  <Feather name={isMonthView ? 'columns' : 'calendar'} size={18} color="#1e2b26" />
+                <Pressable style={[styles.calendarToggle, isDark && styles.calendarToggleDark]} onPress={toggleCalendarView} hitSlop={8}>
+                  <Feather name={isMonthView ? 'columns' : 'calendar'} size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
                 </Pressable>
-                <Pressable style={styles.arrowButton} onPress={() => handleShiftMonth('prev')}>
-                  <Feather name="chevron-left" size={18} color="#1f2d28" />
+                <Pressable style={[styles.arrowButton, isDark && styles.arrowButtonDark]} onPress={() => handleShiftMonth('prev')}>
+                  <Feather name="chevron-left" size={18} color={isDark ? '#d7e4dd' : '#1f2d28'} />
                 </Pressable>
-                <Pressable style={styles.arrowButton} onPress={() => handleShiftMonth('next')}>
-                  <Feather name="chevron-right" size={18} color="#1f2d28" />
+                <Pressable style={[styles.arrowButton, isDark && styles.arrowButtonDark]} onPress={() => handleShiftMonth('next')}>
+                  <Feather name="chevron-right" size={18} color={isDark ? '#d7e4dd' : '#1f2d28'} />
                 </Pressable>
               </View>
             </View>
 
             <View style={styles.monthDayHeaders}>
               {DAY_HEADERS.map((d, i) => (
-                <Text key={`hdr-${i}`} style={styles.monthDayHeaderText}>{d}</Text>
+                <Text key={`hdr-${i}`} style={[styles.monthDayHeaderText, isDark && styles.monthDayHeaderTextDark]}>{d}</Text>
               ))}
             </View>
 
@@ -604,16 +606,16 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
                     const hasEntries = hasMonthEntry(day);
 
                     const cellStyle = isToday
-                      ? styles.monthCellToday
+                      ? [styles.monthCellToday, isDark && styles.monthCellTodayDark]
                       : isSelected
-                        ? styles.monthCellSelected
+                        ? [styles.monthCellSelected, isDark && styles.monthCellSelectedDark]
                         : styles.monthCell;
 
                     const numStyle = isToday
-                      ? styles.monthCellNumToday
+                      ? [styles.monthCellNumToday, isDark && styles.monthCellNumTodayDark]
                       : isSelected
-                        ? styles.monthCellNumSelected
-                        : styles.monthCellNum;
+                        ? [styles.monthCellNumSelected, isDark && styles.monthCellNumSelectedDark]
+                        : [styles.monthCellNum, isDark && styles.monthCellNumDark];
 
                     return (
                       <Pressable
@@ -622,7 +624,7 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
                         onPress={() => handleDayPress(key)}
                       >
                         <Text style={numStyle}>{day}</Text>
-                        {hasEntries ? <View style={[styles.monthDot, (isToday || isSelected) && styles.monthDotLight]} /> : null}
+                        {hasEntries ? <View style={[styles.monthDot, (isToday || isSelected) && styles.monthDotLight, !isToday && !isSelected && isDark && styles.monthDotDark]} /> : null}
                       </Pressable>
                     );
                   })}
@@ -633,16 +635,16 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
         ) : (
           <>
             <View style={styles.weekHeader}>
-              <Text style={styles.weekRange}>{weekRangeLabel}</Text>
+              <Text style={[styles.weekRange, isDark && styles.weekRangeDark]}>{weekRangeLabel}</Text>
               <View style={styles.headerRightGroup}>
-                <Pressable style={styles.calendarToggle} onPress={toggleCalendarView} hitSlop={8}>
-                  <Feather name={isMonthView ? 'columns' : 'calendar'} size={18} color="#1e2b26" />
+                <Pressable style={[styles.calendarToggle, isDark && styles.calendarToggleDark]} onPress={toggleCalendarView} hitSlop={8}>
+                  <Feather name={isMonthView ? 'columns' : 'calendar'} size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
                 </Pressable>
-                <Pressable style={styles.arrowButton} onPress={() => handleShiftWeek('prev')}>
-                  <Feather name="chevron-left" size={18} color="#1f2d28" />
+                <Pressable style={[styles.arrowButton, isDark && styles.arrowButtonDark]} onPress={() => handleShiftWeek('prev')}>
+                  <Feather name="chevron-left" size={18} color={isDark ? '#d7e4dd' : '#1f2d28'} />
                 </Pressable>
-                <Pressable style={styles.arrowButton} onPress={() => handleShiftWeek('next')}>
-                  <Feather name="chevron-right" size={18} color="#1f2d28" />
+                <Pressable style={[styles.arrowButton, isDark && styles.arrowButtonDark]} onPress={() => handleShiftWeek('next')}>
+                  <Feather name="chevron-right" size={18} color={isDark ? '#d7e4dd' : '#1f2d28'} />
                 </Pressable>
               </View>
             </View>
@@ -654,22 +656,22 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
                 const dotCount = (entriesByDay.get(day.key) ?? entriesByDayAll.get(day.key) ?? []).length;
 
                 const chipStyle = isToday
-                  ? styles.dayChipToday
+                  ? [styles.dayChipToday, isDark && styles.dayChipTodayDark]
                   : isSelected
-                    ? styles.dayChipFocused
+                    ? [styles.dayChipFocused, isDark && styles.dayChipFocusedDark]
                     : styles.dayChip;
 
                 const letterStyle = isToday
-                  ? styles.dayLetterSelected
+                  ? [styles.dayLetterSelected, isDark && styles.dayLetterSelectedDark]
                   : isSelected
-                    ? styles.dayLetterFocused
+                    ? [styles.dayLetterFocused, isDark && styles.dayLetterFocusedDark]
                     : styles.dayLetter;
 
                 const numberStyle = isToday
-                  ? styles.dayNumberSelected
+                  ? [styles.dayNumberSelected, isDark && styles.dayNumberSelectedDark]
                   : isSelected
-                    ? styles.dayNumberFocused
-                    : styles.dayNumber;
+                    ? [styles.dayNumberFocused, isDark && styles.dayNumberFocusedDark]
+                    : [styles.dayNumber, isDark && styles.dayNumberDark];
 
                 return (
                   <Pressable
@@ -689,14 +691,14 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
       </View>
 
       <Animated.View style={[styles.timeline, { opacity: contentOpacity }]}>
-        {filteredSelectedEntries.length > 0 && <View style={styles.timeLine} />}
+        {filteredSelectedEntries.length > 0 && <View style={[styles.timeLine, isDark && styles.timelineDark]} />}
 
         {filteredSelectedEntries.length === 0 ? (
-          <View style={styles.sectionEmptyState}>
-            <View style={styles.sectionEmptyIconWrapper}>
-              <Feather name="calendar" size={18} color="#8f968f" />
+          <View style={[styles.sectionEmptyState, isDark && styles.sectionEmptyStateDark]}>
+            <View style={[styles.sectionEmptyIconWrapper, isDark && styles.sectionEmptyIconWrapperDark]}>
+              <Feather name="calendar" size={18} color={isDark ? '#6e7b74' : '#8f968f'} />
             </View>
-            <Text style={styles.sectionEmptyTitle}>Nothing scheduled</Text>
+            <Text style={[styles.sectionEmptyTitle, isDark && styles.sectionEmptyTitleDark]}>Nothing scheduled</Text>
           </View>
         ) : (
           filteredSelectedEntries.map((entry, ei) => {
@@ -720,22 +722,22 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
                   <View style={styles.timeWrapperSpacer} />
                 ) : (
                   <View style={styles.timeWrapper}>
-                    <Text style={styles.timeText}>{formatHourLabel(startMins)}</Text>
-                    <View style={[styles.timeDot, isActive && styles.timeDotActive]} />
+                    <Text style={[styles.timeText, isDark && styles.timeTextDark]}>{formatHourLabel(startMins)}</Text>
+                    <View style={[styles.timeDot, isDark && { backgroundColor: '#0f201b', borderColor: '#2a3d36' }, isActive && styles.timeDotActive]} />
                   </View>
                 )}
-                <Pressable style={[styles.eventCard, isActive && styles.eventCardPrimary, isPast && styles.eventCardPast, entry.isCompleted && styles.eventCardDone]} onPress={() => openDetail(entry)}>
-                  <View style={[styles.eventAccent, isActive && styles.eventAccentActive, isPast && styles.eventAccentPast]} />
+                <Pressable style={[styles.eventCard, isDark && styles.eventCardDark, isActive && styles.eventCardPrimary, isActive && isDark && styles.eventCardPrimaryDark, isPast && styles.eventCardPast, isPast && isDark && styles.eventCardPastDark, entry.isCompleted && styles.eventCardDone]} onPress={() => openDetail(entry)}>
+                  <View style={[styles.eventAccent, isDark && styles.eventAccentDark, isActive && styles.eventAccentActive, isPast && styles.eventAccentPast, isPast && isDark && styles.eventAccentPastDark]} />
                   <View style={[styles.eventContent, entry.isCompleted && styles.eventContentDone]}>
                     <View style={styles.eventTitleRow}>
-                      <Text style={[styles.eventTitle, entry.isCompleted && styles.eventTitleDone]} numberOfLines={1}>{entry.title}</Text>
+                      <Text style={[styles.eventTitle, isDark && styles.eventTitleDark, entry.isCompleted && styles.eventTitleDone]} numberOfLines={1}>{entry.title}</Text>
                     </View>
                     <View style={styles.eventTimeRow}>
-                      <Text style={[styles.eventTimeText, entry.isCompleted && styles.eventTimeTextDone, entry.kind === 'task' && isPast && !entry.isCompleted && styles.eventTimeTextPast]}>
+                      <Text style={[styles.eventTimeText, isDark && styles.eventTimeTextDark, entry.isCompleted && styles.eventTimeTextDone, entry.kind === 'task' && isPast && !entry.isCompleted && styles.eventTimeTextPast]}>
                         {entry.startTime}{entry.endTime ? ` - ${entry.endTime}` : ''}
                       </Text>
                       {entry.isCompleted ? (
-                        <Text style={styles.completedLabel}>
+                        <Text style={[styles.completedLabel, isDark && styles.completedLabelDark]}>
                           {isCompletedToday ? '(completed today)' : '(completed)'}
                         </Text>
                       ) : null}
@@ -746,10 +748,10 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
                       <MaterialIcons
                         name="flag"
                         size={16}
-                        color={entry.isCompleted ? '#d0d4d0' : entry.priority === 'high' ? '#d1453b' : entry.priority === 'low' ? '#e88d3f' : (isActive ? '#8fbaa4' : isPast ? '#c9cdc9' : '#c5c9c5')}
+                        color={entry.isCompleted ? (isDark ? '#4a5a52' : '#d0d4d0') : entry.priority === 'high' ? '#d1453b' : entry.priority === 'low' ? '#e88d3f' : (isActive ? '#8fbaa4' : isPast ? (isDark ? '#4a5a52' : '#c9cdc9') : isDark ? '#5a6b63' : '#c5c9c5')}
                       />
                     ) : (
-                      <Feather name="book-open" size={16} color={isActive ? '#8fbaa4' : isPast ? '#c9cdc9' : '#c5c9c5'} />
+                      <Feather name="book-open" size={16} color={isActive ? '#8fbaa4' : isPast ? (isDark ? '#4a5a52' : '#c9cdc9') : isDark ? '#5a6b63' : '#c5c9c5'} />
                     )}
                   </View>
                 </Pressable>
@@ -779,27 +781,27 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
               }],
             }]}
           >
-            <View style={[styles.filterPanel, { maxHeight: SCREEN_HEIGHT * 0.6 }]} {...filterPanResponder.panHandlers}>
-              <View style={styles.filterHandle} />
+            <View style={[styles.filterPanel, isDark && styles.filterPanelDark, { maxHeight: SCREEN_HEIGHT * 0.6 }]} {...filterPanResponder.panHandlers}>
+              <View style={[styles.filterHandle, isDark && styles.filterHandleDark]} />
               <ScrollView
                 bounces={false}
                 showsVerticalScrollIndicator={false}
               >
-                <Text style={styles.filterTitle}>Show</Text>
+                <Text style={[styles.filterTitle, isDark && styles.filterTitleDark]}>Show</Text>
 
-                <View style={styles.filterOptionsCard}>
+                <View style={[styles.filterOptionsCard, isDark && styles.cardDark]}>
                   <Pressable style={styles.filterCheckRow} onPress={() => handleToggleFilter('subjects')}>
-                    <View style={[styles.filterCheckbox, scheduleFilter.subjects && styles.filterCheckboxChecked]}>
+                    <View style={[styles.filterCheckbox, scheduleFilter.subjects && styles.filterCheckboxChecked, scheduleFilter.subjects && isDark && styles.filterCheckboxCheckedDark]}>
                       {scheduleFilter.subjects ? <Feather name="check" size={12} color="#ffffff" /> : null}
                     </View>
-                    <Text style={styles.filterCheckLabel}>Subjects</Text>
+                    <Text style={[styles.filterCheckLabel, isDark && styles.filterSectionLabelDark]}>Subjects</Text>
                   </Pressable>
-                  <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                  <View style={[{ height: 1, backgroundColor: '#f0f0ed' }, isDark && styles.separatorDark]} />
                   <Pressable style={styles.filterCheckRow} onPress={() => handleToggleFilter('tasks')}>
-                    <View style={[styles.filterCheckbox, scheduleFilter.tasks && styles.filterCheckboxChecked]}>
+                    <View style={[styles.filterCheckbox, scheduleFilter.tasks && styles.filterCheckboxChecked, scheduleFilter.tasks && isDark && styles.filterCheckboxCheckedDark]}>
                       {scheduleFilter.tasks ? <Feather name="check" size={12} color="#ffffff" /> : null}
                     </View>
-                    <Text style={styles.filterCheckLabel}>Tasks</Text>
+                    <Text style={[styles.filterCheckLabel, isDark && styles.filterSectionLabelDark]}>Tasks</Text>
                   </Pressable>
                 </View>
               </ScrollView>
@@ -827,57 +829,57 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
               }],
             }]}
           >
-            <View style={styles.detailPanel} {...handlePanResponder.panHandlers}>
-              <View style={styles.detailHandle} />
+            <View style={[styles.detailPanel, isDark && styles.panelDark]} {...handlePanResponder.panHandlers}>
+              <View style={[styles.detailHandle, isDark && styles.handleDark]} />
               {detailEntry && (
                 <>
                   {detailEntry.kind === 'task' ? (
-                    <View style={styles.detailCard}>
+                    <View style={[styles.detailCard, isDark && styles.modalCardDark]}>
                       <View style={styles.editInfoRow}>
                         <MaterialIcons
                           name="flag"
                           size={16}
-                          color={detailEntry.isCompleted ? '#d0d4d0' : detailEntry.priority === 'high' ? '#d1453b' : detailEntry.priority === 'low' ? '#e88d3f' : '#8f968f'}
+                          color={detailEntry.isCompleted ? '#d0d4d0' : detailEntry.priority === 'high' ? '#d1453b' : detailEntry.priority === 'low' ? '#e88d3f' : isDark ? '#6e7b74' : '#8f968f'}
                           style={{ marginRight: 10 }}
                         />
-                        <Text style={styles.editInfoInput}>{detailEntry.title}</Text>
+                        <Text style={[styles.editInfoInput, isDark && styles.subtitleDark]}>{detailEntry.title}</Text>
                       </View>
                       {detailEntry.subjectTitle ? (
                         <>
-                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={[{ height: 1, backgroundColor: '#f0f0ed' }, isDark && styles.separatorDark]} />
                           {detailEntry.subjectId ? (
                             <Pressable style={styles.editInfoRow} onPress={() => {
                               closeDetail();
                               const subject = subjects.find((s) => s.id === detailEntry.subjectId);
                               if (subject) onOpenSubjectDetail?.(subject);
                             }}>
-                              <Feather name="book-open" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                              <Text style={styles.editInfoInput}>{detailEntry.subjectTitle}</Text>
-                              <Feather name="arrow-right" size={16} color="#c5c9c5" />
+                              <Feather name="book-open" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                              <Text style={[styles.editInfoInput, isDark && styles.subtitleDark]}>{detailEntry.subjectTitle}</Text>
+                              <Feather name="arrow-right" size={16} color={isDark ? '#6e7b74' : '#c5c9c5'} />
                             </Pressable>
                           ) : (
                             <View style={styles.editInfoRow}>
-                              <Feather name="book-open" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                              <Text style={styles.editInfoInput}>{detailEntry.subjectTitle}</Text>
-                            </View>
-                          )}
-                        </>
-                      ) : null}
-                      {detailEntry.description ? (
-                        <>
-                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
-                          <View style={[styles.editInfoRow, { minHeight: 88, alignItems: 'flex-start' }]}>
-                            <Feather name="align-left" size={16} color="#8f968f" style={{ marginRight: 10, marginTop: 16 }} />
-                            <Text style={styles.editInfoInput}>{detailEntry.description}</Text>
+                            <Feather name="book-open" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                            <Text style={[styles.editInfoInput, isDark && styles.subtitleDark]}>{detailEntry.subjectTitle}</Text>
+                          </View>
+                        )}
+                      </>
+                    ) : null}
+                    {detailEntry.description ? (
+                      <>
+                        <View style={[{ height: 1, backgroundColor: '#f0f0ed' }, isDark && styles.separatorDark]} />
+                        <View style={[styles.editInfoRow, { minHeight: 88, alignItems: 'flex-start' }]}>
+                          <Feather name="align-left" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10, marginTop: 16 }} />
+                            <Text style={[styles.editInfoInput, isDark && styles.subtitleDark]}>{detailEntry.description}</Text>
                           </View>
                         </>
                       ) : null}
                       {detailEntry.dueAt ? (
                         <>
-                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={[{ height: 1, backgroundColor: '#f0f0ed' }, isDark && styles.separatorDark]} />
                           <View style={styles.editInfoRow}>
-                            <Feather name="calendar" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                            <Text style={styles.editInfoInput}>
+                            <Feather name="calendar" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                            <Text style={[styles.editInfoInput, isDark && styles.subtitleDark]}>
                               {new Date(detailEntry.dueAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                               {' '}
                               {detailEntry.startTime ? new Date(detailEntry.dueAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''}
@@ -887,10 +889,10 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
                       ) : null}
                       {detailEntry.priority ? (
                         <>
-                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={[{ height: 1, backgroundColor: '#f0f0ed' }, isDark && styles.separatorDark]} />
                           <View style={styles.editInfoRow}>
-                            <MaterialIcons name="flag" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                            <Text style={styles.editInfoInput}>
+                            <MaterialIcons name="flag" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                            <Text style={[styles.editInfoInput, isDark && styles.subtitleDark]}>
                               {detailEntry.priority === 'high' ? 'High' : 'Low'} Priority
                             </Text>
                           </View>
@@ -898,31 +900,31 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
                       ) : null}
                       {detailEntry.category ? (
                         <>
-                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={[{ height: 1, backgroundColor: '#f0f0ed' }, isDark && styles.separatorDark]} />
                           <View style={styles.editInfoRow}>
-                            <Feather name="folder" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                            <Text style={styles.editInfoInput}>{detailEntry.category}</Text>
+                            <Feather name="folder" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                            <Text style={[styles.editInfoInput, isDark && styles.subtitleDark]}>{detailEntry.category}</Text>
                           </View>
                         </>
                       ) : null}
                       {detailEntry.repeatType && detailEntry.repeatType !== 'none' ? (
                         <>
-                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={[{ height: 1, backgroundColor: '#f0f0ed' }, isDark && styles.separatorDark]} />
                           <View style={styles.editInfoRow}>
-                            <Feather name="repeat" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                            <Text style={styles.editInfoInput}>
+                            <Feather name="repeat" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                            <Text style={[styles.editInfoInput, isDark && styles.subtitleDark]}>
                               {detailEntry.repeatType === 'daily' ? 'Daily' : detailEntry.repeatType === 'weekly' ? `Weekly${detailEntry.repeatDays && detailEntry.repeatDays.length > 0 ? ` (${detailEntry.repeatDays.join(', ')})` : ''}` : detailEntry.repeatType === 'monthly' ? 'Monthly' : ''}
                             </Text>
                           </View>
                         </>
                       ) : null}
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={[{ height: 1, backgroundColor: '#f0f0ed' }, isDark && styles.separatorDark]} />
                       {(() => {
                         const isRecurring = detailEntry.repeatType && detailEntry.repeatType !== 'none';
                         const occDate = detailEntry.occurrenceDate ?? detailEntry.dueAt ?? 0;
                         const canMarkDone = !detailEntry.isCompleted && (!isRecurring || isSameCalendarDay(occDate, Date.now()) || occDate < Date.now());
                         const label = detailEntry.isCompleted ? 'Completed' : canMarkDone ? 'Mark as done' : 'Locked';
-                        const color = canMarkDone ? '#0f2a24' : '#c9cdc9';
+                        const color = canMarkDone ? (isDark ? '#d7e4dd' : '#0f2a24') : '#c9cdc9';
                         return (
                           <Pressable
                             style={[styles.editInfoRow, !canMarkDone && { opacity: 0.4 }]}
@@ -936,38 +938,38 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
                       })()}
                     </View>
                   ) : (
-                    <View style={styles.detailCard}>
+                    <View style={[styles.detailCard, isDark && styles.modalCardDark]}>
                       <Pressable style={styles.editInfoRow} onPress={() => {
                         closeDetail();
                         const subject = subjects.find((s) => s.id === detailEntry.subjectId);
                         if (subject) onOpenSubjectDetail?.(subject);
                       }}>
-                        <Feather name="book-open" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={styles.editInfoInput}>{detailEntry.title}</Text>
-                        <Feather name="arrow-right" size={16} color="#c5c9c5" />
+                        <Feather name="book-open" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={[styles.editInfoInput, isDark && styles.subtitleDark]}>{detailEntry.title}</Text>
+                        <Feather name="arrow-right" size={16} color={isDark ? '#6e7b74' : '#c5c9c5'} />
                       </Pressable>
-                      <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                      <View style={[{ height: 1, backgroundColor: '#f0f0ed' }, isDark && styles.separatorDark]} />
                       <View style={styles.editInfoRow}>
-                        <Feather name="clock" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                        <Text style={styles.editInfoInput}>
+                        <Feather name="clock" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                        <Text style={[styles.editInfoInput, isDark && styles.subtitleDark]}>
                           {detailEntry.startTime}{detailEntry.endTime ? ` - ${detailEntry.endTime}` : ''}
                         </Text>
                       </View>
                       {detailEntry.location ? (
                         <>
-                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={[{ height: 1, backgroundColor: '#f0f0ed' }, isDark && styles.separatorDark]} />
                           <View style={styles.editInfoRow}>
-                            <Feather name="map-pin" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                            <Text style={styles.editInfoInput}>{detailEntry.location}</Text>
+                            <Feather name="map-pin" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                            <Text style={[styles.editInfoInput, isDark && styles.subtitleDark]}>{detailEntry.location}</Text>
                           </View>
                         </>
                       ) : null}
                       {detailEntry.instructor ? (
                         <>
-                          <View style={{ height: 1, backgroundColor: '#f0f0ed' }} />
+                          <View style={[{ height: 1, backgroundColor: '#f0f0ed' }, isDark && styles.separatorDark]} />
                           <View style={styles.editInfoRow}>
-                            <Feather name="user" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                            <Text style={styles.editInfoInput}>{detailEntry.instructor}</Text>
+                            <Feather name="user" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                            <Text style={[styles.editInfoInput, isDark && styles.subtitleDark]}>{detailEntry.instructor}</Text>
                           </View>
                         </>
                       ) : null}
@@ -1512,4 +1514,62 @@ const styles = StyleSheet.create({
     color: '#1e2b26',
     paddingVertical: 14,
   },
+  // Dark variants
+  filterPanelDark: { backgroundColor: '#0a1613' },
+  filterHandleDark: { backgroundColor: '#2a3d36' },
+  filterTitleDark: { color: '#d7e4dd' },
+  filterSectionLabelDark: { color: '#8f9b95' },
+  filterChipDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  filterChipTextDark: { color: '#d7e4dd' },
+  panelDark: { backgroundColor: '#0a1613' },
+  handleDark: { backgroundColor: '#2a3d36' },
+  cardDark: { backgroundColor: '#0f201b' },
+  titleDark: { color: '#d7e4dd' },
+  subtitleDark: { color: '#8f9b95' },
+  timeTextDark: { color: '#d7e4dd' },
+  separatorDark: { backgroundColor: '#2a3d36' },
+  modalCardDark: { backgroundColor: '#0f201b' },
+  headerTitleDark: { color: '#d7e4dd' },
+  calendarToggleDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  filterButtonDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  weekCardDark: { backgroundColor: '#0f201b' },
+  weekRangeDark: { color: '#d7e4dd' },
+  arrowButtonDark: { backgroundColor: '#2a3d36' },
+  dayChipFocusedDark: { backgroundColor: '#2a3d36', borderColor: '#3a4f47' },
+  dayLetterFocusedDark: { color: '#8f9b95' },
+  dayNumberDark: { color: '#8f9b95' },
+  dayNumberFocusedDark: { color: '#d7e4dd' },
+  monthLabelDark: { color: '#d7e4dd' },
+  monthCellNumDark: { color: '#8f9b95' },
+  monthCellNumSelectedDark: { color: '#d7e4dd' },
+  monthCellSelectedDark: { backgroundColor: '#2a3d36', borderColor: '#3a4f47' },
+  monthDotDark: { backgroundColor: '#d7e4dd' },
+  eventCardDark: { backgroundColor: '#0f201b' },
+  eventCardPrimaryDark: { backgroundColor: '#0f201b' },
+  eventCardPastDark: { backgroundColor: '#0f201b' },
+  eventTitleDark: { color: '#d7e4dd' },
+  eventTimeTextDark: { color: '#8f9b95' },
+  timelineDark: { backgroundColor: '#2a3d36' },
+  sectionEmptyStateDark: { backgroundColor: '#0f201b' },
+  sectionEmptyIconWrapperDark: { backgroundColor: '#2a3d36', borderColor: 'rgba(255,255,255,0.04)' },
+  sectionEmptyTitleDark: { color: '#7a8a82' },
+  filterOptionsCardDark: { backgroundColor: '#0f201b' },
+  filterCheckLabelDark: { color: '#d7e4dd' },
+  filterCheckboxCheckedDark: { backgroundColor: '#3d6657', borderColor: '#3d6657' },
+  detailPanelDark: { backgroundColor: '#0a1613' },
+  detailHandleDark: { backgroundColor: '#2a3d36' },
+  detailTitleDark: { color: '#d7e4dd' },
+  detailCardDark: { backgroundColor: '#0f201b' },
+  detailTextDark: { color: '#d7e4dd' },
+  eventAccentDark: { backgroundColor: '#2a3d36' },
+  eventAccentPastDark: { backgroundColor: '#2a3d36' },
+  completedLabelDark: { color: '#6e7b74' },
+  dotDark: { backgroundColor: '#d7e4dd' },
+  dotMutedDark: { backgroundColor: '#3a4f47' },
+  dayChipTodayDark: { backgroundColor: '#2a3d36' },
+  dayLetterSelectedDark: { color: '#d7e4dd' },
+  dayNumberSelectedDark: { color: '#d7e4dd' },
+  monthCellTodayDark: { backgroundColor: '#2a3d36' },
+  monthCellNumTodayDark: { color: '#d7e4dd' },
+  monthDayHeaderTextDark: { color: '#6e7b74' },
 });

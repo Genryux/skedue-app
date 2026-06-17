@@ -1,4 +1,3 @@
-import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Animated, Easing, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -277,7 +276,6 @@ export default function IndexScreen() {
         {showNotificationPrompt ? (
           <NotificationPermissionModal onDismiss={handleDismissNotificationPrompt} />
         ) : null}
-        <StatusBar style="dark" />
       </SafeAreaView>
     </SafeAreaProvider>
   );

@@ -1,6 +1,7 @@
 import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { shadowLg } from '../../ui/tokens/shadows';
+import { useTheme } from '../../ui/theme/ThemeContext';
 
 export type FormattedSubject = {
   id: string;
@@ -27,26 +28,27 @@ type SubjectsScreenProps = {
 };
 
 export default function SubjectsScreen({ subjects, onPressSubject, onFilterPress, onTogglePin, hasActiveFilter }: SubjectsScreenProps) {
+  const { isDark } = useTheme();
   return (
     <>
       <View style={styles.titleBlockSubjects}>
-        <Text style={styles.title}>My Subjects</Text>
-        <Pressable style={styles.filterButton} onPress={onFilterPress}>
+        <Text style={[styles.title, isDark && styles.titleDark]}>My Subjects</Text>
+        <Pressable style={[styles.filterButton, isDark && styles.filterButtonDark]} onPress={onFilterPress}>
           {hasActiveFilter ? (
             <MaterialCommunityIcons name="filter-variant" size={16} color="#4d7e6a" />
           ) : (
-            <Feather name="filter" size={16} color="#1e2b26" />
+            <Feather name="filter" size={16} color={isDark ? '#d7e4dd' : '#1e2b26'} />
           )}
         </Pressable>
       </View>
       <View style={styles.subjectsSection}>
         {subjects.length === 0 ? (
-          <View style={styles.subjectEmptyCard}>
-            <View style={styles.subjectEmptyIcon}>
-              <Feather name="book" size={18} color="#1e2b26" />
+          <View style={[styles.subjectEmptyCard, isDark && styles.subjectEmptyCardDark]}>
+            <View style={[styles.subjectEmptyIcon, isDark && styles.subjectEmptyIconDark]}>
+              <Feather name="book" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
             </View>
-            <Text style={styles.subjectEmptyTitle}>No subjects yet</Text>
-            <Text style={styles.subjectEmptyBody}>
+            <Text style={[styles.subjectEmptyTitle, isDark && styles.subjectEmptyTitleDark]}>No subjects yet</Text>
+            <Text style={[styles.subjectEmptyBody, isDark && styles.subjectEmptyBodyDark]}>
               Add a subject to organize your classes, schedules, and tasks.
             </Text>
           </View>
@@ -54,31 +56,31 @@ export default function SubjectsScreen({ subjects, onPressSubject, onFilterPress
           subjects.map((subject) => (
             <Pressable 
               key={subject.id} 
-              style={styles.subjectCard}
+              style={[styles.subjectCard, isDark && styles.subjectCardDark]}
               onPress={() => onPressSubject(subject)}
             >
               <View style={styles.subjectHeader}>
                 <View style={styles.subjectCodePill}>
                   <Text style={styles.subjectCodeText}>{subject.code}</Text>
                 </View>
-                <Feather name="chevron-right" size={18} color="#6b746f" />
+                <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#6b746f'} />
               </View>
-              <Text style={styles.subjectTitle}>{subject.title}</Text>
-              <Text style={styles.subjectInstructor}>
+              <Text style={[styles.subjectTitle, isDark && styles.subjectTitleDark]}>{subject.title}</Text>
+              <Text style={[styles.subjectInstructor, isDark && styles.subjectInstructorDark]}>
                 {subject.instructor || 'No instructor assigned'}
               </Text>
 
-              <View style={styles.metaDivider} />
+              <View style={[styles.metaDivider, isDark && styles.metaDividerDark]} />
 
               <View style={styles.subjectMetaRow}>
                 <View style={styles.subjectMetaRowLeft}>
                   <View style={styles.subjectMetaItem}>
-                    <Feather name="check-square" size={14} color="#5c6762" />
-                    <Text style={styles.subjectMetaText}>{subject.tasksCount} Tasks</Text>
+                    <Feather name="check-square" size={14} color={isDark ? '#6e7b74' : '#5c6762'} />
+                    <Text style={[styles.subjectMetaText, isDark && styles.subjectMetaTextDark]}>{subject.tasksCount} Tasks</Text>
                   </View>
                   <View style={styles.subjectMetaItem}>
-                    <Feather name="file-text" size={14} color="#5c6762" />
-                    <Text style={styles.subjectMetaText}>{subject.notesCount} Notes</Text>
+                    <Feather name="file-text" size={14} color={isDark ? '#6e7b74' : '#5c6762'} />
+                    <Text style={[styles.subjectMetaText, isDark && styles.subjectMetaTextDark]}>{subject.notesCount} Notes</Text>
                   </View>
                 </View>
                 <Pressable
@@ -89,7 +91,7 @@ export default function SubjectsScreen({ subjects, onPressSubject, onFilterPress
                   <MaterialIcons
                     name={subject.isPinned ? "bookmark" : "bookmark-border"}
                     size={20}
-                    color={subject.isPinned ? '#eab308' : '#cbc8c1'}
+                    color={subject.isPinned ? '#eab308' : isDark ? '#4a5a52' : '#cbc8c1'}
                   />
                 </Pressable>
               </View>
@@ -224,4 +226,15 @@ const styles = StyleSheet.create({
     color: '#6b746f',
     textAlign: 'center',
   },
+  titleDark: { color: '#d7e4dd' },
+  filterButtonDark: { backgroundColor: '#0f201b', borderColor: '#2a3d36' },
+  subjectCardDark: { backgroundColor: '#0f201b' },
+  subjectTitleDark: { color: '#d7e4dd' },
+  subjectInstructorDark: { color: '#8f9b95' },
+  metaDividerDark: { backgroundColor: '#2a3d36' },
+  subjectMetaTextDark: { color: '#8f9b95' },
+  subjectEmptyCardDark: { backgroundColor: '#0f201b' },
+  subjectEmptyIconDark: { backgroundColor: '#2a3d36', borderColor: 'rgba(255,255,255,0.04)' },
+  subjectEmptyTitleDark: { color: '#d7e4dd' },
+  subjectEmptyBodyDark: { color: '#8f9b95' },
 });

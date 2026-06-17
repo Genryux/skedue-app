@@ -171,6 +171,11 @@ export const initDb = async () => {
     await migration.up(db);
     await db.runAsync('INSERT INTO schema_migrations (version) VALUES (?)', [migration.version]);
   }
+
+  // Repair data corrupted by a previous backup import bug
+  // where JS arrays were inserted directly instead of JSON strings
+  await db.execAsync("UPDATE tasks SET repeatDays = NULL WHERE repeatDays IS NOT NULL AND substr(repeatDays, 1, 1) != '['");
+  await db.execAsync("UPDATE subjects SET days = NULL WHERE days IS NOT NULL AND substr(days, 1, 1) != '['");
 };
 
 export const getMetaValue = async (key: string) => {
@@ -479,6 +484,16 @@ export const moveNotesToFolder = async (sourceFolderId: string, targetFolderId: 
 
 const parseBoolean = (value: number | null | undefined) => value === 1;
 
+const safeParseJSONArray = (value: string | null): string[] | undefined => {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export const getTasksBySubjectId = async (subjectId: string): Promise<TaskRecord[]> => {
   const db = await getDb();
   const rows = await db.getAllAsync<TaskRow>(
@@ -500,7 +515,7 @@ export const getTasksBySubjectId = async (subjectId: string): Promise<TaskRecord
     reminderMinutes: row.reminderMinutes ?? undefined,
     repeatType: row.repeatType as any,
     repeatInterval: row.repeatInterval ?? undefined,
-    repeatDays: row.repeatDays ? JSON.parse(row.repeatDays) : undefined,
+    repeatDays: safeParseJSONArray(row.repeatDays),
     startDate: row.startDate ?? undefined,
     endDate: row.endDate ?? undefined,
     nextOccurrenceDate: row.nextOccurrenceDate,
@@ -530,7 +545,7 @@ export const getAllTasks = async (): Promise<TaskRecord[]> => {
     reminderMinutes: row.reminderMinutes ?? undefined,
     repeatType: row.repeatType as any,
     repeatInterval: row.repeatInterval ?? undefined,
-    repeatDays: row.repeatDays ? JSON.parse(row.repeatDays) : undefined,
+    repeatDays: safeParseJSONArray(row.repeatDays),
     startDate: row.startDate ?? undefined,
     endDate: row.endDate ?? undefined,
     nextOccurrenceDate: row.nextOccurrenceDate,
@@ -1015,4 +1030,97 @@ export const updateNote = async (
 export const deleteNote = async (noteId: string) => {
   const db = await getDb();
   await db.runAsync('DELETE FROM notes WHERE id = ?', [noteId]);
+};
+
+export const getAllFolders = async (): Promise<FolderRow[]> => {
+  const db = await getDb();
+  return db.getAllAsync<FolderRow>('SELECT * FROM folders ORDER BY createdAt ASC');
+};
+
+export const getAllTaskOccurrenceExceptions = async (): Promise<TaskOccurrenceExceptionRow[]> => {
+  const db = await getDb();
+  return db.getAllAsync<TaskOccurrenceExceptionRow>('SELECT * FROM task_occurrence_exceptions');
+};
+
+export const getAllAppMeta = async (): Promise<Array<{ key: string; value: string }>> => {
+  const db = await getDb();
+  return db.getAllAsync<{ key: string; value: string }>('SELECT * FROM app_meta');
+};
+
+type BackupImportData = {
+  appMeta: Array<{ key: string; value: string }>;
+  subjects: any[];
+  folders: any[];
+  notes: any[];
+  tasks: any[];
+  taskOccurrenceExceptions: any[];
+};
+
+export const clearAndImportBackup = async (data: BackupImportData): Promise<void> => {
+  const db = await getDb();
+  await db.execAsync('BEGIN TRANSACTION');
+  try {
+    await db.execAsync('DELETE FROM task_occurrence_exceptions');
+    await db.execAsync('DELETE FROM task_completions');
+    await db.execAsync('DELETE FROM tasks');
+    await db.execAsync('DELETE FROM notes');
+    await db.execAsync('DELETE FROM folders');
+    await db.execAsync('DELETE FROM subjects');
+    await db.execAsync('DELETE FROM app_meta');
+
+    for (const row of data.appMeta) {
+      await db.runAsync('INSERT INTO app_meta (key, value) VALUES (?, ?)', [row.key, row.value]);
+    }
+
+    for (const row of data.subjects) {
+      await db.runAsync(
+        `INSERT INTO subjects (id, title, code, instructor, section, days, startTime, endTime, location, createdAt, term, isArchived, isPinned) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [row.id, row.title, row.code ?? null, row.instructor ?? null, row.section ?? null, row.days ? JSON.stringify(row.days) : null, row.startTime ?? null, row.endTime ?? null, row.location ?? null, row.createdAt, row.term ?? null, row.isArchived ? 1 : 0, row.isPinned ? 1 : 0]
+      );
+    }
+
+    for (const row of data.folders) {
+      await db.runAsync(
+        'INSERT INTO folders (id, subjectId, title, color, isPinned, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+        [row.id, row.subjectId, row.title, row.color, row.isPinned ? 1 : 0, row.createdAt]
+      );
+    }
+
+    for (const row of data.notes) {
+      await db.runAsync(
+        `INSERT INTO notes (id, subjectId, folderId, title, contentHtml, contentText, isPinned, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [row.id, row.subjectId, row.folderId ?? null, row.title, row.contentHtml ?? '', row.contentText ?? '', row.isPinned ? 1 : 0, row.createdAt, row.updatedAt ?? row.createdAt]
+      );
+    }
+
+    for (const row of data.tasks) {
+      await db.runAsync(
+        `INSERT INTO tasks (id, subjectId, title, description, dueAt, repeat, reminderMinutes, isCompleted, createdAt, updatedAt, repeatType, repeatInterval, repeatDays, startDate, endDate, nextOccurrenceDate, priority, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [row.id, row.subjectId, row.title, row.description ?? null, row.dueAt ?? null, row.repeat ?? 'none', row.reminderMinutes ?? null, row.isCompleted ? 1 : 0, row.createdAt, row.updatedAt ?? row.createdAt, row.repeatType ?? 'none', row.repeatInterval ?? null, row.repeatDays ? JSON.stringify(row.repeatDays) : null, row.startDate ?? null, row.endDate ?? null, row.nextOccurrenceDate, row.priority ?? null, row.category ?? null]
+      );
+    }
+
+    for (const row of data.taskOccurrenceExceptions) {
+      await db.runAsync(
+        'INSERT INTO task_occurrence_exceptions (id, taskId, occurrenceDate, status, completedAt) VALUES (?, ?, ?, ?, ?)',
+        [row.id, row.taskId, row.occurrenceDate, row.status, row.completedAt ?? null]
+      );
+    }
+
+    await db.execAsync('COMMIT');
+  } catch (error) {
+    await db.execAsync('ROLLBACK');
+    throw error;
+  }
+};
+
+export const clearAllData = async (): Promise<void> => {
+  const db = await getDb();
+  await db.execAsync('DELETE FROM task_occurrence_exceptions');
+  await db.execAsync('DELETE FROM task_completions');
+  await db.execAsync('DELETE FROM tasks');
+  await db.execAsync('DELETE FROM notes');
+  await db.execAsync('DELETE FROM folders');
+  await db.execAsync('DELETE FROM subjects');
+  await db.execAsync('DELETE FROM app_meta');
 };

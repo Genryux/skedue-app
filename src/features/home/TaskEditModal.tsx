@@ -18,6 +18,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { updateTask, type TaskRecord, type SubjectRecord } from '../../data/local/db';
 import { shadowLg } from '../../ui/tokens/shadows';
 import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
+import { useTheme } from '../../ui/theme/ThemeContext';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
@@ -43,6 +44,7 @@ type TaskEditModalProps = {
 type SubView = 'priority' | 'category' | 'reminder' | 'repeat' | 'repeatWeekly' | 'subject' | null;
 
 export default function TaskEditModal({ visible, task, subjectOptions, onClose, onSaved, onError }: TaskEditModalProps) {
+  const { isDark } = useTheme();
   const slideAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const subSlideAnim = useRef(new Animated.Value(0)).current;
@@ -291,8 +293,8 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
           }],
         }]}
       >
-        <View style={[styles.panel, { maxHeight: panelMaxHeight }]} {...mainPanResponder.panHandlers}>
-          <View style={styles.handle} />
+        <View style={[styles.panel, isDark && styles.panelDark, { maxHeight: panelMaxHeight }]} {...mainPanResponder.panHandlers}>
+          <View style={[styles.handle, isDark && styles.handleDark]} />
           <ScrollView
             bounces={false}
             showsVerticalScrollIndicator={false}
@@ -302,28 +304,28 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
             onScroll={(e) => { mainScrollYRef.current = e.nativeEvent.contentOffset.y; }}
             scrollEventThrottle={16}
           >
-            <Text style={styles.panelTitle}>Edit Task</Text>
+            <Text style={[styles.panelTitle, isDark && styles.panelTitleDark]}>Edit Task</Text>
 
             {/* Title + Description */}
-            <View style={styles.card}>
+            <View style={[styles.card, isDark && styles.cardDark]}>
               <View style={styles.editInfoRow}>
-                <Feather name="check-square" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                <Feather name="check-square" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
                 <TextInput
                   value={title}
                   onChangeText={setTitle}
                   placeholder="Task Name"
-                  placeholderTextColor="#91948f"
-                  style={styles.editInfoInput}
+                  placeholderTextColor={isDark ? '#6e7b74' : '#91948f'}
+                  style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}
                 />
               </View>
-              <View style={styles.separator} />
+              <View style={[styles.separator, isDark && styles.separatorDark]} />
               <View style={[styles.editInfoRow, { minHeight: 88, alignItems: 'flex-start' }]}>
-                <Feather name="align-left" size={16} color="#8f968f" style={{ marginRight: 10, marginTop: 16 }} />
+                <Feather name="align-left" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10, marginTop: 16 }} />
                 <TextInput
                   value={description}
                   onChangeText={setDescription}
                   placeholder="Description (Optional)"
-                  placeholderTextColor="#91948f"
+                  placeholderTextColor={isDark ? '#6e7b74' : '#91948f'}
                   style={styles.editInfoInput}
                   multiline
                 />
@@ -332,30 +334,30 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
 
             {/* Subject picker */}
             {subjectOptions && subjectOptions.length > 0 ? (
-              <View style={[styles.card, { marginTop: 16 }]}>
+              <View style={[styles.card, isDark && styles.cardDark, { marginTop: 16 }]}>
                 <Pressable style={styles.editInfoRow} onPress={() => openSubView('subject')}>
-                  <Feather name="book-open" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                  <Text style={styles.editInfoInput}>Subject</Text>
+                  <Feather name="book-open" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                  <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>Subject</Text>
                   <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={[styles.chipText, { flexShrink: 1 }]} numberOfLines={1} ellipsizeMode="tail">{selectedSubjectLabel}</Text>
-                    <Feather name="chevron-right" size={18} color="#9aa09a" />
+                    <Text style={[styles.chipText, isDark && styles.chipTextDark, { flexShrink: 1 }]} numberOfLines={1} ellipsizeMode="tail">{selectedSubjectLabel}</Text>
+                    <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
                   </View>
                 </Pressable>
               </View>
             ) : null}
 
             {/* Due date / time */}
-            <View style={[styles.card, { marginTop: 16 }]}>
+            <View style={[styles.card, isDark && styles.cardDark, { marginTop: 16 }]}>
               <View style={styles.editInfoRow}>
                 <Pressable onPress={() => { if (!dueDate) setDueDate(new Date()); setShowDatePicker(true); }} style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <Feather name="calendar" size={16} color="#8f968f" style={{ marginRight: 8 }} />
-                  <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: dueDate ? '#1e2b26' : '#b7bcb7' }}>
+                  <Feather name="calendar" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 8 }} />
+                  <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: dueDate ? (isDark ? '#d7e4dd' : '#1e2b26') : (isDark ? '#6e7b74' : '#b7bcb7') }}>
                     {dueLabel}
                   </Text>
                 </Pressable>
                 <Pressable onPress={() => { if (!dueDate) setDueDate(new Date()); setShowTimePicker(true); }} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Feather name="clock" size={16} color="#8f968f" style={{ marginRight: 8 }} />
-                  <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: dueDate ? '#1e2b26' : '#b7bcb7' }}>
+                  <Feather name="clock" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 8 }} />
+                  <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: dueDate ? (isDark ? '#d7e4dd' : '#1e2b26') : (isDark ? '#6e7b74' : '#b7bcb7') }}>
                     {timeLabel}
                   </Text>
                 </Pressable>
@@ -390,54 +392,54 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
             </View>
 
             {/* Priority / Category / Reminder / Repeat rows */}
-            <View style={[styles.card, { marginTop: 16 }]}>
+            <View style={[styles.card, isDark && styles.cardDark, { marginTop: 16 }]}>
               <Pressable style={styles.editInfoRow} onPress={() => openSubView('priority')}>
-                <Feather name="flag" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                <Text style={styles.editInfoInput}>Priority</Text>
+                <Feather name="flag" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>Priority</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   {priority ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <MaterialIcons name="flag" size={14} color={priority === 'high' ? '#d1453b' : '#e88d3f'} />
-                      <Text style={styles.chipText}>{priorityLabel}</Text>
+                      <Text style={[styles.chipText, isDark && styles.chipTextDark]}>{priorityLabel}</Text>
                     </View>
                   ) : (
-                    <Text style={styles.chipText}>None</Text>
+                    <Text style={[styles.chipText, isDark && styles.chipTextDark]}>None</Text>
                   )}
-                  <Feather name="chevron-right" size={18} color="#9aa09a" />
+                  <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
                 </View>
               </Pressable>
-              <View style={styles.separator} />
+              <View style={[styles.separator, isDark && styles.separatorDark]} />
               <Pressable style={styles.editInfoRow} onPress={() => openSubView('category')}>
-                <Feather name="folder" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                <Text style={styles.editInfoInput}>Category</Text>
+                <Feather name="folder" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>Category</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={styles.chipText}>{categoryLabel}</Text>
-                  <Feather name="chevron-right" size={18} color="#9aa09a" />
+                  <Text style={[styles.chipText, isDark && styles.chipTextDark]}>{categoryLabel}</Text>
+                  <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
                 </View>
               </Pressable>
-              <View style={styles.separator} />
+              <View style={[styles.separator, isDark && styles.separatorDark]} />
               <Pressable style={styles.editInfoRow} onPress={() => openSubView('reminder')}>
-                <Feather name="bell" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                <Text style={styles.editInfoInput}>Reminder</Text>
+                <Feather name="bell" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>Reminder</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={styles.chipText}>{reminderLabel}</Text>
-                  <Feather name="chevron-right" size={18} color="#9aa09a" />
+                  <Text style={[styles.chipText, isDark && styles.chipTextDark]}>{reminderLabel}</Text>
+                  <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
                 </View>
               </Pressable>
-              <View style={styles.separator} />
+              <View style={[styles.separator, isDark && styles.separatorDark]} />
               <Pressable style={styles.editInfoRow} onPress={() => openSubView('repeat')}>
-                <Feather name="repeat" size={16} color="#8f968f" style={{ marginRight: 10 }} />
-                <Text style={styles.editInfoInput}>Repeat</Text>
+                <Feather name="repeat" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
+                <Text style={[styles.editInfoInput, isDark && styles.editInfoInputDark]}>Repeat</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={styles.chipText}>{repeatLabel}</Text>
-                  <Feather name="chevron-right" size={18} color="#9aa09a" />
+                  <Text style={[styles.chipText, isDark && styles.chipTextDark]}>{repeatLabel}</Text>
+                  <Feather name="chevron-right" size={18} color={isDark ? '#6e7b74' : '#9aa09a'} />
                 </View>
               </Pressable>
             </View>
 
             <View style={styles.editInfoActions}>
               <Pressable onPress={close}>
-                <Text style={styles.editInfoCancelText}>Cancel</Text>
+                <Text style={[styles.editInfoCancelText, isDark && { color: '#6e7b74' }]}>Cancel</Text>
               </Pressable>
               <Pressable
                 style={[styles.editInfoSaveButton, !title.trim() && styles.editInfoSaveButtonDisabled]}
@@ -470,8 +472,8 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
               }],
             }]}
           >
-            <View style={styles.subPanel} {...subPanResponder.panHandlers}>
-              <View style={styles.handle} />
+            <View style={[styles.subPanel, isDark && styles.subPanelDark]} {...subPanResponder.panHandlers}>
+              <View style={[styles.handle, isDark && styles.handleDark]} />
               <ScrollView
                 bounces={false}
                 showsVerticalScrollIndicator={false}
@@ -483,31 +485,31 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                   {/* Subject picker */}
                   {subView === 'subject' && subjectOptions && (
                     <>
-                      <Text style={styles.subModalTitle}>Subject</Text>
-                      <View style={styles.card}>
+                      <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Subject</Text>
+                      <View style={[styles.card, isDark && styles.cardDark]}>
                         {subjectOptions.map((s, i) => {
                           const selected = selectedSubjectId === s.id;
                           return (
                             <View key={s.id}>
-                              {i > 0 && <View style={styles.separator} />}
+                              {i > 0 && <View style={[styles.separator, isDark && styles.separatorDark]} />}
                               <Pressable
-                                style={[styles.editInfoRow, selected && { backgroundColor: '#eef2ec' }]}
+                                style={[styles.editInfoRow, selected && { backgroundColor: isDark ? '#2a3d36' : '#eef2ec' }]}
                                 onPress={() => { setSelectedSubjectId(s.id); closeSubView(); }}
                               >
                                 <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                                  <Feather name="book-open" size={16} color="#5c6762" />
-                                  <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold' }]} numberOfLines={1} ellipsizeMode="tail">
+                                  <Feather name="book-open" size={16} color={isDark ? '#6e7b74' : '#5c6762'} />
+                                  <Text style={[styles.subModalOptionText, isDark && styles.subModalOptionTextDark, selected && { fontFamily: 'Manrope_700Bold' }]} numberOfLines={1} ellipsizeMode="tail">
                                     {s.title}{s.code ? ` (${s.code})` : ''}
                                   </Text>
                                 </View>
-                                {selected && <Feather name="check" size={20} color="#0f2a24" />}
+                                {selected && <Feather name="check" size={20} color="#3d6657" />}
                               </Pressable>
                             </View>
                           );
                         })}
                       </View>
                       <Pressable style={styles.subModalBackRow} onPress={closeSubView}>
-                        <Text style={styles.subModalBackText}>Back</Text>
+                        <Text style={[styles.subModalBackText, isDark && { color: '#3d6657' }]}>Back</Text>
                       </Pressable>
                     </>
                   )}
@@ -515,26 +517,26 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                   {/* Priority */}
                   {subView === 'priority' && (
                     <>
-                      <Text style={styles.subModalTitle}>Priority</Text>
-                      <View style={styles.card}>
+                      <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Priority</Text>
+                      <View style={[styles.card, isDark && styles.cardDark]}>
                         {[
-                          { value: null, label: 'None', color: '#d4d8d4' },
+                          { value: null, label: 'None', color: isDark ? '#6e7b74' : '#d4d8d4' },
                           { value: 'low', label: 'Low', color: '#e88d3f' },
                           { value: 'high', label: 'High', color: '#d1453b' },
                         ].map((opt, i) => {
                           const selected = priority === opt.value;
                           return (
                             <View key={String(opt.value)}>
-                              {i > 0 && <View style={styles.separator} />}
+                              {i > 0 && <View style={[styles.separator, isDark && styles.separatorDark]} />}
                               <Pressable
-                                style={[styles.editInfoRow, selected && { backgroundColor: '#eef2ec' }]}
+                                style={[styles.editInfoRow, selected && { backgroundColor: isDark ? '#2a3d36' : '#eef2ec' }]}
                                 onPress={() => { setPriority(opt.value); closeSubView(); }}
                               >
                                 <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                                   <MaterialIcons name="flag" size={16} color={opt.color} />
-                                  <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold' }]}>{opt.label}</Text>
+                                  <Text style={[styles.subModalOptionText, isDark && styles.subModalOptionTextDark, selected && { fontFamily: 'Manrope_700Bold' }]}>{opt.label}</Text>
                                 </View>
-                                {selected && <Feather name="check" size={20} color="#0f2a24" />}
+                                {selected && <Feather name="check" size={20} color="#3d6657" />}
                               </Pressable>
                             </View>
                           );
@@ -549,29 +551,29 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                   {/* Category */}
                   {subView === 'category' && (
                     <>
-                      <Text style={styles.subModalTitle}>Category</Text>
-                      <View style={styles.card}>
+                      <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Category</Text>
+                      <View style={[styles.card, isDark && styles.cardDark]}>
                         {(['Assignment', 'Quiz', 'Exam', 'Project', 'Meeting', 'Study session', 'Personal'] as const).map((cat, i) => {
                           const selected = category === cat;
                           return (
                             <View key={cat}>
-                              {i > 0 && <View style={styles.separator} />}
+                              {i > 0 && <View style={[styles.separator, isDark && styles.separatorDark]} />}
                               <Pressable
-                                style={[styles.editInfoRow, selected && { backgroundColor: '#eef2ec' }]}
+                                style={[styles.editInfoRow, selected && { backgroundColor: isDark ? '#2a3d36' : '#eef2ec' }]}
                                 onPress={() => { setCategory(selected ? null : cat); closeSubView(); }}
                               >
                                 <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                                  <Feather name={cat === 'Assignment' ? 'file-text' : cat === 'Quiz' ? 'help-circle' : cat === 'Exam' ? 'edit-3' : cat === 'Project' ? 'briefcase' : cat === 'Meeting' ? 'users' : cat === 'Study session' ? 'book' : 'user'} size={16} color="#5c6762" />
-                                  <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold' }]}>{cat}</Text>
+                                  <Feather name={cat === 'Assignment' ? 'file-text' : cat === 'Quiz' ? 'help-circle' : cat === 'Exam' ? 'edit-3' : cat === 'Project' ? 'briefcase' : cat === 'Meeting' ? 'users' : cat === 'Study session' ? 'book' : 'user'} size={16} color={isDark ? '#6e7b74' : '#5c6762'} />
+                                  <Text style={[styles.subModalOptionText, isDark && styles.subModalOptionTextDark, selected && { fontFamily: 'Manrope_700Bold' }]}>{cat}</Text>
                                 </View>
-                                {selected && <Feather name="check" size={20} color="#0f2a24" />}
+                                {selected && <Feather name="check" size={20} color="#3d6657" />}
                               </Pressable>
                             </View>
                           );
                         })}
                       </View>
                       <Pressable style={styles.subModalBackRow} onPress={closeSubView}>
-                        <Text style={styles.subModalBackText}>Back</Text>
+                        <Text style={[styles.subModalBackText, isDark && { color: '#3d6657' }]}>Back</Text>
                       </Pressable>
                     </>
                   )}
@@ -579,8 +581,8 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                   {/* Reminder */}
                   {subView === 'reminder' && (
                     <>
-                      <Text style={styles.subModalTitle}>Reminder</Text>
-                      <View style={styles.card}>
+                      <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Reminder</Text>
+                      <View style={[styles.card, isDark && styles.cardDark]}>
                         {([
                           { mins: null, label: 'None' },
                           { mins: 0, label: 'At due time' },
@@ -594,23 +596,23 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                           const disabled = opt.mins !== null && !dueDate;
                           return (
                             <View key={String(opt.mins)}>
-                              {i > 0 && <View style={styles.separator} />}
+                              {i > 0 && <View style={[styles.separator, isDark && styles.separatorDark]} />}
                               <Pressable
-                                style={[styles.editInfoRow, selected && { backgroundColor: '#eef2ec' }]}
+                                style={[styles.editInfoRow, selected && { backgroundColor: isDark ? '#2a3d36' : '#eef2ec' }]}
                                 onPress={disabled ? undefined : () => { setReminderMinutes(opt.mins); closeSubView(); }}
                               >
-                                <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold', flex: 1 }, disabled && { color: '#c9cdc9' }]}>{opt.label}</Text>
-                                {selected && <Feather name="check" size={20} color="#0f2a24" />}
+                                <Text style={[styles.subModalOptionText, isDark && styles.subModalOptionTextDark, selected && { fontFamily: 'Manrope_700Bold', flex: 1 }, disabled && { color: isDark ? '#4a5a52' : '#c9cdc9' }]}>{opt.label}</Text>
+                                {selected && <Feather name="check" size={20} color="#3d6657" />}
                               </Pressable>
                             </View>
                           );
                         })}
                       </View>
                       {!dueDate && (
-                        <Text style={{ fontFamily: 'Manrope_400Regular', fontSize: 13, color: '#8f968f', textAlign: 'center', marginTop: 10 }}>Set a date and time to enable reminders</Text>
+                        <Text style={{ fontFamily: 'Manrope_400Regular', fontSize: 13, color: isDark ? '#6e7b74' : '#8f968f', textAlign: 'center', marginTop: 10 }}>Set a date and time to enable reminders</Text>
                       )}
                       <Pressable style={styles.subModalBackRow} onPress={closeSubView}>
-                        <Text style={styles.subModalBackText}>Back</Text>
+                        <Text style={[styles.subModalBackText, isDark && { color: '#3d6657' }]}>Back</Text>
                       </Pressable>
                     </>
                   )}
@@ -618,8 +620,8 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                   {/* Repeat */}
                   {subView === 'repeat' && repeatSubStep === 'main' && (
                     <>
-                      <Text style={styles.subModalTitle}>Repeat</Text>
-                      <View style={styles.card}>
+                      <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Repeat</Text>
+                      <View style={[styles.card, isDark && styles.cardDark]}>
                         {([
                           { key: 'none', label: 'None' },
                           { key: 'daily', label: 'Daily' },
@@ -630,11 +632,11 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                           const isDisabled = opt.key !== 'none' && !dueDate;
                           return (
                             <View key={opt.key}>
-                              {i > 0 && <View style={styles.separator} />}
+                              {i > 0 && <View style={[styles.separator, isDark && styles.separatorDark]} />}
                               <Pressable
                                 style={[
                                   styles.editInfoRow,
-                                  selected && { backgroundColor: '#eef2ec' },
+                                  selected && { backgroundColor: isDark ? '#2a3d36' : '#eef2ec' },
                                   isDisabled && { opacity: 0.35 },
                                 ]}
                                 disabled={isDisabled}
@@ -649,18 +651,18 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                                   }
                                 }}
                               >
-                                <Text style={[styles.subModalOptionText, selected && { fontFamily: 'Manrope_700Bold', flex: 1 }]}>{opt.label}</Text>
-                                {selected && <Feather name="check" size={20} color="#0f2a24" />}
+                                <Text style={[styles.subModalOptionText, isDark && styles.subModalOptionTextDark, selected && { fontFamily: 'Manrope_700Bold', flex: 1 }]}>{opt.label}</Text>
+                                {selected && <Feather name="check" size={20} color="#3d6657" />}
                               </Pressable>
                             </View>
                           );
                         })}
                       </View>
                       {!dueDate && (
-                        <Text style={styles.subModalHint}>Set a date and time to enable repeats</Text>
+                        <Text style={[styles.subModalHint, isDark && { color: '#6e7b74' }]}>Set a date and time to enable repeats</Text>
                       )}
                       <Pressable style={styles.subModalBackRow} onPress={closeSubView}>
-                        <Text style={styles.subModalBackText}>Back</Text>
+                        <Text style={[styles.subModalBackText, isDark && { color: '#3d6657' }]}>Back</Text>
                       </Pressable>
                     </>
                   )}
@@ -668,27 +670,27 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                   {/* Repeat: Weekly Days */}
                   {subView === 'repeat' && repeatSubStep === 'weeklyDays' && (
                     <>
-                      <Text style={styles.subModalTitle}>Repeat Days</Text>
+                      <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Repeat Days</Text>
                       <View style={styles.subModalDaysContainer}>
                         {DAYS.map((d) => {
                           const selected = repeatDays.includes(d.value);
                           return (
                             <Pressable
                               key={d.value}
-                              style={[styles.dayChip, selected && styles.dayChipSelected]}
+                              style={[styles.dayChip, isDark && styles.dayChipDark, selected && styles.dayChipSelected]}
                               onPress={() => {
                                 setRepeatDays((prev) =>
                                   prev.includes(d.value) ? prev.filter((v) => v !== d.value) : [...prev, d.value]
                                 );
                               }}
                             >
-                              <Text style={[styles.dayChipText, selected && styles.dayChipTextSelected]}>{d.label}</Text>
+                              <Text style={[styles.dayChipText, isDark && styles.dayChipTextDark, selected && styles.dayChipTextSelected]}>{d.label}</Text>
                             </Pressable>
                           );
                         })}
                       </View>
                       <Pressable style={styles.subModalBackRow} onPress={() => setRepeatSubStep('main')}>
-                        <Text style={styles.subModalBackText}>Back</Text>
+                        <Text style={[styles.subModalBackText, isDark && { color: '#3d6657' }]}>Back</Text>
                       </Pressable>
                     </>
                   )}
@@ -696,8 +698,8 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                   {/* Repeat: Daily Skip Weekends */}
                   {subView === 'repeat' && repeatSubStep === 'dailySkip' && (
                     <>
-                      <Text style={styles.subModalTitle}>Daily Repeat</Text>
-                      <View style={styles.card}>
+                      <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Daily Repeat</Text>
+                      <View style={[styles.card, isDark && styles.cardDark]}>
                         <View style={styles.editInfoRow}>
                           <Pressable
                             style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
@@ -709,15 +711,15 @@ export default function TaskEditModal({ visible, task, subjectOptions, onClose, 
                                 height: 20,
                                 borderRadius: 6,
                                 borderWidth: 2,
-                                borderColor: skipWeekends ? '#0f2a24' : '#c9cdc9',
-                                backgroundColor: skipWeekends ? '#0f2a24' : 'transparent',
+                                borderColor: skipWeekends ? '#3d6657' : isDark ? '#6e7b74' : '#c9cdc9',
+                                backgroundColor: skipWeekends ? '#3d6657' : 'transparent',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                               }}
                             >
                               {skipWeekends && <Feather name="check" size={14} color="#ffffff" />}
                             </View>
-                            <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: '#1e2b26' }}>Skip weekends</Text>
+                            <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: isDark ? '#d7e4dd' : '#1e2b26' }}>Skip weekends</Text>
                           </Pressable>
                         </View>
                       </View>
@@ -894,4 +896,16 @@ const styles = StyleSheet.create({
   dayChipTextSelected: {
     color: '#ffffff',
   },
+  panelDark: { backgroundColor: '#0a1613' },
+  handleDark: { backgroundColor: '#2a3d36' },
+  panelTitleDark: { color: '#d7e4dd' },
+  cardDark: { backgroundColor: '#0f201b' },
+  editInfoInputDark: { color: '#d7e4dd' },
+  separatorDark: { backgroundColor: '#2a3d36' },
+  chipTextDark: { color: '#6e7b74' },
+  subPanelDark: { backgroundColor: '#0a1613' },
+  subModalTitleDark: { color: '#d7e4dd' },
+  subModalOptionTextDark: { color: '#d7e4dd' },
+  dayChipDark: { backgroundColor: '#2a3d36' },
+  dayChipTextDark: { color: '#6e7b74' },
 });

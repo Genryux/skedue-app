@@ -17,6 +17,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { insertTask, type TaskRecord } from '../../data/local/db';
 import { shadowLg } from '../../ui/tokens/shadows';
 import { springModalSlide, useDragToClose } from '../../ui/tokens/animations';
+import { useTheme } from '../../ui/theme/ThemeContext';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
@@ -28,6 +29,7 @@ type CreateTaskModalProps = {
 };
 
 export default function CreateTaskModal({ visible, onClose, onCreated, onError }: CreateTaskModalProps) {
+  const { isDark } = useTheme();
   const slideAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const subSlideAnim = useRef(new Animated.Value(0)).current;
@@ -211,8 +213,8 @@ export default function CreateTaskModal({ visible, onClose, onCreated, onError }
           }],
         }]}
       >
-        <View style={styles.panel} {...mainPanResponder.panHandlers}>
-          <View style={styles.handle} />
+        <View style={[styles.panel, isDark && styles.panelDark]} {...mainPanResponder.panHandlers}>
+          <View style={[styles.handle, isDark && styles.handleDark]} />
           <ScrollView
             bounces={false}
             showsVerticalScrollIndicator={false}
@@ -222,26 +224,26 @@ export default function CreateTaskModal({ visible, onClose, onCreated, onError }
             onScroll={(e) => { mainScrollYRef.current = e.nativeEvent.contentOffset.y; }}
             scrollEventThrottle={16}
           >
-            <Text style={styles.panelTitle}>Add Task</Text>
+            <Text style={[styles.panelTitle, isDark && styles.panelTitleDark]}>Add Task</Text>
 
-            <View style={styles.card}>
+            <View style={[styles.card, isDark && styles.cardDark]}>
               <View style={styles.titleInputRow}>
-                <Feather name="check-square" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+                <Feather name="check-square" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
                 <TextInput
                   value={title}
                   onChangeText={setTitle}
                   placeholder="Task name"
-                  placeholderTextColor="#91948f"
-                  style={styles.titleInput}
+                  placeholderTextColor={isDark ? '#6e7b74' : '#91948f'}
+                  style={[styles.titleInput, isDark && styles.titleInputDark]}
                   autoFocus
                 />
               </View>
             </View>
 
-            <Pressable style={styles.reminderButton} onPress={openReminder}>
-              <Feather name="bell" size={16} color="#8f968f" style={{ marginRight: 10 }} />
+            <Pressable style={[styles.reminderButton, isDark && styles.reminderButtonDark]} onPress={openReminder}>
+              <Feather name="bell" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 10 }} />
               <Text
-                style={[styles.reminderButtonText, reminderMinutes !== null && { color: '#1e2b26' }]}
+                style={[styles.reminderButtonText, reminderMinutes !== null && { color: isDark ? '#d7e4dd' : '#1e2b26' }]}
                 numberOfLines={1}
               >
                 {reminderDisplayText}
@@ -250,7 +252,7 @@ export default function CreateTaskModal({ visible, onClose, onCreated, onError }
 
             <View style={styles.editInfoActions}>
               <Pressable onPress={close}>
-                <Text style={styles.editInfoCancelText}>Cancel</Text>
+                <Text style={[styles.editInfoCancelText, isDark && { color: '#6e7b74' }]}>Cancel</Text>
               </Pressable>
               <Pressable
                 style={[styles.editInfoSaveButton, !title.trim() && styles.editInfoSaveButtonDisabled]}
@@ -282,8 +284,8 @@ export default function CreateTaskModal({ visible, onClose, onCreated, onError }
               }],
             }]}
           >
-            <View style={styles.subPanel} {...subPanResponder.panHandlers}>
-              <View style={styles.handle} />
+            <View style={[styles.subPanel, isDark && styles.subPanelDark]} {...subPanResponder.panHandlers}>
+              <View style={[styles.handle, isDark && styles.handleDark]} />
               <ScrollView
                 bounces={false}
                 showsVerticalScrollIndicator={false}
@@ -292,9 +294,9 @@ export default function CreateTaskModal({ visible, onClose, onCreated, onError }
                 onScroll={(e) => { subScrollYRef.current = e.nativeEvent.contentOffset.y; }}
                 scrollEventThrottle={16}
               >
-                <Text style={styles.subModalTitle}>Set Reminder</Text>
+                <Text style={[styles.subModalTitle, isDark && styles.subModalTitleDark]}>Set Reminder</Text>
 
-                <View style={[styles.card, { marginBottom: 16 }]}>
+                <View style={[styles.card, isDark && styles.cardDark, { marginBottom: 16 }]}>
                   <View style={styles.dateTimeRow}>
                     <Pressable
                       style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
@@ -303,8 +305,8 @@ export default function CreateTaskModal({ visible, onClose, onCreated, onError }
                         setShowDatePicker(true);
                       }}
                     >
-                      <Feather name="calendar" size={16} color="#8f968f" style={{ marginRight: 8 }} />
-                      <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: dueDate ? '#1e2b26' : '#b7bcb7' }}>
+                      <Feather name="calendar" size={16} color={isDark ? '#6e7b74' : '#8f968f'} style={{ marginRight: 8 }} />
+                      <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: dueDate ? (isDark ? '#d7e4dd' : '#1e2b26') : (isDark ? '#6e7b74' : '#b7bcb7') }}>
                         {formattedDate ?? 'Set date'}
                       </Text>
                     </Pressable>
@@ -315,10 +317,10 @@ export default function CreateTaskModal({ visible, onClose, onCreated, onError }
                         setShowTimePicker(true);
                       }}
                     >
-                      <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: dueDate ? '#1e2b26' : '#b7bcb7', marginRight: 4 }}>
+                      <Text style={{ fontFamily: 'Manrope_500Medium', fontSize: 16, color: dueDate ? (isDark ? '#d7e4dd' : '#1e2b26') : (isDark ? '#6e7b74' : '#b7bcb7'), marginRight: 4 }}>
                         {formattedTime ?? 'Set time'}
                       </Text>
-                      <Feather name="clock" size={16} color="#8f968f" />
+                      <Feather name="clock" size={16} color={isDark ? '#6e7b74' : '#8f968f'} />
                     </Pressable>
                   </View>
                 </View>
@@ -351,7 +353,7 @@ export default function CreateTaskModal({ visible, onClose, onCreated, onError }
                   />
                 ) : null}
 
-                <View style={styles.card}>
+                <View style={[styles.card, isDark && styles.cardDark]}>
                   {([
                     { mins: null, label: 'None' },
                     { mins: 0, label: 'At due time' },
@@ -365,24 +367,24 @@ export default function CreateTaskModal({ visible, onClose, onCreated, onError }
                     const disabled = opt.mins !== null && !dueDate;
                     return (
                       <View key={String(opt.mins)}>
-                        {i > 0 && <View style={styles.separator} />}
+                        {i > 0 && <View style={[styles.separator, isDark && styles.separatorDark]} />}
                         <Pressable
-                          style={[styles.compactRow, selected && { backgroundColor: '#eef2ec' }]}
+                          style={[styles.compactRow, selected && { backgroundColor: isDark ? '#2a3d36' : '#eef2ec' }]}
                           onPress={disabled ? undefined : () => { setReminderMinutes(opt.mins); closeReminder(); }}
                         >
-                          <Text style={[styles.compactRowText, selected && { fontFamily: 'Manrope_700Bold' }, disabled && { color: '#c9cdc9' }]}>{opt.label}</Text>
-                          {selected && <Feather name="check" size={20} color="#0f2a24" />}
+                          <Text style={[styles.compactRowText, isDark && styles.compactRowTextDark, selected && { fontFamily: 'Manrope_700Bold' }, disabled && { color: isDark ? '#4a5a52' : '#c9cdc9' }]}>{opt.label}</Text>
+                          {selected && <Feather name="check" size={20} color="#3d6657" />}
                         </Pressable>
                       </View>
                     );
                   })}
                 </View>
                 {!dueDate && (
-                  <Text style={{ fontFamily: 'Manrope_400Regular', fontSize: 13, color: '#8f968f', textAlign: 'center', marginTop: 10 }}>Set a date and time to enable reminders</Text>
+                  <Text style={{ fontFamily: 'Manrope_400Regular', fontSize: 13, color: isDark ? '#6e7b74' : '#8f968f', textAlign: 'center', marginTop: 10 }}>Set a date and time to enable reminders</Text>
                 )}
 
                 <Pressable style={styles.subModalBackRow} onPress={closeReminder}>
-                  <Text style={styles.subModalBackText}>Back</Text>
+                  <Text style={[styles.subModalBackText, isDark && { color: '#3d6657' }]}>Back</Text>
                 </Pressable>
               </ScrollView>
             </View>
@@ -551,4 +553,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#0f2a24',
   },
+  panelDark: { backgroundColor: '#0a1613' },
+  handleDark: { backgroundColor: '#2a3d36' },
+  panelTitleDark: { color: '#d7e4dd' },
+  cardDark: { backgroundColor: '#0f201b' },
+  separatorDark: { backgroundColor: '#2a3d36' },
+  titleInputDark: { color: '#d7e4dd' },
+  reminderButtonDark: { backgroundColor: '#0f201b' },
+  subPanelDark: { backgroundColor: '#0a1613' },
+  subModalTitleDark: { color: '#d7e4dd' },
+  subModalOptionTextDark: { color: '#d7e4dd' },
+  compactRowTextDark: { color: '#d7e4dd' },
 });
