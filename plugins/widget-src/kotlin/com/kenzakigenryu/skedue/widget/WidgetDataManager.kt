@@ -15,6 +15,11 @@ object WidgetDataManager {
     return parse(json)
   }
 
+  fun write(context: Context, json: String) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putString(KEY_DATA, json).apply()
+  }
+
   private fun parse(json: String): WidgetData {
     return try {
       val obj = JSONObject(json)

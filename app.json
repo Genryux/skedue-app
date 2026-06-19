@@ -24,7 +24,10 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.kenzakigenryu.skedue",
-      "permissions": ["SCHEDULE_EXACT_ALARM", "POST_NOTIFICATIONS"]
+      "permissions": [
+        "SCHEDULE_EXACT_ALARM",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -51,11 +54,16 @@
       ]
     ],
     "extra": {
-      "router": {},
+      "router": {
+        "headers": {
+          "Cross-Origin-Embedder-Policy": "credentialless",
+          "Cross-Origin-Opener-Policy": "same-origin"
+        }
+      },
       "eas": {
-        "projectId": "9e15ab95-3a8b-4a98-8d3b-fd3210815f57"
+        "projectId": "3fbf4e83-5222-44f6-95be-c58d5d08cadb"
       }
     },
-    "owner": "kenzakigenryu"
+    "owner": "genryux"
   }
 }

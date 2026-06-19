@@ -1,7 +1,7 @@
-import { NativeModules, Platform } from 'react-native';
 import { getAllTasks, getSubjects } from '../data/local/db';
 import { parseTimeToMinutes } from '../utils/timeUtils';
 import { isSameCalendarDay } from '../utils/recurrenceUtils';
+import { writeWidgetData, requestGlanceUpdate } from '../../modules/skedue-widget/index';
 
 const DAY_MAP_JS: Record<string, number> = {
   Su: 0, Mo: 1, Tu: 2, We: 3, Th: 4, Fr: 5, Sa: 6,
@@ -51,8 +51,13 @@ export async function syncWidgetData() {
         return aTime - bTime;
       });
 
+    const archivedSubjectIds = new Set(
+      subjects.filter((s) => s.isArchived).map((s) => s.id)
+    );
     const tasks = await getAllTasks();
-    const pending = tasks.filter((t) => t.nextOccurrenceDate < END_OF_TIME);
+    const pending = tasks.filter(
+      (t) => t.nextOccurrenceDate < END_OF_TIME && !archivedSubjectIds.has(t.subjectId)
+    );
     const urgentCount = pending.filter(
       (t) => isBeforeToday(t.nextOccurrenceDate) || isSameCalendarDay(t.nextOccurrenceDate, Date.now())
     ).length;
@@ -67,10 +72,8 @@ export async function syncWidgetData() {
       urgentCount,
     };
 
-    if (Platform.OS === 'android') {
-      await NativeModules.SkedueWidget.writeWidgetData(JSON.stringify(widgetData));
-      await NativeModules.SkedueWidget.requestGlanceUpdate();
-    }
+    await writeWidgetData(JSON.stringify(widgetData));
+    await requestGlanceUpdate();
   } catch (error) {
     console.warn('Failed to sync widget data', error);
   }

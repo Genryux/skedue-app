@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class SkedueWidgetPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
-    return listOf(SkedueWidgetModule(reactContext))
+    return listOf(SkedueWidgetNativeModule(reactContext))
   }
 
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {

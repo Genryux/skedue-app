@@ -1308,6 +1308,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       instructor: editInstructor.trim() || subject?.instructor,
       term: editTerm || subject?.term,
     });
+    void syncWidgetData();
   };
 
   const openEditSchedule = async () => {

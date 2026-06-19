@@ -194,6 +194,7 @@ export default function IndexScreen() {
           setIsTransitioningToDashboard(false);
         }
       });
+      void syncWidgetData();
     } catch (error) {
       console.warn('Failed to save subject', error);
       setIsTransitioningToDashboard(false);

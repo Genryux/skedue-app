@@ -5,5 +5,5 @@ import androidx.glance.appwidget.GlanceAppWidgetReceiver
 
 class SkedueWidgetReceiver : GlanceAppWidgetReceiver() {
   override val glanceAppWidget: GlanceAppWidget
-    get() = SkedueWidget
+    get() = SkedueWidget()
 }
