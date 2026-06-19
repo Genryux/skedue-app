@@ -1373,6 +1373,8 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       location: newLocation,
     });
 
+    void syncWidgetData();
+
     subViewOpacity.setValue(0);
     subViewSlide.setValue(0);
     setSubjectSheetView('main');
