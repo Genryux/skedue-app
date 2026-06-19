@@ -1114,6 +1114,59 @@ export const clearAndImportBackup = async (data: BackupImportData): Promise<void
   }
 };
 
+export const insertSubjects = async (
+  subjects: Array<Omit<SubjectRecord, 'id' | 'createdAt'> & { isArchived?: boolean; isPinned?: boolean }>
+): Promise<SubjectRecord[]> => {
+  const db = await getDb();
+  await db.execAsync('BEGIN TRANSACTION');
+  try {
+    const results: SubjectRecord[] = [];
+    for (const subject of subjects) {
+      const id = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+      const createdAt = Date.now();
+      const days = subject.days ? JSON.stringify(subject.days) : null;
+
+      await db.runAsync(
+        'INSERT INTO subjects (id, title, code, instructor, term, days, startTime, endTime, location, isArchived, isPinned, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          id,
+          subject.title,
+          subject.code ?? null,
+          subject.instructor ?? null,
+          subject.term ?? null,
+          days,
+          subject.startTime ?? null,
+          subject.endTime ?? null,
+          subject.location ?? null,
+          subject.isArchived ? 1 : 0,
+          subject.isPinned ? 1 : 0,
+          createdAt,
+        ]
+      );
+
+      results.push({
+        id,
+        title: subject.title,
+        code: subject.code ?? undefined,
+        instructor: subject.instructor ?? undefined,
+        term: subject.term ?? undefined,
+        days: subject.days,
+        startTime: subject.startTime ?? undefined,
+        endTime: subject.endTime ?? undefined,
+        location: subject.location ?? undefined,
+        isArchived: subject.isArchived ?? false,
+        isPinned: subject.isPinned ?? false,
+        createdAt,
+      });
+    }
+    await db.execAsync('COMMIT');
+    return results;
+  } catch (error) {
+    await db.execAsync('ROLLBACK');
+    throw error;
+  }
+};
+
 export const clearAllData = async (): Promise<void> => {
   const db = await getDb();
   await db.execAsync('DELETE FROM task_occurrence_exceptions');

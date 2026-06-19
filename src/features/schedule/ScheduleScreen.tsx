@@ -729,14 +729,14 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
                     <View style={[styles.timeDot, isDark && { backgroundColor: '#0f201b', borderColor: '#2a3d36' }, isActive && styles.timeDotActive]} />
                   </View>
                 )}
-                <Pressable style={[styles.eventCard, isDark && styles.eventCardDark, isActive && styles.eventCardPrimary, isActive && isDark && styles.eventCardPrimaryDark, isPast && styles.eventCardPast, isPast && isDark && styles.eventCardPastDark, entry.isCompleted && styles.eventCardDone]} onPress={() => openDetail(entry)}>
-                  <View style={[styles.eventAccent, isDark && styles.eventAccentDark, isActive && styles.eventAccentActive, isPast && styles.eventAccentPast, isPast && isDark && styles.eventAccentPastDark]} />
+                <Pressable style={[styles.eventCard, isDark && styles.eventCardDark, isActive && styles.eventCardPrimary, isActive && isDark && styles.eventCardPrimaryDark, isPast && styles.eventCardPast, isPast && isDark && styles.eventCardPastDark, entry.isCompleted && styles.eventCardDone, entry.isCompleted && isDark && styles.eventCardDoneDark]} onPress={() => openDetail(entry)}>
+                  <View style={[styles.eventAccent, isDark && styles.eventAccentDark, isActive && styles.eventAccentActive, isPast && styles.eventAccentPast, isPast && isDark && styles.eventAccentPastDark, entry.isCompleted && isDark && styles.eventAccentDoneDark]} />
                   <View style={[styles.eventContent, entry.isCompleted && styles.eventContentDone]}>
                     <View style={styles.eventTitleRow}>
-                      <Text style={[styles.eventTitle, isDark && styles.eventTitleDark, entry.isCompleted && styles.eventTitleDone]} numberOfLines={1}>{entry.title}</Text>
+                      <Text style={[styles.eventTitle, isDark && styles.eventTitleDark, entry.isCompleted && styles.eventTitleDone, entry.isCompleted && isDark && styles.eventTitleDoneDark]} numberOfLines={1}>{entry.title}</Text>
                     </View>
                     <View style={styles.eventTimeRow}>
-                      <Text style={[styles.eventTimeText, isDark && styles.eventTimeTextDark, entry.isCompleted && styles.eventTimeTextDone, entry.kind === 'task' && isPast && !entry.isCompleted && styles.eventTimeTextPast]}>
+                      <Text style={[styles.eventTimeText, isDark && styles.eventTimeTextDark, entry.isCompleted && styles.eventTimeTextDone, entry.isCompleted && isDark && styles.eventTimeTextDoneDark, entry.kind === 'task' && isPast && !entry.isCompleted && styles.eventTimeTextPast]}>
                         {entry.startTime}{entry.endTime ? ` - ${entry.endTime}` : ''}
                       </Text>
                       {entry.isCompleted ? (
@@ -1566,6 +1566,10 @@ const styles = StyleSheet.create({
   detailTextDark: { color: '#d7e4dd' },
   eventAccentDark: { backgroundColor: '#2a3d36' },
   eventAccentPastDark: { backgroundColor: '#2a3d36' },
+  eventCardDoneDark: { backgroundColor: '#0f201b', opacity: 0.6 },
+  eventTitleDoneDark: { color: '#6e7b74' },
+  eventTimeTextDoneDark: { color: '#5a6b63' },
+  eventAccentDoneDark: { backgroundColor: '#2a3d36' },
   completedLabelDark: { color: '#6e7b74' },
   dotDark: { backgroundColor: '#d7e4dd' },
   dotMutedDark: { backgroundColor: '#3a4f47' },

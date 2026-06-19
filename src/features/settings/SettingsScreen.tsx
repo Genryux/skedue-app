@@ -1,7 +1,7 @@
 import { Feather } from '@expo/vector-icons';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, BackHandler, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../ui/theme/ThemeContext';
 import { shadowLg } from '../../ui/tokens/shadows';
@@ -112,10 +112,19 @@ export default function SettingsScreen() {
     }
   }, [handleBackup]);
 
+    useEffect(() => {
+    const onBackPress = () => {
+      router.replace('/');
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [router]);
+
   return (
     <View style={[styles.container, isDark && styles.containerDark]}>
       <View style={[styles.header, isDark && styles.headerDark, { paddingTop: insets.top + 8 }]}>
-        <Pressable style={[styles.backButton, isDark && styles.backButtonDark]} onPress={() => router.back()}>
+        <Pressable style={[styles.backButton, isDark && styles.backButtonDark]} onPress={() => router.replace('/')}>
           <Feather name="arrow-left" size={20} color={isDark ? '#d7e4dd' : '#1e2b26'} />
         </Pressable>
         <Text style={[styles.headerTitle, isDark && styles.headerTitleDark]}>Settings</Text>

@@ -90,9 +90,13 @@ export default function IndexScreen() {
     if (hasOnboarded && !isTransitioningToDashboard && !hasCheckedPrompt.current) {
       hasCheckedPrompt.current = true;
       const checkPrompt = async () => {
-        const shown = await getMetaValue(META_KEYS.notificationPromptShown);
-        if (shown !== 'true') {
-          setTimeout(() => setShowNotificationPrompt(true), 600);
+        try {
+          const shown = await getMetaValue(META_KEYS.notificationPromptShown);
+          if (shown !== 'true') {
+            setTimeout(() => setShowNotificationPrompt(true), 600);
+          }
+        } catch (error) {
+          console.warn('Failed to check notification prompt', error);
         }
       };
       checkPrompt();

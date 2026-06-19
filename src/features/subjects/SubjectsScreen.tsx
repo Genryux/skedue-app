@@ -23,23 +23,31 @@ type SubjectsScreenProps = {
   subjects: FormattedSubject[];
   onPressSubject: (subject: FormattedSubject) => void;
   onFilterPress?: () => void;
+  onBulkAddPress?: () => void;
   onTogglePin?: (subjectId: string, isPinned: boolean) => void;
   hasActiveFilter?: boolean;
 };
 
-export default function SubjectsScreen({ subjects, onPressSubject, onFilterPress, onTogglePin, hasActiveFilter }: SubjectsScreenProps) {
+export default function SubjectsScreen({ subjects, onPressSubject, onFilterPress, onBulkAddPress, onTogglePin, hasActiveFilter }: SubjectsScreenProps) {
   const { isDark } = useTheme();
   return (
     <>
       <View style={styles.titleBlockSubjects}>
         <Text style={[styles.title, isDark && styles.titleDark]}>My Subjects</Text>
-        <Pressable style={[styles.filterButton, isDark && styles.filterButtonDark]} onPress={onFilterPress}>
+        <View style={styles.titleActions}>
+          {onBulkAddPress && (
+            <Pressable style={[styles.filterButton, isDark && styles.filterButtonDark]} onPress={onBulkAddPress}>
+              <MaterialCommunityIcons name="book-plus" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
+            </Pressable>
+          )}
+          <Pressable style={[styles.filterButton, isDark && styles.filterButtonDark]} onPress={onFilterPress}>
           {hasActiveFilter ? (
             <MaterialCommunityIcons name="filter-variant" size={16} color="#4d7e6a" />
           ) : (
             <Feather name="filter" size={16} color={isDark ? '#d7e4dd' : '#1e2b26'} />
           )}
         </Pressable>
+        </View>
       </View>
       <View style={styles.subjectsSection}>
         {subjects.length === 0 ? (
@@ -115,11 +123,17 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
     fontSize: 22,
   },
+  titleActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   filterButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
     backgroundColor: '#fcfbfa',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,

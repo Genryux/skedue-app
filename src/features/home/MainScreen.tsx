@@ -1334,6 +1334,7 @@ export default function MainScreen() {
             subjects={subjects} 
             onPressSubject={handlePressSubject}
             onFilterPress={handleOpenFilter}
+            onBulkAddPress={() => router.push('/bulk-add-subjects')}
             onTogglePin={handleTogglePin}
             hasActiveFilter={subjectFilter.type !== 'active' || subjectFilter.term !== null}
           />
