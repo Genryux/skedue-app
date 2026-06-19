@@ -107,41 +107,38 @@ class SkedueWidget : GlanceAppWidget() {
               modifier = GlanceModifier
                 .fillMaxWidth()
                 .background(cardBg)
-                .padding(12.dp)
                 .clickable(
                   actionRunCallback<OpenSubjectAction>(
                     actionParametersOf(SUBJECT_ID_KEY to item.id)
                   )
                 ),
-              verticalAlignment = Alignment.CenterVertically
+              verticalAlignment = Alignment.Top
             ) {
               Column(modifier = GlanceModifier.defaultWeight()) {
-                Text(
-                  text = item.title,
-                  style = TextStyle(color = ColorProvider(textPrimary), fontSize = 13.sp, fontWeight = FontWeight.Bold),
-                  maxLines = 1
-                )
-                Spacer(modifier = GlanceModifier.height(4.dp))
-                Text(
-                  text = item.timeRange,
-                  style = TextStyle(color = ColorProvider(textMuted), fontSize = 11.sp),
-                  maxLines = 1
-                )
-                if (item.location.isNotEmpty()) {
+                Column(modifier = GlanceModifier.padding(12.dp)) {
                   Text(
-                    text = item.location,
+                    text = item.title,
+                    style = TextStyle(color = ColorProvider(textPrimary), fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                    maxLines = 1
+                  )
+                  Spacer(modifier = GlanceModifier.height(2.dp))
+                  Text(
+                    text = item.timeRange,
                     style = TextStyle(color = ColorProvider(textMuted), fontSize = 11.sp),
                     maxLines = 1
                   )
+                  if (item.location.isNotEmpty()) {
+                    Text(
+                      text = item.location,
+                      style = TextStyle(color = ColorProvider(textMuted), fontSize = 11.sp),
+                      maxLines = 1
+                    )
+                  }
                 }
+                Row(
+                  modifier = GlanceModifier.fillMaxWidth().height(1.dp).background(separator)
+                ) {}
               }
-            }
-            if (index < data.scheduleItems.size - 1) {
-              Spacer(modifier = GlanceModifier.height(8.dp))
-              Row(
-                modifier = GlanceModifier.fillMaxWidth().height(1.dp).background(separator)
-              ) {}
-              Spacer(modifier = GlanceModifier.height(8.dp))
             }
           }
         }
