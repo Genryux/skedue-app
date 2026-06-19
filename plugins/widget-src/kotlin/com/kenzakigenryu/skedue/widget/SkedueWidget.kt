@@ -137,6 +137,7 @@ class SkedueWidget : GlanceAppWidget() {
               }
             }
             if (index < data.scheduleItems.size - 1) {
+              Spacer(modifier = GlanceModifier.height(8.dp))
               Row(
                 modifier = GlanceModifier.fillMaxWidth().height(1.dp).background(separator)
               ) {}
