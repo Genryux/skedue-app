@@ -9,6 +9,7 @@ import { shadowLg } from '../../ui/tokens/shadows';
 import { springModalSlide } from '../../ui/tokens/animations';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
 import { calculateNextOccurrenceDate, isSameCalendarDay, getExpandedTasksForRange } from '../../utils/recurrenceUtils';
+import { syncWidgetData } from '../../services/widgetDataSync';
 import { useFocusEffect } from '@react-navigation/native';
 
 const DAY_MAP: Record<string, number> = {
@@ -181,6 +182,7 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
       closeDetail();
       onToast?.('Task marked as done');
       await loadTasks();
+      void syncWidgetData();
     } catch (error) {
       console.warn('Failed to complete task', error);
     }
@@ -191,6 +193,7 @@ export default function ScheduleScreen({ subjects, onToast, onOpenSubjectDetail 
       await deleteTask(taskId);
       closeDetail();
       await loadTasks();
+      void syncWidgetData();
     } catch (error) {
       console.warn('Failed to delete task', error);
     }

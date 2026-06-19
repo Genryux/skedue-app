@@ -35,6 +35,7 @@ import { useTheme } from '../../ui/theme/ThemeContext';
 import { formatTimeDisplay, parseTimeToMinutes } from '../../utils/timeUtils';
 import { findTimeConflicts } from './conflictUtils';
 import { calculateNextOccurrenceDate, isSameCalendarDay, END_OF_TIME } from '../../utils/recurrenceUtils';
+import { syncWidgetData } from '../../services/widgetDataSync';
 import NoteEditorScreen from './NoteEditorScreen';
 import {
   getFoldersBySubjectId,
@@ -728,6 +729,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     } catch (error) {
       console.warn('Failed to save task', error);
     }
+    void syncWidgetData();
   };
 
   const handleCompleteTask = async (task: TaskRecord) => {
@@ -755,6 +757,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     } catch (error) {
       console.warn('Failed to complete task', error);
     }
+    void syncWidgetData();
   };
 
   const handleDeleteTask = async (taskId: string) => {
@@ -765,6 +768,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     } catch (error) {
       console.warn('Failed to delete task', error);
     }
+    void syncWidgetData();
   };
 
   const handleDeleteTaskOccurrence = async (task: TaskRecord, occurrenceDate: number) => {
@@ -786,6 +790,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       setTaskReminderToastMessage('Failed to delete occurrence');
       setShowTaskReminderToast(true);
     }
+    void syncWidgetData();
   };
 
   const handleUncompleteTask = async (task: TaskRecord) => {
@@ -811,6 +816,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     } catch (error) {
       console.warn('Failed to uncomplete task', error);
     }
+    void syncWidgetData();
   };
 
   // Tab State
@@ -1127,6 +1133,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       }
     }
     await deleteSubject(subject.id);
+    void syncWidgetData();
     onDelete?.(deletedTitle);
   }, [subject?.id, subject?.title, subject?.code, isDeleteConfirmValid, tasks, onDelete]);
 
@@ -1139,6 +1146,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       }
     }
     closeSubjectSheet();
+    void syncWidgetData();
     onArchive?.(subject.title ?? 'Subject');
   }, [subject?.id, subject?.title, tasks, closeSubjectSheet, onArchive]);
 
@@ -1151,6 +1159,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
       }
     }
     closeSubjectSheet();
+    void syncWidgetData();
     onUnarchive?.(subject.title ?? 'Subject');
   }, [subject?.id, subject?.title, subject?.code, tasks, closeSubjectSheet, onUnarchive]);
 

@@ -1,5 +1,4 @@
-import { File, Paths } from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
+import { File, Paths, Directory } from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
 import {
   getSubjects,
@@ -61,19 +60,10 @@ export const exportBackup = async (): Promise<void> => {
   const json = JSON.stringify(backup, null, 2);
   const filename = `skedue-backup-${formatDate(new Date())}.json`;
 
-  const file = new File(Paths.cache, filename);
-  file.create({ overwrite: true });
+  const dir = await (Directory as any).pickDirectoryAsync();
+  if (!dir) return;
+  const file = dir.createFile(filename, 'application/json');
   file.write(json);
-
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(file.uri, {
-      mimeType: 'application/json',
-      dialogTitle: 'Save Skedue Backup',
-      UTI: 'public.json',
-    });
-  } else {
-    throw new Error('Sharing is not available on this device');
-  }
 };
 
 export const importBackup = async (): Promise<{ success: boolean; message: string }> => {

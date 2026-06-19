@@ -7,6 +7,8 @@ import { useTheme } from '../../ui/theme/ThemeContext';
 import { shadowLg } from '../../ui/tokens/shadows';
 import { exportBackup, importBackup } from '../../services/backupRestore';
 import { clearAllData } from '../../data/local/db';
+import ConfirmModal from '../../ui/ConfirmModal';
+import DynamicIslandToast from '../../ui/DynamicIslandToast';
 
 const SETTINGS_SECTIONS = [
   {
@@ -43,90 +45,72 @@ export default function SettingsScreen() {
   const { isDark, toggleTheme } = useTheme();
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
+  const [confirmModal, setConfirmModal] = useState<'restore' | 'clear' | null>(null);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastVisible, setToastVisible] = useState(false);
 
   const handleBackup = useCallback(async () => {
     setIsLoading(true);
     setLoadingMessage('Preparing backup...');
     try {
       await exportBackup();
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Backup failed';
-      Alert.alert('Backup Failed', msg);
+    } catch {
+      // Backup cancelled or failed silently
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
     }
   }, []);
 
-  const handleRestore = useCallback(async () => {
-    Alert.alert(
-      'Restore Data',
-      'This will replace all your current data with the backup. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Restore',
-          style: 'destructive',
-          onPress: async () => {
-            setIsLoading(true);
-            setLoadingMessage('Restoring data...');
-            try {
-              const result = await importBackup();
-              if (result.success) {
-                router.back();
-              } else if (result.message !== 'Import cancelled') {
-                Alert.alert('Restore Failed', result.message);
-              }
-            } catch (error) {
-              const msg = error instanceof Error ? error.message : 'Restore failed';
-              Alert.alert('Restore Failed', msg);
-            } finally {
-              setIsLoading(false);
-              setLoadingMessage('');
-            }
-          },
-        },
-      ]
-    );
+  const handleRestoreConfirm = useCallback(async () => {
+    setConfirmModal(null);
+    setIsLoading(true);
+    setLoadingMessage('Restoring data...');
+    try {
+      const result = await importBackup();
+      if (result.success) {
+        setToastMessage('Data restored successfully');
+        setToastVisible(true);
+        setTimeout(() => router.back(), 1200);
+      } else if (result.message !== 'Import cancelled') {
+        Alert.alert('Restore Failed', result.message);
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Restore failed';
+      Alert.alert('Restore Failed', msg);
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage('');
+    }
   }, [router]);
 
-  const handleClearData = useCallback(async () => {
-    Alert.alert(
-      'Clear All Data',
-      'This will permanently delete all your subjects, notes, tasks, and settings. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear Everything',
-          style: 'destructive',
-          onPress: async () => {
-            setIsLoading(true);
-            setLoadingMessage('Clearing data...');
-            try {
-              await clearAllData();
-              router.back();
-            } catch (error) {
-              const msg = error instanceof Error ? error.message : 'Failed to clear data';
-              Alert.alert('Error', msg);
-            } finally {
-              setIsLoading(false);
-              setLoadingMessage('');
-            }
-          },
-        },
-      ]
-    );
+  const handleClearDataConfirm = useCallback(async () => {
+    setConfirmModal(null);
+    setIsLoading(true);
+    setLoadingMessage('Clearing data...');
+    try {
+      await clearAllData();
+      setToastMessage('All data cleared');
+      setToastVisible(true);
+      setTimeout(() => router.back(), 1200);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Failed to clear data';
+      Alert.alert('Error', msg);
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage('');
+    }
   }, [router]);
 
   const handleAction = useCallback((label: string) => {
     if (label === 'Backup Data') {
       handleBackup();
     } else if (label === 'Restore Data') {
-      handleRestore();
+      setConfirmModal('restore');
     } else if (label === 'Clear All Data') {
-      handleClearData();
+      setConfirmModal('clear');
     }
-  }, [handleBackup, handleRestore, handleClearData]);
+  }, [handleBackup]);
 
   return (
     <View style={[styles.container, isDark && styles.containerDark]}>
@@ -191,6 +175,32 @@ export default function SettingsScreen() {
         ))}
       </ScrollView>
 
+      <ConfirmModal
+        visible={confirmModal === 'restore'}
+        title="Restore Data"
+        description="This will replace all your current data with the backup. This cannot be undone."
+        confirmLabel="Restore"
+        confirmDestructive
+        isDark={isDark}
+        onCancel={() => setConfirmModal(null)}
+        onConfirm={handleRestoreConfirm}
+      />
+      <ConfirmModal
+        visible={confirmModal === 'clear'}
+        title="Clear All Data"
+        description="This will permanently delete all your subjects, notes, tasks, and settings. This cannot be undone."
+        confirmLabel="Clear Everything"
+        confirmDestructive
+        isDark={isDark}
+        requiredInputText="DELETE ALL DATA"
+        onCancel={() => setConfirmModal(null)}
+        onConfirm={handleClearDataConfirm}
+      />
+      <DynamicIslandToast
+        visible={toastVisible}
+        message={toastMessage}
+        onHide={() => setToastVisible(false)}
+      />
       <Modal visible={isLoading} transparent animationType="fade">
         <View style={[styles.overlay, isDark && styles.overlayDark]}>
           <View style={[styles.loadingCard, isDark && styles.loadingCardDark]}>

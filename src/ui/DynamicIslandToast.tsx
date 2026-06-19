@@ -169,5 +169,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
+    flexShrink: 1,
   },
 });

@@ -16,6 +16,7 @@ import {
 import { useRef } from 'react';
 import * as Notifications from 'expo-notifications';
 import { configureTaskReminderNotifications } from '../src/services/taskReminders';
+import { syncWidgetData } from '../src/services/widgetDataSync';
 
 const META_KEYS = {
   hasOnboarded: 'hasOnboarded',
@@ -60,6 +61,9 @@ export default function IndexScreen() {
         if (onboarded) {
           dashboardFadeAnim.setValue(1);
         }
+
+        // Sync widget data on initial load
+        void syncWidgetData();
       } catch (error) {
         console.warn('Failed to load app data', error);
       } finally {

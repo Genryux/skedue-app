@@ -28,6 +28,7 @@ import { shadowLg, shadowLgDark } from '../../ui/tokens/shadows';
 import { useTheme } from '../../ui/theme/ThemeContext';
 import { parseTimeToMinutes } from '../../utils/timeUtils';
 import { calculateNextOccurrenceDate, isSameCalendarDay, END_OF_TIME } from '../../utils/recurrenceUtils';
+import { syncWidgetData } from '../../services/widgetDataSync';
 import ScheduleScreen from '../schedule/ScheduleScreen';
 import AddSubjectScreen from '../subjects/AddSubjectScreen';
 import SubjectsScreen from '../subjects/SubjectsScreen';
@@ -316,6 +317,7 @@ export default function MainScreen() {
       setToastMessage('Failed to complete task');
       setToastVisible(true);
     }
+    syncWidgetData();
   };
 
   const completedOccurrences = useMemo(() => {
@@ -361,6 +363,7 @@ export default function MainScreen() {
       setToastMessage('Failed to uncomplete task');
       setToastVisible(true);
     }
+    syncWidgetData();
   };
 
   const handleStartAddTask = useCallback(() => {
@@ -377,6 +380,7 @@ export default function MainScreen() {
     setPendingTasks((current) => [...current, task].sort((a, b) => a.nextOccurrenceDate - b.nextOccurrenceDate));
     setToastMessage('Task created');
     setToastVisible(true);
+    void syncWidgetData();
   }, []);
 
   const handleOpenTaskEdit = useCallback((task: TaskRecord) => {
@@ -398,6 +402,7 @@ export default function MainScreen() {
     );
     setToastMessage('Task updated');
     setToastVisible(true);
+    void syncWidgetData();
   }, []);
 
   const handleOpenTaskDetail = useCallback((task: TaskRecord, occurrenceDate?: number) => {
@@ -446,6 +451,7 @@ export default function MainScreen() {
       setToastMessage('Failed to delete task');
       setToastVisible(true);
     }
+    void syncWidgetData();
   };
 
   const handleDeleteTaskOccurrence = async (task: TaskRecord, occurrenceDate: number) => {
@@ -474,6 +480,7 @@ export default function MainScreen() {
       setToastMessage('Failed to delete occurrence');
       setToastVisible(true);
     }
+    void syncWidgetData();
   };
 
   const handleOpenTaskSubject = useCallback((task: TaskRecord) => {
@@ -612,6 +619,7 @@ export default function MainScreen() {
     await loadData();
     await loadRecentNotes();
     await loadPendingTasks();
+    await syncWidgetData();
     setRefreshing(false);
   };
 
@@ -676,6 +684,7 @@ export default function MainScreen() {
       loadData();
       loadRecentNotes();
       loadPendingTasks();
+      void syncWidgetData();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
   );
@@ -1136,6 +1145,7 @@ export default function MainScreen() {
       // Trigger success toast
       setToastMessage(`${savedSubject.title} created successfully`);
       setToastVisible(true);
+      void syncWidgetData();
     } catch (error) {
       console.warn('Failed to save subject', error);
       setToastMessage('Failed to save subject');
@@ -1684,7 +1694,7 @@ export default function MainScreen() {
           style={[
             StyleSheet.absoluteFill,
             {
-              backgroundColor: '#f8f7f2',
+              backgroundColor: isDark ? '#0a1613' : '#f8f7f2',
               zIndex: 20,
               transform: [{
                 translateX: subjectDetailSlideAnim.interpolate({
@@ -1823,7 +1833,7 @@ export default function MainScreen() {
         style={[
           StyleSheet.absoluteFill,
           {
-            backgroundColor: '#f8f7f2',
+            backgroundColor: isDark ? '#0a1613' : '#f8f7f2',
             zIndex: 25,
             transform: [{
               translateX: allQuickNotesSlideAnim.interpolate({
