@@ -6,11 +6,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
-import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.updateAll
-import androidx.glance.appwidget.updateAppWidgetState
-import androidx.glance.state.PreferencesGlanceStateDefinition
-import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -29,18 +25,11 @@ class SkedueWidgetNativeModule(reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
-  fun requestGlanceUpdate(json: String, promise: Promise) {
+  fun requestGlanceUpdate(promise: Promise) {
     Log.d("SkedueWidget", "requestGlanceUpdate: entered")
     CoroutineScope(Dispatchers.IO).launch {
       try {
-        Log.d("SkedueWidget", "requestGlanceUpdate: writing to Glance state")
-        val manager = GlanceAppWidgetManager(appContext)
-        val glanceIds = manager.getGlanceIds(SkedueWidget::class.java)
-        for (id in glanceIds) {
-          updateAppWidgetState(appContext, PreferencesGlanceStateDefinition, id) { prefs ->
-            prefs[stringPreferencesKey("widget_data")] = json
-          }
-        }
+        SkedueWidget.triggerRefresh()
         Log.d("SkedueWidget", "requestGlanceUpdate: before updateAll()")
         SkedueWidget().updateAll(appContext)
         Log.d("SkedueWidget", "requestGlanceUpdate: after updateAll()")

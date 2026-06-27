@@ -5,6 +5,9 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.util.Log
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -19,11 +22,6 @@ import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
-import androidx.glance.state.PreferencesGlanceStateDefinition
-import androidx.glance.state.GlanceStateDefinition
-import androidx.glance.state.Preferences
-import androidx.glance.state.currentState
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
@@ -61,7 +59,12 @@ class OpenHomeAction : ActionCallback {
 }
 
 class SkedueWidget : GlanceAppWidget() {
-  override var stateDefinition: GlanceStateDefinition<*> = PreferencesGlanceStateDefinition
+  companion object {
+    private val _refreshTrigger: MutableState<Int> = mutableStateOf(0)
+    fun triggerRefresh() {
+      _refreshTrigger.value++
+    }
+  }
 
   override suspend fun provideGlance(context: Context, id: GlanceId) {
     Log.d("SkedueWidget", "provideGlance: started")
@@ -70,17 +73,10 @@ class SkedueWidget : GlanceAppWidget() {
 
   @Composable
   private fun Content() {
+    val refresh by _refreshTrigger
     val ctx = LocalContext.current
-    val prefs = currentState<Preferences>()
-    val stateJson = prefs[stringPreferencesKey("widget_data")]
-    val data = if (stateJson != null) {
-      Log.d("SkedueWidget", "Content: reading from Glance state")
-      WidgetDataManager.parse(stateJson)
-    } else {
-      Log.d("SkedueWidget", "Content: fallback to SharedPreferences")
-      WidgetDataManager.load(ctx)
-    }
-    Log.d("SkedueWidget", "Content: recomposed (scheduleItems=${data.scheduleItems.size}, urgentCount=${data.urgentCount})")
+    val data = WidgetDataManager.load(ctx)
+    Log.d("SkedueWidget", "Content: recomposed refresh=$refresh (scheduleItems=${data.scheduleItems.size}, urgentCount=${data.urgentCount})")
     val isDark = (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     val bg = if (isDark) Color(0xFF1C2F2A) else Color(0xFFFFFFFF)
     val textPrimary = if (isDark) Color(0xFFD7E4DD) else Color(0xFF1E2B26)

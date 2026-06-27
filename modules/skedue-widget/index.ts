@@ -6,6 +6,6 @@ export async function writeWidgetData(json: string): Promise<void> {
   await SkedueWidgetNative.writeWidgetData(json);
 }
 
-export async function requestGlanceUpdate(json: string): Promise<void> {
-  await SkedueWidgetNative.requestGlanceUpdate(json);
+export async function requestGlanceUpdate(): Promise<void> {
+  await SkedueWidgetNative.requestGlanceUpdate();
 }
