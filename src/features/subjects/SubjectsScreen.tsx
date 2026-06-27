@@ -37,7 +37,7 @@ export default function SubjectsScreen({ subjects, onPressSubject, onFilterPress
         <View style={styles.titleActions}>
           {onBulkAddPress && (
             <Pressable style={[styles.filterButton, isDark && styles.filterButtonDark]} onPress={onBulkAddPress}>
-              <MaterialCommunityIcons name="book-plus" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
+              <MaterialCommunityIcons name="book-plus-outline" size={18} color={isDark ? '#d7e4dd' : '#1e2b26'} />
             </Pressable>
           )}
           <Pressable style={[styles.filterButton, isDark && styles.filterButtonDark]} onPress={onFilterPress}>

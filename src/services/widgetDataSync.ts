@@ -72,8 +72,9 @@ export async function syncWidgetData() {
       urgentCount,
     };
 
-    await writeWidgetData(JSON.stringify(widgetData));
-    await requestGlanceUpdate();
+    const json = JSON.stringify(widgetData);
+    await writeWidgetData(json);
+    await requestGlanceUpdate(json);
   } catch (error) {
     console.warn('Failed to sync widget data', error);
   }

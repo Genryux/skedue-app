@@ -317,7 +317,7 @@ export default function MainScreen() {
       setToastMessage('Failed to complete task');
       setToastVisible(true);
     }
-    syncWidgetData();
+    void syncWidgetData();
   };
 
   const completedOccurrences = useMemo(() => {
@@ -363,7 +363,7 @@ export default function MainScreen() {
       setToastMessage('Failed to uncomplete task');
       setToastVisible(true);
     }
-    syncWidgetData();
+    void syncWidgetData();
   };
 
   const handleStartAddTask = useCallback(() => {

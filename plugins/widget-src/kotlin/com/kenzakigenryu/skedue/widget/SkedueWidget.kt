@@ -3,6 +3,7 @@ package com.kenzakigenryu.skedue.widget
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -18,6 +19,11 @@ import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
+import androidx.glance.state.PreferencesGlanceStateDefinition
+import androidx.glance.state.GlanceStateDefinition
+import androidx.glance.state.Preferences
+import androidx.glance.state.currentState
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
@@ -55,15 +61,26 @@ class OpenHomeAction : ActionCallback {
 }
 
 class SkedueWidget : GlanceAppWidget() {
+  override var stateDefinition: GlanceStateDefinition<*> = PreferencesGlanceStateDefinition
 
   override suspend fun provideGlance(context: Context, id: GlanceId) {
-    val data = WidgetDataManager.load(context)
-    provideContent { Content(data = data) }
+    Log.d("SkedueWidget", "provideGlance: started")
+    provideContent { Content() }
   }
 
   @Composable
-  private fun Content(data: WidgetData) {
+  private fun Content() {
     val ctx = LocalContext.current
+    val prefs = currentState<Preferences>()
+    val stateJson = prefs[stringPreferencesKey("widget_data")]
+    val data = if (stateJson != null) {
+      Log.d("SkedueWidget", "Content: reading from Glance state")
+      WidgetDataManager.parse(stateJson)
+    } else {
+      Log.d("SkedueWidget", "Content: fallback to SharedPreferences")
+      WidgetDataManager.load(ctx)
+    }
+    Log.d("SkedueWidget", "Content: recomposed (scheduleItems=${data.scheduleItems.size}, urgentCount=${data.urgentCount})")
     val isDark = (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     val bg = if (isDark) Color(0xFF1C2F2A) else Color(0xFFFFFFFF)
     val textPrimary = if (isDark) Color(0xFFD7E4DD) else Color(0xFF1E2B26)
@@ -99,6 +116,7 @@ class SkedueWidget : GlanceAppWidget() {
           style = TextStyle(color = ColorProvider(textMuted), fontSize = 13.sp),
           modifier = GlanceModifier.padding(vertical = 24.dp)
         )
+        Spacer(modifier = GlanceModifier.defaultWeight())
       } else {
         LazyColumn(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
           items(data.scheduleItems.size) { index ->

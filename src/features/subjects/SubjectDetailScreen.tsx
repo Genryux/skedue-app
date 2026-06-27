@@ -1364,7 +1364,7 @@ export default function SubjectDetailScreen({ subject, onBack, onUpdate, onDelet
     const newDays = Array.from(editDays);
     const newStart = formatTimeDisplay(editStartDate);
     const newEnd = formatTimeDisplay(editEndDate);
-    const newLocation = editLocation.trim() || undefined;
+    const newLocation = editLocation.trim() || null;
 
     await updateSubject(subject.id, {
       days: newDays,
